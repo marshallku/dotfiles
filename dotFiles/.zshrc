@@ -96,15 +96,29 @@ source $ZSH/oh-my-zsh.sh
 # Compilation flags
 # export ARCHFLAGS="-arch x86_64"
 
-# Set personal aliases, overriding those provided by oh-my-zsh libs,
-# plugins, and themes. Aliases can be placed here, though oh-my-zsh
-# users are encouraged to define aliases within the ZSH_CUSTOM folder.
-# For a full list of active aliases, run `alias`.
-#
-# Example aliases
-# alias zshconfig="mate ~/.zshrc"
-# alias ohmyzsh="mate ~/.oh-my-zsh"
-alias python=python3
+# Aliases
+# Git
+alias g='git'
+
+alias ga='git add'
+alias gaa='git add -A'
+
+alias gb='git branch'
+
+alias gc='git commit -m'
+alias gch='git checkout'
+alias gchm='git checkout $(git_main_branch)'
+
+# NPM
+alias n='npm'
+
+alias ni='npm i'
+alias nid='npm i -D'
+
+alias nr='npm run'
+
+# Python
+alias python='python3'
 
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
