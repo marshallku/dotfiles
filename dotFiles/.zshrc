@@ -121,6 +121,9 @@ alias nid='npm i -D'
 
 alias nr='npm run'
 
+alias nu='npm update'
+alias nud='npm update --save/--save-dev'
+
 # Python
 alias python='python3'
 
