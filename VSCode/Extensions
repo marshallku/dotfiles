@@ -4,6 +4,7 @@ code --install-extension dbaeumer.vscode-eslint
 code --install-extension esbenp.prettier-vscode
 code --install-extension formulahendry.auto-close-tag
 code --install-extension formulahendry.auto-rename-tag
+code --install-extension golang.go
 code --install-extension hangxingliu.vscode-nginx-conf-hint
 code --install-extension icrawl.discord-vscode
 code --install-extension ms-vscode-remote.remote-ssh
