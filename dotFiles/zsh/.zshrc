@@ -110,6 +110,7 @@ alias gch='git checkout'
 alias gchm='git checkout $(git_main_branch)'
 
 alias gp='git push'
+alias gpo='git push origin'
 alias gpo='git push -u origin $(git_main_branch)'
 alias gpl='git pull'
 
