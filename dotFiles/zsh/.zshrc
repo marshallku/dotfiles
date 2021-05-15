@@ -105,7 +105,8 @@ alias gaa='git add -A'
 
 alias gb='git branch'
 
-alias gc='git commit -m'
+alias gc='git commit'
+alias gcm='git commit -m'
 alias gch='git checkout'
 alias gchm='git checkout $(git_main_branch)'
 
@@ -126,7 +127,7 @@ alias nu='npm update'
 alias nud='npm update --save/--save-dev'
 
 # Python
-alias python='python3'
+alias py='python3'
 
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
