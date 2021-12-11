@@ -1,3 +1,4 @@
+# Place this file at C:\Users\.config\powershell\
 # Remove Defaults
 rename-item alias:\gc gk -force
 rename-item alias:\gcm gkm -force
