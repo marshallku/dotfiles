@@ -1,13 +1,13 @@
 code --install-extension ahmadalli.vscode-nginx-conf
 code --install-extension bmewburn.vscode-intelephense-client
 code --install-extension dbaeumer.vscode-eslint
+code --install-extension eamodio.gitlens
 code --install-extension esbenp.prettier-vscode
-code --install-extension formulahendry.auto-close-tag       
-code --install-extension formulahendry.auto-rename-tag      
+code --install-extension formulahendry.auto-close-tag
+code --install-extension formulahendry.auto-rename-tag
 code --install-extension golang.go
 code --install-extension hangxingliu.vscode-nginx-conf-hint
 code --install-extension icrawl.discord-vscode
-code --install-extension manasxx.background-cover
 code --install-extension ms-python.python
 code --install-extension ms-python.vscode-pylance
 code --install-extension ms-toolsai.jupyter
@@ -19,6 +19,7 @@ code --install-extension ms-vscode-remote.remote-wsl
 code --install-extension ms-vscode.cpptools
 code --install-extension PKief.material-icon-theme
 code --install-extension pnp.polacode
+code --install-extension rangav.vscode-thunder-client
 code --install-extension raynigon.nginx-formatter
 code --install-extension ritwickdey.LiveServer
 code --install-extension streetsidesoftware.code-spell-checker
