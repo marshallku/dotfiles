@@ -40,9 +40,13 @@ Set-Alias gdd git-diff-dev
 
 function git-fetch { git fetch }
 Set-Alias gf git-fetch
+function git-fetch-origin { git fetch origin }
+Set-Alias gfo git-fetch-origin
 
 function git-log { git log }
 Set-Alias gl git-log
+function git-log-graph { git log --graph }
+Set-Alias gl git-log-graph
 
 function git-push { git push $args }
 Set-Alias gp git-push
