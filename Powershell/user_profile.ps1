@@ -46,7 +46,7 @@ Set-Alias gfo git-fetch-origin
 function git-log { git log }
 Set-Alias gl git-log
 function git-log-graph { git log --graph }
-Set-Alias gl git-log-graph
+Set-Alias glg git-log-graph
 
 function git-push { git push $args }
 Set-Alias gp git-push
