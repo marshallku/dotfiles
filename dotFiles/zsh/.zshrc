@@ -104,16 +104,31 @@ alias ga='git add'
 alias gaa='git add -A'
 
 alias gb='git branch'
+alias gbd='git branch -D'
 
 alias gc='git commit'
 alias gcm='git commit -m'
 alias gch='git checkout'
+alias gchb='git checkout -b'
 alias gchm='git checkout $(git_main_branch)'
+
+alias gd='git diff'
+alias gdc='git diff --cached'
+alias gdm='git diff $(git_main_branch)'
+alias gdd='git diff dev'
+
+alias gf='git fetch'
+alias gfo='git fetch origin'
+
+alias gl='git log'
+alias glg='git log --graph'
 
 alias gp='git push'
 alias gpo='git push origin'
 alias gpom='git push -u origin $(git_main_branch)'
 alias gpl='git pull'
+
+alias gs='git status'
 
 # NPM
 alias n='npm'
