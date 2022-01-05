@@ -65,6 +65,12 @@ function git-push { git push $args }
 Set-Alias gp git-push
 function git-push-origin { git push origin $args }
 Set-Alias gpo git-push-origin
+function git-push-current-branch {
+    $CurrentBranch = Get-Git-CurrentBranch
+
+    git push origin $CurrentBranch
+}
+Set-Alias gpoc git-push-current-branch
 function git-push-origin-master {
     $MainBranch = Get-Git-MainBranch
     git push -u origin $MainBranch $args
@@ -72,6 +78,12 @@ function git-push-origin-master {
 Set-Alias gpom git-push-origin-master
 function git-pull { git pull $args }
 Set-Alias gpl git-pull
+function git-pull-current-branch {
+    $CurrentBranch = Get-Git-CurrentBranch
+
+    git pull origin $CurrentBranch
+}
+Set-Alias gplc git-pull-current-branch
 function git-pull-origin { git pull origin $args }
 Set-Alias gplo git-pull-origin
 
