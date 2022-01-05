@@ -1,4 +1,8 @@
-# Place this file at C:\Users\.config\powershell\
+# Prompt
+Import-Module posh-git
+Import-Module oh-my-posh
+Set-PoshPrompt powerlevel10k
+
 # Remove Defaults
 rename-item alias:\gc gk -force
 rename-item alias:\gcm gkm -force
@@ -7,6 +11,9 @@ rename-item alias:\gsn gsnn -force
 rename-item alias:\gm gmm -force
 rename-item alias:\gp gpp -force
 rename-item alias:\ni nii -force
+
+# Import
+. $PSScriptRoot\utils.ps1
 
 # Aliase
 # Git
@@ -26,14 +33,20 @@ function git-commit-message { git commit -m $args }
 Set-Alias gcm git-commit-message
 function git-checkout { git checkout $args }
 Set-Alias gch git-checkout
-function git-checkout-master { git checkout $(git_main_branch) $args }
+function git-checkout-master {
+    $MainBranch = Get-Git-MainBranch
+    git checkout $MainBranch $args
+}
 Set-Alias gchm git-checkout-master
 
 function git-diff { git diff $args }
 Set-Alias gd git-diff
 function git-diff-cached { git diff --cached }
 Set-Alias gdc git-diff-cached
-function git-diff-master { git diff $(git_main_branch) }
+function git-diff-master {
+    $MainBranch = Get-Git-MainBranch
+    git diff $MainBranch
+}
 Set-Alias gdm git-diff-master
 function git-diff-dev { git diff dev }
 Set-Alias gdd git-diff-dev
@@ -52,10 +65,15 @@ function git-push { git push $args }
 Set-Alias gp git-push
 function git-push-origin { git push origin $args }
 Set-Alias gpo git-push-origin
-function git-push-origin-master { git push -u origin $(git_main_branch) $args }
+function git-push-origin-master {
+    $MainBranch = Get-Git-MainBranch
+    git push -u origin $MainBranch $args
+}
 Set-Alias gpom git-push-origin-master
 function git-pull { git pull $args }
 Set-Alias gpl git-pull
+function git-pull-origin { git pull origin $args }
+Set-Alias gplo git-pull-origin
 
 function git-status { git status }
 Set-Alias gs git-status
