@@ -17,91 +17,113 @@ rename-item alias:\ni nii -force
 
 # Aliase
 # Git
-Set-Alias g 'git'
+function g {
+    git $args
+}
 
-function git-add { git add }
-Set-Alias ga git-add
-function git-add-all { git add -A }
-Set-Alias gaa git-add-all
+function ga {
+    git add
+}
+function gaa {
+    git add -A
+}
 
-function git-branch { git branch $args }
-Set-Alias gb git-branch
+function gb {
+    git branch $args
+}
 
-function git-commit { git commit $args }
-Set-Alias gc git-commit
-function git-commit-message { git commit -m $args }
-Set-Alias gcm git-commit-message
-function git-checkout { git checkout $args }
-Set-Alias gch git-checkout
-function git-checkout-master {
+function gc {
+    git commit $args
+}
+function gcm {
+    git commit -m $args
+}
+function gch {
+    git checkout $args
+}
+function gchm {
     $MainBranch = Get-Git-MainBranch
     git checkout $MainBranch $args
 }
-Set-Alias gchm git-checkout-master
 
-function git-diff { git diff $args }
-Set-Alias gd git-diff
-function git-diff-cached { git diff --cached }
-Set-Alias gdc git-diff-cached
-function git-diff-master {
+function gd {
+    git diff $args
+}
+function gdc {
+    git diff --cached
+}
+function gdm {
     $MainBranch = Get-Git-MainBranch
     git diff $MainBranch
 }
-Set-Alias gdm git-diff-master
-function git-diff-dev { git diff dev }
-Set-Alias gdd git-diff-dev
 
-function git-fetch { git fetch }
-Set-Alias gf git-fetch
-function git-fetch-origin { git fetch origin }
-Set-Alias gfo git-fetch-origin
+function gdd {
+    git diff dev 
+}
 
-function git-log { git log }
-Set-Alias gl git-log
-function git-log-graph { git log --graph }
-Set-Alias glg git-log-graph
+function gf {
+    git fetch
+}
+function gfo {
+    git fetch origin
+}
 
-function git-push { git push $args }
-Set-Alias gp git-push
-function git-push-origin { git push origin $args }
-Set-Alias gpo git-push-origin
-function git-push-current-branch {
+function gl {
+    git log
+}
+function glg {
+    git log --graph
+}
+
+function gp {
+    git push $args
+}
+function gpo {
+    git push origin $args
+}
+function gpoc {
     $CurrentBranch = Get-Git-CurrentBranch
 
     git push origin $CurrentBranch
 }
-Set-Alias gpoc git-push-current-branch
-function git-push-origin-master {
+function gpom {
     $MainBranch = Get-Git-MainBranch
     git push -u origin $MainBranch $args
 }
-Set-Alias gpom git-push-origin-master
-function git-pull { git pull $args }
-Set-Alias gpl git-pull
-function git-pull-current-branch {
+function gpl {
+    git pull $args
+}
+function gplc {
     $CurrentBranch = Get-Git-CurrentBranch
 
     git pull origin $CurrentBranch
 }
-Set-Alias gplc git-pull-current-branch
-function git-pull-origin { git pull origin $args }
-Set-Alias gplo git-pull-origin
+function gplo {
+    git pull origin $args
+}
 
-function git-status { git status }
-Set-Alias gs git-status
+function gs {
+    git status
+}
 
 # NPM
-Set-Alias n 'npm'
+# I don't know why but npm $args doesn't work on string with spaces
+Set-Alias n npm
 
-function npm-install { npm i $args }
-Set-Alias ni npm-install
-function npm-install-dev { npm i -D $args }
-Set-Alias nid npm-install-dev
+function ni {
+    npm i $args
+}
+function nid {
+    npm i -D $args
+}
 
-function npm-run { npm run $args }
-Set-Alias nr npm-run
+function nr {
+    npm run $args
+}
 
-function npm-update { npm update }
-Set-Alias nu npm-update
-function npm-update-dev { npm update --save/--save-dev }
-Set-Alias nud npm-update-dev
+function nu {
+    npm update
+}
+function nud {
+    npm update --save/--save-dev
+}
