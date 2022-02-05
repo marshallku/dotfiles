@@ -125,8 +125,11 @@ alias glg='git log --graph'
 
 alias gp='git push'
 alias gpo='git push origin'
+alias gpoc='git push origin $(git_current_branch)'
 alias gpom='git push -u origin $(git_main_branch)'
 alias gpl='git pull'
+alias gplc='git pull origin $(git_current_branch)'
+alias gplo='git pull origin'
 
 alias gs='git status'
 

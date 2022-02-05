@@ -31,6 +31,9 @@ function gaa {
 function gb {
     git branch $args
 }
+function gbd {
+    git branch -D $args
+}
 
 function gc {
     git commit $args
@@ -40,6 +43,9 @@ function gcm {
 }
 function gch {
     git checkout $args
+}
+function gchb {
+    git checkout -b $args
 }
 function gchm {
     $MainBranch = Get-Git-MainBranch
