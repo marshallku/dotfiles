@@ -48,8 +48,7 @@ function gchb {
     git checkout -b $args
 }
 function gchm {
-    $MainBranch = Get-Git-MainBranch
-    git checkout $MainBranch $args
+    git checkout $git_main_branch $args
 }
 
 function gd {
@@ -59,8 +58,7 @@ function gdc {
     git diff --cached
 }
 function gdm {
-    $MainBranch = Get-Git-MainBranch
-    git diff $MainBranch
+    git diff $git_main_branch
 }
 
 function gdd {
@@ -88,21 +86,16 @@ function gpo {
     git push origin $args
 }
 function gpoc {
-    $CurrentBranch = Get-Git-CurrentBranch
-
-    git push origin $CurrentBranch
+    git push origin $git_current_branch
 }
 function gpom {
-    $MainBranch = Get-Git-MainBranch
-    git push -u origin $MainBranch $args
+    git push -u origin $git_main_branch $args
 }
 function gpl {
     git pull $args
 }
 function gplc {
-    $CurrentBranch = Get-Git-CurrentBranch
-
-    git pull origin $CurrentBranch
+    git pull origin $git_current_branch
 }
 function gplo {
     git pull origin $args

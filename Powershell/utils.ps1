@@ -1,4 +1,4 @@
-<#
+<# 
 
 Code from
 https://github.com/gluons/powershell-git-aliases/blob/master/src/utils.ps1
@@ -9,7 +9,7 @@ https://github.com/gluons/powershell-git-aliases/blob/master/src/utils.ps1
 .SYNOPSIS
 	Get current git branch.
 #>
-function Get-Git-CurrentBranch {
+function git_current_branch {
 	git symbolic-ref --quiet HEAD *> $null
 
 	if ($LASTEXITCODE -eq 0) {
@@ -19,7 +19,7 @@ function Get-Git-CurrentBranch {
 	}
 }
 
-function Get-Git-MainBranch {
+function git_main_branch {
 	git rev-parse --git-dir *> $null
 
 	if ($LASTEXITCODE -ne 0) {
@@ -92,7 +92,7 @@ function Get-Git-Aliases ([string] $Alias) {
 
 	$Alias = $Alias.Trim()
 	$blacklist = @(
-		'Get-Git-CurrentBranch',
+		'git_current_branch',
 		'Remove-Alias',
 		'Format-AliasDefinition',
 		'Get-Git-Aliases'
