@@ -1,28 +1,22 @@
 {
     "editor.wordWrap": "on",
     "editor.formatOnSave": true,
-    "editor.fontFamily": "'Fira Code', 'MesloLGLDZ Nerd Font', 'DungGeunMo','InputSerif','Ubuntu'",
+    "editor.fontFamily": "'Fira Code', 'Source Code Pro', 'MesloLGLDZ Nerd Font', 'D2Coding', 'DungGeunMo'",
     "terminal.integrated.fontFamily": "'MesloLGS NF', 'MesloLGLDZ Nerd Font', 'Meslo', 'DunGeunMo'",
     "editor.minimap.enabled": false,
-    "editor.mouseWheelZoom": true,
-    "workbench.sideBar.location": "left",
     "editor.scrollBeyondLastLine": false,
     "files.autoSave": "off",
-    "editor.fontSize": 13,
     "workbench.iconTheme": "material-icon-theme",
     "workbench.colorTheme": "One Dark Pro",
     "workbench.startupEditor": "newUntitledFile",
-    "php.validate.executablePath": "C:\\Bitnami\\wordpress-5.4-0\\php\\php.exe",
     "liveServer.settings.donotVerifyTags": true,
     "prettier.tabWidth": 4,
     "liveServer.settings.donotShowInfoMsg": true,
-    "window.zoomLevel": 0,
     "C_Cpp.updateChannel": "Insiders",
     "explorer.confirmDelete": false,
     "editor.fontLigatures": true,
-    "terminal.integrated.shell.windows": "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
     "git.confirmSync": false,
-    "editor.cursorBlinking": "expand",
+    "editor.cursorBlinking": "phase",
     "intelephense.stubs": [
         "apache",
         "bcmath",
@@ -97,7 +91,6 @@
         "zlib",
         "wordpress"
     ],
-    "html.format.contentUnformatted": "",
     "[html]": {
         "editor.suggest.insertMode": "replace",
         "editor.defaultFormatter": "esbenp.prettier-vscode"
@@ -115,6 +108,9 @@
         "editor.defaultFormatter": "esbenp.prettier-vscode"
     },
     "[jsonc]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[css]": {
         "editor.defaultFormatter": "esbenp.prettier-vscode"
     },
     "auto-close-tag.activationOnLanguage": [
@@ -137,5 +133,29 @@
         "HTML (EEx)",
         "HTML (Eex)",
         "plist"
-    ]
+    ],
+    "go.useLanguageServer": true,
+    "settingsSync.ignoredExtensions": ["icrawl.discord-vscode"],
+    "go.toolsManagement.autoUpdate": true,
+    "workbench.editorAssociations": {
+        "*.ipynb": "jupyter.notebook.ipynb"
+    },
+    "nginx-conf-hint.format.align": true,
+    "files.autoGuessEncoding": true,
+    "files.enableTrash": false,
+    "workbench.preferredDarkColorTheme": "One Dark Pro",
+    "window.title": "${dirty}${activeEditorShort}${separator}${rootName}",
+    "security.workspace.trust.untrustedFiles": "open",
+    "editor.bracketPairColorization.enabled": true,
+    "cSpell.userWords": ["marshallku", "naver"],
+    "prettier.endOfLine": "auto",
+    "[javascriptreact]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "thunder-client.codeSnippetLanguage": "cs-httpclient",
+    "typescript.updateImportsOnFileMove.enabled": "always",
+    "editor.linkedEditing": true,
+    "discord.detailsIdling": "Doing something...",
+    "editor.fontSize": 12,
+    "go.delveConfig": {}
 }
