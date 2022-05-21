@@ -15,6 +15,7 @@ rename-item alias:\ni nii -force
 # Import
 . $PSScriptRoot\utils.ps1
 
+
 # Aliase
 # Git
 function g {
@@ -48,7 +49,8 @@ function gchb {
     git checkout -b $args
 }
 function gchm {
-    git checkout $git_main_branch $args
+    $branch = git_main_branch
+    git checkout $branch $args
 }
 
 function gd {
@@ -58,7 +60,8 @@ function gdc {
     git diff --cached
 }
 function gdm {
-    git diff $git_main_branch
+    $branch = git_main_branch
+    git diff $branch
 }
 
 function gdd {
@@ -86,16 +89,19 @@ function gpo {
     git push origin $args
 }
 function gpoc {
-    git push origin $git_current_branch
+    $branch = git_current_branch
+    git push -u origin $branch
 }
 function gpom {
-    git push -u origin $git_main_branch $args
+    $branch = git_main_branch
+    git push -u origin $branch $args
 }
 function gpl {
     git pull $args
 }
 function gplc {
-    git pull origin $git_current_branch
+    $branch = git_current_branch
+    git pull origin $branch
 }
 function gplo {
     git pull origin $args
