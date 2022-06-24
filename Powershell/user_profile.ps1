@@ -16,7 +16,7 @@ rename-item alias:\ni nii -force
 . $PSScriptRoot\utils.ps1
 
 
-# Aliase
+# Aliases
 # Git
 function g {
     git $args
@@ -82,6 +82,16 @@ function glg {
     git log --graph
 }
 
+function gm {
+    git merge $args
+}
+function gms {
+    git merge --squash $args
+}
+function gmnf {
+    git merge --no-ff $args
+}
+
 function gp {
     git push $args
 }
@@ -131,4 +141,29 @@ function nu {
 }
 function nud {
     npm update --save/--save-dev
+}
+
+# Yarn
+Set-Alias y Yarn
+
+function ya {
+    yarn add $args
+}
+function yad {
+    yarn add -D $args
+}
+
+function yci {
+    yarn install --frozen-lockfile
+}
+
+function yr {
+    yarn run
+}
+function yrv {
+    yarn remove
+}
+
+function yu {
+    yarn upgrade
 }
