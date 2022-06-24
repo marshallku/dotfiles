@@ -123,6 +123,10 @@ alias gfo='git fetch origin'
 alias gl='git log'
 alias glg='git log --graph'
 
+alias gm='git merge'
+alias gms='git merge --squash'
+alias gmnf='git merge --no-ff'
+
 alias gp='git push'
 alias gpo='git push origin'
 alias gpoc='git push origin $(git_current_branch)'
@@ -140,12 +144,26 @@ alias ni='npm i'
 alias nid='npm i -D'
 
 alias nr='npm run'
+alias nrv='npm uninstall'
 
 alias nu='npm update'
 alias nud='npm update --save/--save-dev'
 
 # Python
 alias py='python3'
+
+# Yarn
+alias y='yarn'
+
+alias ya='yarn add'
+alias yad='yarn add -D'
+
+alias yci='yarn install --frozen-lockfile'
+
+alias yr='yarn run'
+alias yrv='yarn remove'
+
+alias yu='yarn upgrade'
 
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
