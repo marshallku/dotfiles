@@ -120,6 +120,12 @@ function gplo {
 function gs {
     git status
 }
+function gst {
+    git stash $args
+}
+function gstp {
+    git stash pop
+}
 
 # NPM
 # I don't know why but npm $args doesn't work on string with spaces

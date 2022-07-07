@@ -136,6 +136,8 @@ alias gplc='git pull origin $(git_current_branch)'
 alias gplo='git pull origin'
 
 alias gs='git status'
+alias gst='git stash'
+alias gstp='git stash pop'
 
 # NPM
 alias n='npm'
