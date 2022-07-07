@@ -153,6 +153,7 @@ alias nud='npm update --save/--save-dev'
 
 # Python
 alias py='python3'
+alias pip='pip3'
 
 # Yarn
 alias y='yarn'
@@ -166,6 +167,10 @@ alias yr='yarn run'
 alias yrv='yarn remove'
 
 alias yu='yarn upgrade'
+
+# Vim
+alias vi='nvim'
+alias vim='nvim'
 
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
