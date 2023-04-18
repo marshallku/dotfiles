@@ -111,6 +111,7 @@ alias gcm='git commit -m'
 alias gch='git checkout'
 alias gchb='git checkout -b'
 alias gchm='git checkout $(git_main_branch)'
+alias gcr='git cherry-pick'
 
 alias gd='git diff'
 alias gdc='git diff --cached'
@@ -138,6 +139,8 @@ alias gplo='git pull origin'
 alias gs='git status'
 alias gst='git stash'
 alias gstp='git stash pop'
+
+alias gchd='TARGET_BRANCH="${1:-$(git_main_branch)}";CUR_BRANCH="$(git rev-parse --abbrev-ref HEAD)";git checkout $TARGET_BRANCH;git branch -D $CUR_BRANCH;git pull origin $TARGET_BRANCH'
 
 # NPM
 alias n='npm'
