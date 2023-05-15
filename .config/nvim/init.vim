@@ -17,6 +17,8 @@ Plug 'navarasu/onedark.nvim'
 
 Plug 'HerringtonDarkholme/yats.vim' " TS Syntax
 
+xiyaowong/transparent.nvim " Transparent background
+
 " Initialize plugin system
 call plug#end()
 
