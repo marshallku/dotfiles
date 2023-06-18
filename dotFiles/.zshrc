@@ -149,7 +149,7 @@ alias ni='npm i'
 alias nid='npm i -D'
 
 alias nr='npm run'
-alias nrv='npm uninstall'
+alias nrm='npm uninstall'
 
 alias nu='npm update'
 alias nud='npm update --save/--save-dev'
@@ -157,6 +157,17 @@ alias nud='npm update --save/--save-dev'
 # Python
 alias py='python3'
 alias pip='pip3'
+
+# PNPM
+alias p='pnpm'
+
+alias pi='pnpm i'
+alias pid='pnpm i -D'
+
+alias pci='pnpm i --frozen-lockfile'
+
+alias pr='pnpm run'
+alias prm='pnpm remove'
 
 # Yarn
 alias y='yarn'
@@ -174,6 +185,17 @@ alias yu='yarn upgrade'
 # Vim
 alias vi='nvim'
 alias vim='nvim'
+
+# Docker
+alias dk='docker'
+
+# Kubernetes
+alias mk='minikube'
+alias mkk='minikube kubectl --'
+
+# Common Typo
+alias 칟ㅁㄱ='clear'
+alias c='clear'
 
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
