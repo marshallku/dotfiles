@@ -105,6 +105,7 @@ alias gaa='git add -A'
 
 alias gb='git branch'
 alias gbd='git branch -D'
+alias gbcl="git branch -d $(git branch --merged | grep -v '^\(\*\| \+master$\)')"
 
 alias gc='git commit'
 alias gcm='git commit -m'
