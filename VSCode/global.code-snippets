@@ -31,8 +31,8 @@
 
     // Console
     "consoleLog": {
-        "prefix": "clg",
-        "body": "console.log($1);$0"
+        "prefix": "cl",
+        "body": "console.log(`$1`, $1);$0"
     },
     "consoleDir": {
         "prefix": "cld",
