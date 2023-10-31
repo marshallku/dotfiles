@@ -160,8 +160,6 @@ alias py='python3'
 alias pip='pip3'
 
 # PNPM
-alias p='pnpm'
-
 alias pi='pnpm i'
 alias pid='pnpm i -D'
 
@@ -182,6 +180,21 @@ alias yr='yarn run'
 alias yrv='yarn remove'
 
 alias yu='yarn upgrade'
+
+# Universal package manager
+p() {
+  if [[ -f pnpm-lock.yaml ]]; then
+    command pnpm "$@"
+  elif [[ -f package-lock.json ]]; then
+    command npm "$@"
+  elif [[ -f yarn.lock ]]; then
+    command yarn "$@"
+  elif [[ -f bun.lockb ]]; then
+    command bun "$@"
+  else
+    command pnpm "$@"
+  fi
+}
 
 # Vim
 alias vi='nvim'
