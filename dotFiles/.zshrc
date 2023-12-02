@@ -165,7 +165,27 @@ alias pid='pnpm i -D'
 
 alias pci='pnpm i --frozen-lockfile'
 
-alias pr='pnpm run'
+function pr {
+  local scripts
+  if command -v python &>/dev/null; then
+    scripts=$(python -c "import json; print('\n'.join(json.load(open('package.json'))['scripts'].keys()))")
+  elif command -v python3 &>/dev/null; then
+    scripts=$(python3 -c "import json; print('\n'.join(json.load(open('package.json'))['scripts'].keys()))")
+  else
+    echo "Python is not installed"
+    return 1
+  fi
+
+  script=$(echo "$scripts" | fzf)
+
+  if [[ -z "$script" ]]; then
+    return 1
+  fi
+
+  echo 'Please enter any extra arguments'
+  read -r args
+  eval "pnpm $script $args"
+}
 alias prm='pnpm remove'
 
 # Yarn
@@ -182,7 +202,7 @@ alias yrv='yarn remove'
 alias yu='yarn upgrade'
 
 # Universal package manager
-p() {
+function p {
   if [[ -f pnpm-lock.yaml ]]; then
     command pnpm "$@"
   elif [[ -f package-lock.json ]]; then
