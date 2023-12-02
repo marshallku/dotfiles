@@ -166,17 +166,8 @@ alias pid='pnpm i -D'
 alias pci='pnpm i --frozen-lockfile'
 
 function pr {
-  local scripts
-  if command -v python &>/dev/null; then
-    scripts=$(python -c "import json; print('\n'.join(json.load(open('package.json'))['scripts'].keys()))")
-  elif command -v python3 &>/dev/null; then
-    scripts=$(python3 -c "import json; print('\n'.join(json.load(open('package.json'))['scripts'].keys()))")
-  else
-    echo "Python is not installed"
-    return 1
-  fi
-
-  script=$(echo "$scripts" | fzf)
+  local scripts=$(py -c "import json; print('\n'.join(json.load(open('package.json'))['scripts'].keys()))")
+  local script=$(echo "$scripts" | fzf)
 
   if [[ -z "$script" ]]; then
     return 1
