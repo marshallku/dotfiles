@@ -1,3 +1,35 @@
+dday() {
+	if [ $# -ne 2 ]; then
+		echo "Usage: dday YYYY-MM-DD \"Message to display\""
+		return 1
+	fi
+
+	if ! date -d "$1" >/dev/null 2>&1; then
+		echo "Invalid date format. Use YYYY-MM-DD"
+		return 1
+	fi
+
+	target=$(date -d "$1" +%s)
+	today=$(date +%s)
+	diff_seconds=$((target - today))
+	diff_days=$((diff_seconds / 86400))
+
+	set_format='\033[1;31m'
+	reset_format='\033[0m'
+
+
+	if [ $diff_days -eq 0 ]; then
+		echo "It's D-Day of $2"
+	elif [ $diff_days -gt 0 ]; then
+		echo "${set_format}${diff_days}${reset_format} days before $2"
+	else
+		echo "${set_format}$((diff_days * -1 + 1))${reset_format} days after $2"
+	fi
+}
+
+neofetch
+dday '2024-03-02' 'I met the love of my life'
+
 # Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
 # Initialization code that may require console input (password prompts, [y/n]
 # confirmations, etc.) must go above this block; everything else may go below.
