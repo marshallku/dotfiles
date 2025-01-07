@@ -267,6 +267,12 @@ alias cd='z'
 alias 칟ㅁㄱ='clear'
 alias c='clear'
 
+# Utilities
+# Kill process by port
+function kp {
+	sudo kill -9 $(sudo lsof -t -i:$1)
+}
+
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
 
