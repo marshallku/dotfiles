@@ -32,6 +32,6 @@ bb = "! # Branch tools. Type 'git bb help' ; \n\
       elif [ $1 = 'merged' -o $1 = 'm' ]; then \
         git branch --merged | grep -v '^\\*\\|\\<master$'; \
       else \
-        git bb help; \
+        git checkout $1; \
       fi; \
     }; f"
