@@ -29,6 +29,7 @@ dday() {
 
 neofetch
 dday '2024-03-02' 'I met the love of my life'
+dday '2026-09-12' 'Our marriage'
 
 # Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
 # Initialization code that may require console input (password prompts, [y/n]
@@ -38,13 +39,13 @@ if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]
 fi
 
 # If you come from bash you might have to change your $PATH.
-# export PATH=$HOME/bin:/usr/local/bin:$PATH
+# export PATH=$HOME/bin:$HOME/.local/bin:/usr/local/bin:$PATH
 
-# Path to your oh-my-zsh installation.
+# Path to your Oh My Zsh installation.
 export ZSH="$HOME/.oh-my-zsh"
 
 # Set name of the theme to load --- if set to "random", it will
-# load a random theme each time oh-my-zsh is loaded, in which case,
+# load a random theme each time Oh My Zsh is loaded, in which case,
 # to know which specific one was loaded, run: echo $RANDOM_THEME
 # See https://github.com/ohmyzsh/ohmyzsh/wiki/Themes
 ZSH_THEME="powerlevel10k/powerlevel10k"
@@ -62,14 +63,13 @@ ZSH_THEME="powerlevel10k/powerlevel10k"
 # Case-sensitive completion must be off. _ and - will be interchangeable.
 # HYPHEN_INSENSITIVE="true"
 
-# Uncomment the following line to disable bi-weekly auto-update checks.
-# DISABLE_AUTO_UPDATE="true"
-
-# Uncomment the following line to automatically update without prompting.
-# DISABLE_UPDATE_PROMPT="true"
+# Uncomment one of the following lines to change the auto-update behavior
+# zstyle ':omz:update' mode disabled  # disable automatic updates
+# zstyle ':omz:update' mode auto      # update automatically without asking
+# zstyle ':omz:update' mode reminder  # just remind me to update when it's time
 
 # Uncomment the following line to change how often to auto-update (in days).
-# export UPDATE_ZSH_DAYS=13
+# zstyle ':omz:update' frequency 13
 
 # Uncomment the following line if pasting URLs and other text is messed up.
 # DISABLE_MAGIC_FUNCTIONS="true"
@@ -84,6 +84,9 @@ ZSH_THEME="powerlevel10k/powerlevel10k"
 # ENABLE_CORRECTION="true"
 
 # Uncomment the following line to display red dots whilst waiting for completion.
+# You can also set it to another string to have that shown instead of the default red dots.
+# e.g. COMPLETION_WAITING_DOTS="%F{yellow}waiting...%f"
+# Caution: this setting can cause issues with multiline prompts in zsh < 5.7.1 (see #5765)
 # COMPLETION_WAITING_DOTS="true"
 
 # Uncomment the following line if you want to disable marking untracked files
@@ -107,7 +110,10 @@ ZSH_THEME="powerlevel10k/powerlevel10k"
 # Custom plugins may be added to $ZSH_CUSTOM/plugins/
 # Example format: plugins=(rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
-plugins=(git zsh-autosuggestions)
+plugins=(
+	git
+	zsh-autosuggestions
+)
 
 source $ZSH/oh-my-zsh.sh
 
@@ -117,6 +123,28 @@ source $ZSH/oh-my-zsh.sh
 
 # You may need to manually set your language environment
 # export LANG=en_US.UTF-8
+
+# Preferred editor for local and remote sessions
+# if [[ -n $SSH_CONNECTION ]]; then
+#   export EDITOR='vim'
+# else
+#   export EDITOR='nvim'
+# fi
+
+# Compilation flags
+# export ARCHFLAGS="-arch $(uname -m)"
+
+# Set personal aliases, overriding those provided by Oh My Zsh libs,
+# plugins, and themes. Aliases can be placed here, though Oh My Zsh
+# users are encouraged to define aliases within a top-level file in
+# the $ZSH_CUSTOM folder, with .zsh extension. Examples:
+# - $ZSH_CUSTOM/aliases.zsh
+# - $ZSH_CUSTOM/macos.zsh
+# For a full list of active aliases, run `alias`.
+#
+# Example aliases
+# alias zshconfig="mate ~/.zshrc"
+# alias ohmyzsh="mate ~/.oh-my-zsh"
 
 # Preferred editor for local and remote sessions
 if [[ -n $SSH_CONNECTION ]]; then
@@ -137,7 +165,7 @@ alias gaa='git add -A'
 
 alias gb='git branch'
 alias gbd='git branch -D'
-alias gbcl="git branch -d $(git branch --merged | grep -v '^\(\*\| \+master$\)')"
+#alias gbcl="git branch -d $(git branch --merged | grep -v '^\(\*\| \+master$\)')"
 
 alias gc='git commit'
 alias gcm='git commit -m'
@@ -174,14 +202,13 @@ alias gst='git stash'
 alias gstp='git stash pop'
 
 function gchd {
-	local target_branch="${1-$(git_main_branch)}"
-	local current_branch="$(git rev-parse --abbrev-ref HEAD)"
+        local target_branch="${1-$(git_main_branch)}"
+        local current_branch="$(git rev-parse --abbrev-ref HEAD)"
 
-	git checkout $target_branch
-	git branch -D $current_branch
-	git pull origin $target_branch
+        git checkout $target_branch
+        git branch -D $current_branch
+        git pull origin $target_branch
 }
-
 
 # NPM
 alias n='npm'
@@ -267,10 +294,40 @@ alias cd='z'
 alias 칟ㅁㄱ='clear'
 alias c='clear'
 
-# Utilities
-# Kill process by port
+function ppid {
+	sudo lsof -t -i :$1
+}
+
 function kp {
-	sudo kill -9 $(sudo lsof -t -i:$1)
+    # Kill process by port
+    if [ -z "$1" ]; then
+        echo "Usage: kp <port>"
+        return 1
+    fi
+
+    # Try with SIGTERM
+    local pid=$(ppid $1)
+    local timeout=${2:-30}
+    if [ -z "$pid" ]; then
+        echo "Process is not running."
+        return 1
+    fi
+
+    kill $pid
+
+    local count=0
+    while ps -p $pid >/dev/null && [ $count -lt $timeout ]; do
+        sleep 1
+        count=$((count + 1))
+        echo "Waiting for process to be killed... $count/$timeout"
+    done
+
+    if ps -p $pid >/dev/null; then
+        echo "Process is still running. Trying SIGKILL."
+        kill -9 $pid
+    else
+        echo "Process killed."
+    fi
 }
 
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
@@ -280,3 +337,14 @@ export PATH="$HOME/.local/bin:$PATH"
 
 eval "$(zoxide init zsh)"
 eval "$(mise activate zsh)"
+
+# bun completions
+[ -s "/home/marshall/.bun/_bun" ] && source "/home/marshall/.bun/_bun"
+
+# bun
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
+. "/home/marshall/.deno/env"
+
+# go
+export PATH=$PATH:/usr/local/go/bin

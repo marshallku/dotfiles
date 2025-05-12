@@ -1,18 +1,56 @@
 [user]
 name = Marshall Ku
 email = marshall@kakao.com
+
 [credential]
 helper = store
+
 [init]
 defaultBranch = master
+
 [core]
 editor = nvim
+
 [pull]
 rebase = true
+
+[rebase]
+autoSquash = true
+autoStash = true
+updateRefs = true
+
+[branch]
+sort = -committerdate
+
+[tag]
+sort = version:refname
+
+[diff]
+algorithm = histogram
+colorMoved = plain
+mnemonicPrefix = true
+renames = true
+
+[fetch]
+prune = true
+pruneTags = true
+all = true
+
+[help]
+autocorrect = prompt
+
+[commit]
+verbose = true
+
+[rerere]
+enabled = true
+autoupdate = true
+
 [alias]
 alias = "!git config --list | egrep '^alias.+' | sed -e 's/^alias\\.//' | sed -e 's/^[^=]*=/\\'$'\\033[31m&\\033[(B\\033[m/'"
 s = status -s
 a = "!git add $(git status -s | fzf -m | awk '{print $2}')"
+out = "log @{u}.."
 bb = "! # Branch tools. Type 'git bb help' ; \n\
     checkout_with_log() { \n\
       current_branch=$(git branch --show-current); \
