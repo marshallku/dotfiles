@@ -1,0 +1,67 @@
+{
+  // Bar placement + DPI scale
+  "layer": "top",
+  "position": "top",
+  "height": 30,
+  "margin-top": 0,
+  "margin-left": 0,
+  "margin-right": 0,
+  "spacing": 6,
+
+  // One bar across your primary output (set to your real output if needed)
+  // "output": ["DP-1"],
+
+  "modules-left": [
+    "hyprland/workspaces"
+  ],
+  "modules-center": [
+    "clock"
+  ],
+  "modules-right": [
+    "cpu",
+    "memory",
+    "temperature"
+  ],
+
+  "hyprland/workspaces": {
+    "format": "{icon}",
+    "format-icons": {
+      "default": "",   // nf-fa-circle-thin
+      "active": "",    // nf-fa-circle
+      "urgent": ""     // nf-fa-exclamation-circle
+    },
+    "on-click": "hyprctl dispatch workspace {id}",
+    "all-outputs": true,
+    "disable-scroll": false
+  },
+
+  "clock": {
+    "interval": 1,
+    "format": "{:%m/%d  %H:%M}",
+    "tooltip": true,
+    "tooltip-format": "{:%Y-%m-%d %A}\nWeek %V",
+    // Opens a lightweight calendar (gsimplecal). Install: sudo pacman -S gsimplecal
+    "on-click": "gsimplecal"
+  },
+
+  "cpu": {
+    "format": " {usage:>2}%",
+    "tooltip": true,
+    "interval": 2
+  },
+
+  "memory": {
+    "format": " {used:0.1f}G",
+    "tooltip-format": "{used:0.1f}G / {total:0.1f}G",
+    "interval": 3
+  },
+
+  "temperature": {
+    "critical-threshold": 85,
+    "format": " {temperatureC}°C",
+    "hwmon-path": "/sys/class/thermal", // leave generic; Waybar will pick first. See note below.
+    "interval": 3
+  }
+  
+}
+
