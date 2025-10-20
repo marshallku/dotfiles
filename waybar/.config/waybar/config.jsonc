@@ -45,23 +45,22 @@
   },
 
   "cpu": {
+    "interval": 1,
     "format": " {usage:>2}%",
-    "tooltip": true,
-    "interval": 2
+    "format-alt": "{usage_graph}",
+    "tooltip": true
   },
-
   "memory": {
-    "format": " {used:0.1f}G",
+    "format": " {used:0.1f}G / {total:0.1f}G",
     "tooltip-format": "{used:0.1f}G / {total:0.1f}G",
-    "interval": 3
+    "interval": 3,
+    "tooltip": true
   },
-
   "temperature": {
     "critical-threshold": 85,
     "format": " {temperatureC}°C",
     "hwmon-path": "/sys/class/thermal", // leave generic; Waybar will pick first. See note below.
     "interval": 3
   }
-  
 }
 
