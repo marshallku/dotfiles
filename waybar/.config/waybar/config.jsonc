@@ -4,8 +4,8 @@
   "position": "top",
   "height": 30,
   "margin-top": 0,
-  "margin-left": 0,
-  "margin-right": 0,
+  "margin-left": 8,
+  "margin-right": 8,
   "spacing": 6,
 
   // One bar across your primary output (set to your real output if needed)
@@ -20,7 +20,8 @@
   "modules-right": [
     "cpu",
     "memory",
-    "temperature"
+    "temperature",
+    "custom/adguardvpn"
   ],
 
   "hyprland/workspaces": {
@@ -61,6 +62,16 @@
     "format": " {temperatureC}°C",
     "hwmon-path": "/sys/class/thermal", // leave generic; Waybar will pick first. See note below.
     "interval": 3
+  },
+  "custom/adguardvpn": {
+    "exec": "~/.config/waybar/scripts/adguardvpn_status.sh",
+    "return-type": "json",
+    "interval": 5,
+    "format": "{}",
+    "on-click": "~/.config/waybar/scripts/adguardvpn_toggle.sh",
+    "on-click-right": "notify-send 'AdGuard VPN' 'Refreshing status…'; ~/.config/waybar/scripts/adguardvpn_status.sh --once && pkill -SIGRTMIN+10 waybar",
+    "signal": 10,
+    "tooltip": true
   }
 }
 
