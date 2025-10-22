@@ -26,7 +26,7 @@ window#waybar {
   margin-right: 4px;
 }
 
-#clock, #cpu, #memory, #temperature, #custom-adguardvpn {
+#clock, #cpu, #memory, #temperature, #custom-adguardvpn, #battery, #network {
   margin: 6px 0;
   background: rgba(12, 12, 12, 0.5);
   padding: 0px 12px;
@@ -34,7 +34,7 @@ window#waybar {
   transition: background 0.2s ease;
 }
 
-#clock:hover, #cpu:hover, #memory:hover, #temperature:hover {
+#clock:hover, #cpu:hover, #memory:hover, #temperature:hover, #battery:hover, #network:hover {
   background: rgba(0, 0, 0, 0.5);
 }
 

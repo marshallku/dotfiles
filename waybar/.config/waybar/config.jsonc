@@ -21,7 +21,9 @@
     "cpu",
     "memory",
     "temperature",
-    "custom/adguardvpn"
+    "network",
+    "custom/adguardvpn",
+    "battery"
   ],
 
   "hyprland/workspaces": {
@@ -72,6 +74,28 @@
     "on-click-right": "notify-send 'AdGuard VPN' 'Refreshing status…'; ~/.config/waybar/scripts/adguardvpn_status.sh --once && pkill -SIGRTMIN+10 waybar",
     "signal": 10,
     "tooltip": true
+  },
+  "battery": {
+    "interval": 30,
+    "states": {
+      "warning": 30,
+      "critical": 15
+    },
+    "format": "🔋 {capacity}%",
+    "format-charging": "⚡ {capacity}%",
+    "format-full": "✅ {capacity}%",
+    "tooltip": true,
+    "tooltip-format": "{capacity}% – {time}"
+  },
+
+  "network": {
+    "interface": "wlan0",         // <-- change to your wireless or ethernet interface
+    "format-wifi": "🌐 {essid} ({signalStrength}%)",
+    "format-ethernet": "🔗 {ifname} {ipaddr}/{cidr}",
+    "format-disconnected": "❌ Disconnected",
+    "tooltip": true,
+    "tooltip-format-wifi": "{essid}\nSignal: {signalStrength}%\nIP: {ipaddr}",
+    "tooltip-format-ethernet": "{ifname}\nIP: {ipaddr}/{cidr}"
   }
 }
 
