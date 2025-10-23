@@ -335,7 +335,7 @@ function kp {
 export PATH="$HOME/.local/bin:$PATH"
 
 #eval "$(zoxide init zsh)"
-#eval "$(mise activate zsh)"
+eval "$(mise activate zsh)"
 
 # bun completions
 [ -s "/home/marshall/.bun/_bun" ] && source "/home/marshall/.bun/_bun"
