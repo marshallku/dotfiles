@@ -11,49 +11,137 @@ window#waybar {
   color: #e6e6e6;
 }
 
-#workspaces button {
+/* ============================================
+   WORKSPACES - Minimal pill style
+   ============================================ */
+#workspaces {
+  background: rgba(12, 12, 12, 0.5);
   border-radius: 16px;
-  margin: 4px 0;
-  transition: background 0.2s ease, color 0.2s ease;
+  padding: 2px 8px;
+  margin: 6px 0;
 }
+
+#workspaces button {
+  border-radius: 12px;
+  padding: 2px 8px;
+  margin: 0 2px;
+  color: #666;
+  transition: all 0.2s ease;
+}
+
 #workspaces button.active {
   color: #e5c07b;
+  background: rgba(229, 192, 123, 0.15);
 }
+
 #workspaces button.urgent {
   color: #e06c75;
-}
-#workspaces button .icon {
-  margin-right: 4px;
+  background: rgba(224, 108, 117, 0.15);
 }
 
-#clock, #cpu, #memory, #temperature, #custom-adguardvpn, #battery, #network {
+#workspaces button:hover {
+  color: #a6a6a6;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* ============================================
+   MODULE PILLS - Unified design
+   ============================================ */
+#clock, #cpu, #memory, #custom-adguardvpn, #battery, #network {
   margin: 6px 0;
   background: rgba(12, 12, 12, 0.5);
-  padding: 0px 12px;
+  padding: 4px 14px;
   border-radius: 16px;
-  transition: background 0.2s ease;
+  transition: all 0.2s ease;
+  border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-#clock:hover, #cpu:hover, #memory:hover, #temperature:hover, #battery:hover, #network:hover {
-  background: rgba(0, 0, 0, 0.5);
+#clock:hover, #cpu:hover, #memory:hover, #battery:hover, #network:hover {
+  background: rgba(20, 20, 20, 0.7);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
-/* Temperature warning colors */
-#temperature.critical {
-  background: rgba(255, 85, 85, 0.3);
-  color: #ff5555;
+/* ============================================
+   INDIVIDUAL MODULE STYLES
+   ============================================ */
+#clock {
+  color: #98c379;
+  font-weight: 500;
+}
+#network {
+  color: #56b6c2;
 }
 
-/* Adguard VPN */
+#network.disconnected {
+  color: #e06c75;
+}
 
+#battery {
+  color: #e5c07b;
+}
 
-/* Tooltip styling */
+#battery.warning {
+  color: #d19a66;
+}
+
+#battery.critical {
+  color: #e06c75;
+}
+
+#battery.charging {
+  color: #98c379;
+}
+
+/* ============================================
+   CPU, Memory States
+   ============================================ */
+#custom-system {
+  margin: 6px 0;
+  background: rgba(12, 12, 12, 0.5);
+  padding: 4px 14px;
+  border-radius: 16px;
+  transition: all 0.2s ease;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  color: #61afef;  /* Single unified color */
+}
+
+#custom-system:hover {
+  background: rgba(20, 20, 20, 0.7);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* ============================================
+   ADGUARD VPN STATES
+   ============================================ */
+#custom-adguardvpn.connected {
+  color: #98c379;
+  background: rgba(152, 195, 121, 0.1);
+  border-color: rgba(152, 195, 121, 0.2);
+}
+
+#custom-adguardvpn.disconnected {
+  color: #5c6370;
+  opacity: 0.7;
+}
+
+#custom-adguardvpn:hover {
+  background: rgba(20, 20, 20, 0.7);
+  border-color: rgba(255, 255, 255, 0.1);
+  opacity: 1;
+}
+
+/* ============================================
+   TOOLTIP
+   ============================================ */
 tooltip {
-  font-size: 12px;
-  background: rgba(30, 32, 36, 0.95);
+  font-size: 11px;
+  background: rgba(20, 22, 26, 0.95);
   color: #e6e6e6;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  padding: 6px 10px;
+  border-radius: 12px;
+  padding: 8px 12px;
 }
 
+tooltip label {
+  font-family: "JetBrainsMono Nerd Font", monospace;
+}

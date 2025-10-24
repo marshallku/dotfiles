@@ -24,7 +24,7 @@ if [[ "$connected" == "true" ]]; then
   tooltip="Connected to ${city}\nMode: ${mode}\nInterface: ${iface}"
 else
   icon="󰦞"
-  text="${icon} Disconnected"
+  text="${icon}  Disconnected"
   cls="disconnected"
   tooltip="${STATUS_RAW:-Not connected}"
 fi

@@ -1,5 +1,4 @@
 {
-  // Bar placement + DPI scale
   "layer": "top",
   "position": "top",
   "height": 30,
@@ -8,9 +7,6 @@
   "margin-right": 8,
   "spacing": 6,
 
-  // One bar across your primary output (set to your real output if needed)
-  // "output": ["DP-1"],
-
   "modules-left": [
     "hyprland/workspaces"
   ],
@@ -18,9 +14,7 @@
     "clock"
   ],
   "modules-right": [
-    "cpu",
-    "memory",
-    "temperature",
+    "custom/system",
     "network",
     "custom/adguardvpn",
     "battery"
@@ -29,9 +23,9 @@
   "hyprland/workspaces": {
     "format": "{icon}",
     "format-icons": {
-      "default": "",   // nf-fa-circle-thin
-      "active": "",    // nf-fa-circle
-      "urgent": ""     // nf-fa-exclamation-circle
+      "default": "󰧞",   // nf-md-circle_outline
+      "active": "󰮯",    // nf-md-circle_slice_8
+      "urgent": "󰀨"     // nf-md-alert_circle
     },
     "on-click": "hyprctl dispatch workspace {id}",
     "all-outputs": true,
@@ -40,31 +34,29 @@
 
   "clock": {
     "interval": 1,
-    "format": "{:%m/%d  %H:%M}",
+    "format": "󰥔  {:%m/%d  %H:%M}",
     "tooltip": true,
     "tooltip-format": "{:%Y-%m-%d %A}\nWeek %V",
-    // Opens a lightweight calendar (gsimplecal). Install: sudo pacman -S gsimplecal
     "on-click": "gsimplecal"
   },
 
-  "cpu": {
-    "interval": 1,
-    "format": " {usage:>2}%",
-    "format-alt": "{usage_graph}",
-    "tooltip": true
+  "custom/system": {
+    "exec": "~/.config/waybar/scripts/system_graph.sh",
+    "return-type": "json",
+    "interval": 2,
+    "on-click": "kitty -e htop"
   },
-  "memory": {
-    "format": " {used:0.1f}G / {total:0.1f}G",
-    "tooltip-format": "{used:0.1f}G / {total:0.1f}G",
-    "interval": 3,
-    "tooltip": true
+
+  "network": {
+    "interface": "wlan0",
+    "format-wifi": "󰤨  {essid}",
+    "format-ethernet": "󰈀  {ifname}",
+    "format-disconnected": "󰤮  Offline",
+    "tooltip": true,
+    "tooltip-format-wifi": "{essid}\nSignal: {signalStrength}%\nIP: {ipaddr}\nFrequency: {frequency}MHz",
+    "tooltip-format-ethernet": "{ifname}\nIP: {ipaddr}/{cidr}\nSpeed: {bandwidthDownBits} ↓ {bandwidthUpBits} ↑"
   },
-  "temperature": {
-    "critical-threshold": 85,
-    "format": " {temperatureC}°C",
-    "hwmon-path": "/sys/class/thermal", // leave generic; Waybar will pick first. See note below.
-    "interval": 3
-  },
+
   "custom/adguardvpn": {
     "exec": "~/.config/waybar/scripts/adguardvpn_status.sh",
     "return-type": "json",
@@ -75,27 +67,18 @@
     "signal": 10,
     "tooltip": true
   },
+
   "battery": {
     "interval": 30,
     "states": {
       "warning": 30,
       "critical": 15
     },
-    "format": "🔋 {capacity}%",
-    "format-charging": "⚡ {capacity}%",
-    "format-full": "✅ {capacity}%",
+    "format": "{icon}  {capacity}%",
+    "format-charging": "󰂄  {capacity}%",
+    "format-full": "󰁹  {capacity}%",
+    "format-icons": ["󰂎", "󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"],
     "tooltip": true,
-    "tooltip-format": "{capacity}% – {time}"
-  },
-
-  "network": {
-    "interface": "wlan0",         // <-- change to your wireless or ethernet interface
-    "format-wifi": "🌐 {essid} ({signalStrength}%)",
-    "format-ethernet": "🔗 {ifname} {ipaddr}/{cidr}",
-    "format-disconnected": "❌ Disconnected",
-    "tooltip": true,
-    "tooltip-format-wifi": "{essid}\nSignal: {signalStrength}%\nIP: {ipaddr}",
-    "tooltip-format-ethernet": "{ifname}\nIP: {ipaddr}/{cidr}"
+    "tooltip-format": "{capacity}% – {time}\nPower: {power}W"
   }
 }
-
