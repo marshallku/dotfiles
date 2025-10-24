@@ -115,8 +115,6 @@ window#waybar {
    ============================================ */
 #custom-adguardvpn.connected {
   color: #98c379;
-  background: rgba(152, 195, 121, 0.1);
-  border-color: rgba(152, 195, 121, 0.2);
 }
 
 #custom-adguardvpn.disconnected {
