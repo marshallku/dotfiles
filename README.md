@@ -8,3 +8,10 @@ stow hyprland
 sudo stow --target=/ keyd
 ```
 
+## Hyprland
+
+### Sound
+
+```bash
+sudo pacman -S pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber
+```
