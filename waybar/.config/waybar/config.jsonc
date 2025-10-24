@@ -8,13 +8,13 @@
   "spacing": 6,
 
   "modules-left": [
+    "custom/system",
     "hyprland/workspaces"
   ],
   "modules-center": [
     "clock"
   ],
   "modules-right": [
-    "custom/system",
     "network",
     "custom/adguardvpn",
     "battery"
