@@ -1,0 +1,12 @@
+[SddmGreeterTheme]
+Name=Custom Theme
+Description=My custom SDDM theme
+Author=Marshall Ku
+Copyright=(c) 2025
+License=MIT
+Type=sddm-theme
+Version=1.0
+Website=https://marshallku.com
+MainScript=Main.qml
+ConfigFile=theme.conf
+QtVersion=5
