@@ -7,6 +7,15 @@ SERVER_GROUPS=(
 
 TIMEOUT=3
 
+# Check if connected to network
+check_network() {
+  # Check if there's a default route (gateway)
+  if ! ip route | grep -q "default"; then
+    return 1
+  fi
+  return 0
+}
+
 # Check if a server is up
 check_server() {
   local domain=$1
@@ -21,6 +30,12 @@ check_server() {
     return 1
   fi
 }
+
+# Check network connectivity first
+if ! check_network; then
+  echo "{\"text\": \"󰒍  No network\", \"tooltip\": \"Not connected to network\", \"class\": \"unhealthy\"}"
+  exit 0
+fi
 
 total=0
 up=0
