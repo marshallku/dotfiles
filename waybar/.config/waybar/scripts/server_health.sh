@@ -1,7 +1,7 @@
 #!/bin/bash
 
 SERVER_GROUPS=(
-  "HomeLab:marshallku.com",
+  "HomeLab:marshallku.com,gitgarden.marshallku.dev",
   "Cloud:cdn.marshallku.com/files/favicon.ico"
 )
 
