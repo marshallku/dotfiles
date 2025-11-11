@@ -59,11 +59,16 @@ return {
         local capabilities = cmp_nvim_lsp.default_capabilities()
 
         -- Diagnostic signs
-        local signs = {Error = " ", Warn = " ", Hint = "󰠠 ", Info = " "}
-        for type, icon in pairs(signs) do
-            local hl = "DiagnosticSign" .. type
-            vim.fn.sign_define(hl, {text = icon, texthl = hl, numhl = ""})
-        end
+        vim.diagnostic.config({
+            signs = {
+                text = {
+                    [vim.diagnostic.severity.ERROR] = " ",
+                    [vim.diagnostic.severity.WARN] = " ",
+                    [vim.diagnostic.severity.HINT] = "󰠠 ",
+                    [vim.diagnostic.severity.INFO] = " "
+                }
+            }
+        })
 
         -- TypeScript/JavaScript
         vim.lsp.config("ts_ls",
@@ -74,7 +79,11 @@ return {
             capabilities = capabilities,
             on_attach = on_attach,
             settings = {
-                ["rust-analyzer"] = {checkOnSave = {command = "clippy"}}
+                ["rust-analyzer"] = {
+                    check = {
+                        command = "clippy"
+                    }
+                }
             }
         })
 
