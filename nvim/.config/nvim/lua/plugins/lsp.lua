@@ -58,7 +58,7 @@ return {
         -- Enhanced capabilities with nvim-cmp
         local capabilities = cmp_nvim_lsp.default_capabilities()
 
-        -- Diagnostic signs
+        -- Diagnostic configuration
         vim.diagnostic.config({
             signs = {
                 text = {
@@ -67,7 +67,38 @@ return {
                     [vim.diagnostic.severity.HINT] = "󰠠 ",
                     [vim.diagnostic.severity.INFO] = " "
                 }
-            }
+            },
+            virtual_text = {
+                spacing = 4,
+                prefix = "●",
+                severity = {
+                    min = vim.diagnostic.severity.HINT
+                },
+                format = function(diagnostic)
+                    local max_width = math.floor(vim.o.columns * 0.4)
+                    local message = diagnostic.message
+                    if #message > max_width then
+                        return message:sub(1, max_width - 3) .. "..."
+                    end
+                    return message
+                end
+            },
+            float = {
+                border = "rounded",
+                source = "always",
+                header = "",
+                prefix = ""
+            },
+            update_in_insert = false,
+            severity_sort = true
+        })
+
+        -- Auto show diagnostics on cursor hold
+        vim.api.nvim_create_autocmd("CursorHold", {
+            group = vim.api.nvim_create_augroup("float_diagnostic", {clear = true}),
+            callback = function()
+                vim.diagnostic.open_float(nil, {focus = false})
+            end
         })
 
         -- TypeScript/JavaScript
