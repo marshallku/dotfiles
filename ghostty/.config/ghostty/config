@@ -48,4 +48,7 @@
 # # Just for example:
 # resize-overlay-duration = 4s 200ms
 
+background-image-fit = cover
 background-opacity = 0.8
+background-image-position = center
+
