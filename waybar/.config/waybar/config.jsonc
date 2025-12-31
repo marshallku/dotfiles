@@ -1,141 +1,122 @@
 {
-  "layer": "top",
-  "position": "top",
-  "height": 30,
-  "margin-top": 0,
-  "margin-left": 8,
-  "margin-right": 8,
-  "spacing": 4,
-  "modules-left": [
-    "custom/server-health",
-    "hyprland/workspaces",
-    "custom/adguardvpn"
-  ],
-  "modules-center": [
-    "custom/uptime",
-    "clock"
-  ],
-  "modules-right": [
-    "pulseaudio",
-    "custom/cpu",
-    "custom/memory",
-    "custom/disk-usage",
-    "network",
-    "battery"
-  ],
-  "hyprland/workspaces": {
-    "format": "{id} {icon}",
-    "format-icons": {
-      "default": "󰧞", // nf-md-circle_outline
-      "active": "󰮯", // nf-md-circle_slice_8
-      "urgent": "󰀨" // nf-md-alert_circle
-    },
-    "on-click": "hyprctl dispatch workspace {id}",
-    "all-outputs": true,
-    "disable-scroll": false
-  },
-  "clock": {
-    "interval": 1,
-    "format": "󰥔  {:%m/%d  %H:%M}",
-    "tooltip": true,
-    "tooltip-format": "{:%Y-%m-%d %A}",
-    "on-click": "gsimplecal"
-  },
-  "custom/cpu": {
-    "exec": "~/.config/waybar/scripts/cpu_stats.sh",
-    "return-type": "json",
-    "interval": 2,
-    "on-click": "kitty -e htop"
-  },
-  "custom/memory": {
-    "exec": "~/.config/waybar/scripts/memory_stats.sh",
-    "return-type": "json",
-    "interval": 2,
-    "on-click": "kitty -e htop"
-  },
-  "custom/disk-usage": {
-    "exec": "~/.config/waybar/scripts/disk_usage.sh",
-    "return-type": "json",
-    "interval": 30,
-    "tooltip": true
-  },
-  "custom/server-health": {
-    "exec": "~/.config/waybar/scripts/server_health.sh",
-    "return-type": "json",
-    "interval": 30,
-    "tooltip": true
-  },
-  "pulseaudio": {
-    "format": "{icon}  {volume}%",
-    "format-muted": "󰝟  Muted",
-    "format-source": "{volume}% 󰍬",
-    "format-source-muted": "󰍭",
-    "format-icons": {
-      "headphone": "󰋋",
-      "hands-free": "󰋋",
-      "headset": "󰋎",
-      "phone": "󰄜",
-      "portable": "󰦧",
-      "car": "󰄋",
-      "default": [
-        "󰕿",
-        "󰖀",
-        "󰕾"
-      ]
-    },
-    "on-click": "pactl set-sink-mute @DEFAULT_SINK@ toggle",
-    "on-click-right": "pactl set-source-mute @DEFAULT_SOURCE@ toggle",
-    "on-click-middle": "pavucontrol",
-    "scroll-step": 5,
-    "tooltip": true
-  },
-  "custom/uptime": {
-    "exec": "~/.config/waybar/scripts/system_uptime.sh",
-    "return-type": "json",
-    "interval": 30,
-    "tooltip": true
-  },
-  "network": {
-    "format-wifi": "󰤨  {essid}",
-    "format-ethernet": "󰛳  {ifname}",
-    "format-disconnected": "󰤮  Offline",
-    "tooltip": true,
-    "tooltip-format-wifi": "{essid}\nSignal: {signalStrength}%\nIP: {ipaddr}\nFrequency: {frequency}MHz",
-    "tooltip-format-ethernet": "{ifname}\nIP: {ipaddr}/{cidr}\nSpeed: {bandwidthDownBits} ↓ {bandwidthUpBits} ↑"
-  },
-  "custom/adguardvpn": {
-    "exec": "~/.config/waybar/scripts/adguardvpn_status.sh",
-    "return-type": "json",
-    "interval": 5,
-    "format": "{}",
-    "on-click": "~/.config/waybar/scripts/adguardvpn_toggle.sh",
-    "on-click-right": "notify-send 'AdGuard VPN' 'Refreshing status…'; ~/.config/waybar/scripts/adguardvpn_status.sh --once && pkill -SIGRTMIN+10 waybar",
-    "signal": 10,
-    "tooltip": true
-  },
-  "battery": {
-    "interval": 30,
-    "states": {
-      "warning": 30,
-      "critical": 15
-    },
-    "format": "{icon}  {capacity}%",
-    "format-charging": "󰂄  {capacity}%",
-    "format-full": "󰁹  {capacity}%",
-    "format-icons": [
-      "󰂎",
-      "󰁺",
-      "󰁻",
-      "󰁼",
-      "󰁽",
-      "󰁾",
-      "󰁿",
-      "󰂀",
-      "󰂁",
-      "󰂂",
-      "󰁹"
+    "layer": "top",
+    "position": "top",
+    "height": 30,
+    "margin-top": 0,
+    "margin-left": 8,
+    "margin-right": 8,
+    "spacing": 4,
+    "modules-left": [
+        "custom/server-health",
+        "hyprland/workspaces",
+        "custom/adguardvpn"
     ],
-    "tooltip": true,
-    "tooltip-format": "{capacity}% – {time}\nPower: {power}W"
-  }
+    "modules-center": ["custom/uptime", "clock"],
+    "modules-right": [
+        "pulseaudio",
+        "custom/cpu",
+        "custom/memory",
+        "custom/disk-usage",
+        "network",
+        "battery"
+    ],
+    "hyprland/workspaces": {
+        "format": "{id} {icon}",
+        "format-icons": {
+            "default": "󰧞", // nf-md-circle_outline
+            "active": "󰮯", // nf-md-circle_slice_8
+            "urgent": "󰀨" // nf-md-alert_circle
+        },
+        "on-click": "hyprctl dispatch workspace {id}",
+        "all-outputs": true,
+        "disable-scroll": false
+    },
+    "clock": {
+        "interval": 1,
+        "format": "󰥔  {:%m/%d  %H:%M}",
+        "tooltip": true,
+        "tooltip-format": "{:%Y-%m-%d %A}",
+        "on-click": "gsimplecal"
+    },
+    "custom/cpu": {
+        "exec": "~/.config/waybar/scripts/cpu_stats.sh",
+        "return-type": "json",
+        "interval": 2,
+        "on-click": "kitty -e htop"
+    },
+    "custom/memory": {
+        "exec": "~/.config/waybar/scripts/memory_stats.sh",
+        "return-type": "json",
+        "interval": 2,
+        "on-click": "kitty -e htop"
+    },
+    "custom/disk-usage": {
+        "exec": "~/.config/waybar/scripts/disk_usage.sh",
+        "return-type": "json",
+        "interval": 30,
+        "tooltip": true
+    },
+    "custom/server-health": {
+        "exec": "~/.config/waybar/scripts/server_health.sh",
+        "return-type": "json",
+        "interval": 30,
+        "tooltip": true
+    },
+    "pulseaudio": {
+        "format": "{icon}  {volume}%",
+        "format-muted": "󰝟  Muted",
+        "format-source": "{volume}% 󰍬",
+        "format-source-muted": "󰍭",
+        "format-icons": {
+            "headphone": "󰋋",
+            "hands-free": "󰋋",
+            "headset": "󰋎",
+            "phone": "󰄜",
+            "portable": "󰦧",
+            "car": "󰄋",
+            "default": ["󰕿", "󰖀", "󰕾"]
+        },
+        "on-click": "pactl set-sink-mute @DEFAULT_SINK@ toggle",
+        "on-click-right": "pactl set-source-mute @DEFAULT_SOURCE@ toggle",
+        "on-click-middle": "pavucontrol",
+        "scroll-step": 5,
+        "tooltip": true
+    },
+    "custom/uptime": {
+        "exec": "~/.config/waybar/scripts/system_uptime.sh",
+        "return-type": "json",
+        "interval": 30,
+        "tooltip": true
+    },
+    "network": {
+        "format-wifi": "󰤨  {essid}",
+        "format-ethernet": "󰛳  {ifname}",
+        "format-disconnected": "󰤮  Offline",
+        "tooltip": true,
+        "tooltip-format-wifi": "{essid}\nSignal: {signalStrength}%\nIP: {ipaddr}\nFrequency: {frequency}MHz",
+        "tooltip-format-ethernet": "{ifname}\nIP: {ipaddr}/{cidr}\nSpeed: {bandwidthDownBits} ↓ {bandwidthUpBits} ↑"
+    },
+    "custom/adguardvpn": {
+        "exec": "~/.config/waybar/scripts/adguardvpn_status.sh",
+        "return-type": "json",
+        "interval": 5,
+        "format": "{}",
+        "on-click": "~/.config/waybar/scripts/adguardvpn_toggle.sh",
+        "on-click-right": "notify-send 'AdGuard VPN' 'Refreshing status…'; ~/.config/waybar/scripts/adguardvpn_status.sh --once && pkill -SIGRTMIN+10 waybar",
+        "signal": 10,
+        "tooltip": true
+    },
+    "battery": {
+        "interval": 30,
+        "states": {
+            "warning": 30,
+            "critical": 15
+        },
+        "format": "{icon}  {capacity}%",
+        "format-charging": "󰂄  {capacity}%",
+        "format-full": "󰁹  {capacity}%",
+        "format-icons": ["󰂎", "󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"],
+        "tooltip": true,
+        "tooltip-format": "{capacity}% – {time}\nPower: {power}W"
+    }
 }
