@@ -348,4 +348,4 @@ export PATH="$BUN_INSTALL/bin:$PATH"
 # go
 export PATH=$PATH:/usr/local/go/bin
 
-[[ "$TERM" == "xterm-ghostty" ]] && ~/ghostty-random-bg.sh 2>/dev/null
+[[ "$TERM" == "xterm-ghostty" ]] && (~/ghostty-random-bg.sh &>/dev/null &)
