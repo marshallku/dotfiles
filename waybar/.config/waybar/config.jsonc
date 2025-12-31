@@ -77,7 +77,7 @@
             "default": ["󰕿", "󰖀", "󰕾"]
         },
         "on-click": "pactl set-sink-mute @DEFAULT_SINK@ toggle",
-        "on-click-right": "pactl set-source-mute @DEFAULT_SOURCE@ toggle",
+        "on-click-right": "~/.config/waybar/scripts/audio_sink_toggle.sh",
         "on-click-middle": "pavucontrol",
         "scroll-step": 5,
         "tooltip": true
