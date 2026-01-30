@@ -23,24 +23,39 @@ is_valid_image() {
 }
 
 rebuild_cache() {
-    echo "캐시 재생성 중... (시간이 오래 걸릴 수 있습니다)"
     mkdir -p "$(dirname "$CACHE_FILE")"
 
-    local count=0
-    > "$CACHE_FILE"
+    declare -A cached=()
+    local removed=0 added=0
 
-    find "$WALLPAPER_DIR" -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) -print0 | \
+    # 기존 캐시에서 삭제된 파일 제거
+    if [[ -f "$CACHE_FILE" ]] && [[ -s "$CACHE_FILE" ]]; then
+        while IFS= read -r path; do
+            if [[ -f "$path" ]]; then
+                cached["$path"]=1
+            else
+                ((removed++))
+            fi
+        done < "$CACHE_FILE"
+    fi
+
+    # 새 이미지만 검증
     while IFS= read -r -d '' img; do
-        if is_valid_image "$img"; then
-            echo "$img" >> "$CACHE_FILE"
-            ((count++))
-            printf "\r유효한 이미지: %d개" "$count"
+        if [[ -z "${cached[$img]+x}" ]] && is_valid_image "$img"; then
+            cached["$img"]=1
+            ((added++))
+            printf "\r새 이미지: %d개" "$added"
         fi
-    done
+    done < <(find "$WALLPAPER_DIR" -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) -print0)
 
-    echo ""
-    echo "캐시 저장 완료: $CACHE_FILE"
-    wc -l < "$CACHE_FILE" | xargs printf "총 %d개 이미지\n"
+    [[ $added -gt 0 ]] && echo ""
+
+    # 캐시 파일 갱신
+    printf "%s\n" "${!cached[@]}" > "$CACHE_FILE"
+
+    local total
+    total=$(wc -l < "$CACHE_FILE")
+    echo "제거: ${removed}개 / 추가: ${added}개 / 총: ${total}개"
 }
 
 select_random_image() {
