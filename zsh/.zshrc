@@ -348,4 +348,11 @@ export PATH="$BUN_INSTALL/bin:$PATH"
 # go
 export PATH=$PATH:/usr/local/go/bin
 
+# chromium
+export CHROME_EXECUTABLE=/usr/bin/chromium
+
+export PATH="$HOME/docs/scripts:$PATH"
+
 [[ "$TERM" == "xterm-ghostty" ]] && (~/ghostty-random-bg.sh &>/dev/null &)
+[[ "$TERM" == "xterm-kitty" ]] && (~/kitty-random-bg.sh &>/dev/null &)
+

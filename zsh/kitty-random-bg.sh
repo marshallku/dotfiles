@@ -5,7 +5,6 @@ MIN_WIDTH=1500
 MIN_RATIO_NUM=2
 MIN_RATIO_DEN=2
 CACHE_FILE="$HOME/.cache/terminal-wallpapers.txt"
-GHOSTTY_LOCAL="$HOME/.config/ghostty/local.conf"
 
 is_valid_image() {
     local img="$1"
@@ -67,38 +66,25 @@ select_random_image() {
     shuf -n 1 "$CACHE_FILE"
 }
 
-update_local_config() {
+apply_background() {
     local image_path="$1"
-
-    mkdir -p "$(dirname "$GHOSTTY_LOCAL")"
-
-    if [[ ! -f "$GHOSTTY_LOCAL" ]]; then
-        echo "background-image = $image_path" > "$GHOSTTY_LOCAL"
-        return
-    fi
-
-    if grep -q "^background-image = " "$GHOSTTY_LOCAL"; then
-        sed -i "s|^background-image = .*|background-image = $image_path|" "$GHOSTTY_LOCAL"
-    else
-        echo "background-image = $image_path" >> "$GHOSTTY_LOCAL"
-    fi
-}
-
-reload_ghostty() {
-    pkill -SIGUSR2 -x ghostty 2>/dev/null
+    kitty @ --to "$KITTY_LISTEN_ON" set-background-image "$image_path" 2>/dev/null
 }
 
 usage() {
     echo "사용법: $0 [옵션]"
     echo ""
     echo "옵션:"
-    echo "  -w, --wallpaper-path <경로>  배경화면 디렉토리 경로 (필수)"
+    echo "  -w, --wallpaper-path <경로>  배경화면 디렉토리 경로 (필수: --rebuild 시)"
     echo "  --rebuild                    유효한 이미지 캐시 재생성"
     echo "  --dry-run                    설정 변경 없이 선택만"
     echo "  -h, --help                   이 도움말"
     echo ""
-    echo "메인 config에 다음 줄을 추가하세요:"
-    echo "  config-file = ?~/.config/ghostty/local.conf"
+    echo "kitty.conf에 다음 설정이 필요합니다:"
+    echo "  allow_remote_control yes"
+    echo ""
+    echo "세션별 배경화면을 위해 .zshrc에 추가:"
+    echo "  [[ \"\$TERM\" == \"xterm-kitty\" ]] && kitty-random-bg.sh"
 }
 
 main() {
@@ -134,7 +120,7 @@ main() {
     if $do_rebuild; then
         if [[ -z "$WALLPAPER_DIR" ]]; then
             echo "Error: --wallpaper-path 옵션이 필요합니다." >&2
-                usage
+            usage
             exit 1
         fi
 
@@ -156,8 +142,7 @@ main() {
 
     $dry_run && exit 0
 
-    update_local_config "$selected_image"
-    reload_ghostty
+    apply_background "$selected_image"
 }
 
 main "$@"
