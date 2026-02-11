@@ -1,61 +1,12 @@
 #!/bin/bash
 
 WALLPAPER_DIR=""
-MIN_WIDTH=1500
-MIN_RATIO_NUM=2
-MIN_RATIO_DEN=2
 CACHE_FILE="$HOME/.cache/terminal-wallpapers.txt"
 GHOSTTY_LOCAL="$HOME/.config/ghostty/local.conf"
-
-is_valid_image() {
-    local img="$1"
-    local dimensions width height
-
-    dimensions=$(identify -format "%w %h" "$img" 2>/dev/null | head -1)
-    [[ -z "$dimensions" ]] && return 1
-
-    read -r width height <<< "$dimensions"
-
-    (( width < MIN_WIDTH )) && return 1
-    (( width * MIN_RATIO_DEN < height * MIN_RATIO_NUM )) && return 1
-
-    return 0
-}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 rebuild_cache() {
-    mkdir -p "$(dirname "$CACHE_FILE")"
-
-    declare -A cached=()
-    local removed=0 added=0
-
-    # 기존 캐시에서 삭제된 파일 제거
-    if [[ -f "$CACHE_FILE" ]] && [[ -s "$CACHE_FILE" ]]; then
-        while IFS= read -r path; do
-            if [[ -f "$path" ]]; then
-                cached["$path"]=1
-            else
-                ((removed++))
-            fi
-        done < "$CACHE_FILE"
-    fi
-
-    # 새 이미지만 검증
-    while IFS= read -r -d '' img; do
-        if [[ -z "${cached[$img]+x}" ]] && is_valid_image "$img"; then
-            cached["$img"]=1
-            ((added++))
-            printf "\r새 이미지: %d개" "$added"
-        fi
-    done < <(find "$WALLPAPER_DIR" -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) -print0)
-
-    [[ $added -gt 0 ]] && echo ""
-
-    # 캐시 파일 갱신
-    printf "%s\n" "${!cached[@]}" > "$CACHE_FILE"
-
-    local total
-    total=$(wc -l < "$CACHE_FILE")
-    echo "제거: ${removed}개 / 추가: ${added}개 / 총: ${total}개"
+    go run "$SCRIPT_DIR/ghostty-random-bg/" "$WALLPAPER_DIR"
 }
 
 select_random_image() {
@@ -134,7 +85,7 @@ main() {
     if $do_rebuild; then
         if [[ -z "$WALLPAPER_DIR" ]]; then
             echo "Error: --wallpaper-path 옵션이 필요합니다." >&2
-                usage
+            usage
             exit 1
         fi
 
