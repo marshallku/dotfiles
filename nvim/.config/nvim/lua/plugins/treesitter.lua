@@ -8,9 +8,9 @@ return {
             -- Languages to install
             ensure_installed = {
                 "typescript", "tsx", "javascript", "rust", "go", "python",
-                "php", "lua", "vim", "vimdoc", "html", "css", "json", "yaml",
-                "toml", "markdown", "markdown_inline", "bash", "dockerfile",
-                "gitignore"
+                "php", "lua", "vim", "vimdoc", "html", "css", "scss", "json",
+                "jsonc", "yaml", "toml", "markdown", "markdown_inline", "bash",
+                "dockerfile", "gitignore", "graphql"
             },
 
             -- Auto-install missing parsers

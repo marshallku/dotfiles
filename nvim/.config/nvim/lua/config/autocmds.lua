@@ -36,3 +36,15 @@ autocmd("BufEnter", {
     group = augroup("no_auto_comment", {clear = true}),
     callback = function() vim.opt.formatoptions:remove({"c", "r", "o"}) end
 })
+
+-- Python format on type (matching Cursor's editor.formatOnType for Python)
+autocmd("InsertLeave", {
+    group = augroup("python_format_on_type", {clear = true}),
+    pattern = "*.py",
+    callback = function()
+        local conform = require("conform")
+        if conform then
+            conform.format({async = false, lsp_fallback = true, timeout_ms = 500})
+        end
+    end
+})
