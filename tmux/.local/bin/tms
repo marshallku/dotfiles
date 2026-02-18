@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# session list 가져오기
+get_sessions() {
+  tmux list-sessions -F "#{session_name}" 2>/dev/null || true
+}
+
+# fzf로 선택
+select_session() {
+  get_sessions | fzf \
+    --prompt="tmux sessions > " \
+    --height=40% \
+    --border
+}
+
+# session 존재 확인
+session_exists() {
+  tmux has-session -t="$1" 2>/dev/null
+}
+
+# session attach or switch
+attach_or_switch() {
+  local session="$1"
+
+  if [[ -z "${TMUX:-}" ]]; then
+    tmux attach-session -t "$session"
+  else
+    tmux switch-client -t "$session"
+  fi
+}
+
+# session create
+create_session() {
+  local session="$1"
+  tmux new-session -ds "$session"
+}
+
+main() {
+
+  local selected="${1:-}"
+
+  if [[ -z "$selected" ]]; then
+    selected="$(select_session)"
+  fi
+
+  [[ -z "$selected" ]] && exit 0
+
+  if session_exists "$selected"; then
+    attach_or_switch "$selected"
+  else
+    create_session "$selected"
+    attach_or_switch "$selected"
+  fi
+}
+
+main "$@"
+
