@@ -1,3 +1,7 @@
+if command -v gdate &>/dev/null; then
+  date() { gdate "$@"; }
+fi
+
 dday() {
 	if [ $# -ne 2 ]; then
 		echo "Usage: dday YYYY-MM-DD \"Message to display\""
@@ -28,7 +32,7 @@ dday() {
 }
 
 dday '2024-03-02' 'I met the love of my life'
-dday '2026-09-12' 'Our marriage'
+dday '2026-08-22' 'Our marriage'
 
 # Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
 # Initialization code that may require console input (password prompts, [y/n]
@@ -353,6 +357,6 @@ export CHROME_EXECUTABLE=/usr/bin/chromium
 
 export PATH="$HOME/docs/scripts:$PATH"
 
-[[ "$TERM" == "xterm-ghostty" ]] && (~/ghostty-random-bg.sh &>/dev/null &)
+#[[ "$TERM" == "xterm-ghostty" ]] && (~/ghostty-random-bg.sh &>/dev/null &)
 [[ "$TERM" == "xterm-kitty" ]] && (~/kitty-random-bg.sh &>/dev/null &)
 
