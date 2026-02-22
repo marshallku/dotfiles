@@ -13,6 +13,10 @@ if [ $days -eq 0 ]; then
     fi
 elif [ $days -lt 7 ]; then
     uptime_text="${days}d ${hours}h"
+else
+    weeks=$((days / 7))
+    days=$((days % 7))
+    uptime_text="${weeks}w ${days}d"
 fi
 
 echo "{\"text\": \"󰅐  $uptime_text\", \"tooltip\": \"System uptime: $(uptime -p | sed 's/up //')\"}"
