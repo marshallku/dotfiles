@@ -5,7 +5,7 @@
 
 window {
     margin: 0px;
-    border: 2px solid #89b4fa;
+    border: 2px solid #cba6f7;
     background-color: #1e1e2e;
     border-radius: 12px;
 }
@@ -48,6 +48,6 @@ window {
 }
 
 #entry:selected #text {
-    color: #89b4fa;
+    color: #cba6f7;
     font-weight: bold;
 }

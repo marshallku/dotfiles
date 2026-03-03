@@ -68,7 +68,7 @@ Rectangle {
 
             Rectangle {
                 anchors.fill: parent
-                color: "#cc2e3440"
+                color: "#cc1e1e2e"
                 radius: 10
             }
 
@@ -85,7 +85,7 @@ Rectangle {
                     Text {
                         id: timeLabel
                         anchors.horizontalCenter: parent.horizontalCenter
-                        color: "#eceff4"
+                        color: "#cdd6f4"
                         font.pixelSize: 48
                         font.bold: true
 
@@ -97,7 +97,7 @@ Rectangle {
                     Text {
                         id: dateLabel
                         anchors.horizontalCenter: parent.horizontalCenter
-                        color: "#d8dee9"
+                        color: "#bac2de"
                         font.pixelSize: 16
 
                         function updateDate() {
@@ -145,7 +145,7 @@ Rectangle {
                                 height: 65
                                 radius: 32.5
                                 color: "transparent"
-                                border.color: usersList.currentIndex === index ? "#88c0d0" : "#5e81ac"
+                                border.color: usersList.currentIndex === index ? "#cba6f7" : "#89b4fa"
                                 border.width: 3
 
                                 Image {
@@ -187,7 +187,7 @@ Rectangle {
                                 anchors.topMargin: 5
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 text: name
-                                color: usersList.currentIndex === index ? "#88c0d0" : "#d8dee9"
+                                color: usersList.currentIndex === index ? "#cba6f7" : "#bac2de"
                                 font.pixelSize: 12
                                 font.bold: usersList.currentIndex === index
                             }
@@ -210,13 +210,13 @@ Rectangle {
                         width: 30
                         height: 30
                         radius: 15
-                        color: "#5e81ac"
+                        color: "#89b4fa"
                         visible: usersList.currentIndex > 0
 
                         Text {
                             anchors.centerIn: parent
                             text: "‹"
-                            color: "#eceff4"
+                            color: "#cdd6f4"
                             font.pixelSize: 20
                         }
 
@@ -237,13 +237,13 @@ Rectangle {
                         width: 30
                         height: 30
                         radius: 15
-                        color: "#5e81ac"
+                        color: "#89b4fa"
                         visible: usersList.currentIndex < usersList.count - 1
 
                         Text {
                             anchors.centerIn: parent
                             text: "›"
-                            color: "#eceff4"
+                            color: "#cdd6f4"
                             font.pixelSize: 20
                         }
 
@@ -264,11 +264,11 @@ Rectangle {
                     width: parent.width
                     height: 40
                     font.pixelSize: 14
-                    color: "#eceff4"
-                    borderColor: "#5e81ac"
-                    focusColor: "#88c0d0"
-                    hoverColor: "#81a1c1"
-                    tooltipBG: "#5e81ac"
+                    color: "#cdd6f4"
+                    borderColor: "#89b4fa"
+                    focusColor: "#cba6f7"
+                    hoverColor: "#b4befe"
+                    tooltipBG: "#89b4fa"
 
                     KeyNavigation.backtab: rebootButton
                     KeyNavigation.tab: session
@@ -297,7 +297,7 @@ Rectangle {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: ""
                     font.pixelSize: 12
-                    color: "#bf616a"
+                    color: "#f38ba8"
                 }
 
                 // Login button
@@ -307,9 +307,9 @@ Rectangle {
                     width: 120
                     height: 35
 
-                    color: "#5e81ac"
-                    activeColor: "#88c0d0"
-                    pressedColor: "#81a1c1"
+                    color: "#89b4fa"
+                    activeColor: "#cba6f7"
+                    pressedColor: "#b4befe"
 
                     onClicked: sddm.login(selectedUser, password.text, sessionIndex)
 
@@ -326,7 +326,7 @@ Rectangle {
             anchors.left: parent.left
             anchors.right: parent.right
             height: 50
-            color: "#cc2e3440"
+            color: "#cc1e1e2e"
 
             Row {
                 anchors.left: parent.left
@@ -337,7 +337,7 @@ Rectangle {
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     text: textConstants.session
-                    color: "#eceff4"
+                    color: "#cdd6f4"
                     font.pixelSize: 14
                 }
 
@@ -348,11 +348,11 @@ Rectangle {
                     arrowIcon: "angle-down.png"
                     model: sessionModel
                     index: sessionModel.lastIndex
-                    color: "#4c566a"
-                    textColor: "#eceff4"
-                    borderColor: "#5e81ac"
-                    focusColor: "#88c0d0"
-                    hoverColor: "#81a1c1"
+                    color: "#313244"
+                    textColor: "#cdd6f4"
+                    borderColor: "#89b4fa"
+                    focusColor: "#cba6f7"
+                    hoverColor: "#b4befe"
 
                     KeyNavigation.backtab: password
                     KeyNavigation.tab: layoutBox
@@ -361,7 +361,7 @@ Rectangle {
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     text: textConstants.layout
-                    color: "#eceff4"
+                    color: "#cdd6f4"
                     font.pixelSize: 14
                 }
 
@@ -369,11 +369,11 @@ Rectangle {
                     id: layoutBox
                     anchors.verticalCenter: parent.verticalCenter
                     width: 100
-                    color: "#4c566a"
-                    textColor: "#eceff4"
-                    borderColor: "#5e81ac"
-                    focusColor: "#88c0d0"
-                    hoverColor: "#81a1c1"
+                    color: "#313244"
+                    textColor: "#cdd6f4"
+                    borderColor: "#89b4fa"
+                    focusColor: "#cba6f7"
+                    hoverColor: "#b4befe"
 
                     KeyNavigation.backtab: session
                     KeyNavigation.tab: password
@@ -393,9 +393,9 @@ Rectangle {
                 text: textConstants.shutdown
                 height: 35
                 width: 100
-                color: "#bf616a"
-                activeColor: "#d08770"
-                pressedColor: "#a3515a"
+                color: "#f38ba8"
+                activeColor: "#fab387"
+                pressedColor: "#89b4fa"
                 visible: sddm.canPowerOff
 
                 onClicked: sddm.powerOff()
@@ -409,9 +409,9 @@ Rectangle {
                 text: textConstants.reboot
                 height: 35
                 width: 100
-                color: "#d08770"
-                activeColor: "#ebcb8b"
-                pressedColor: "#a86951"
+                color: "#fab387"
+                activeColor: "#f0c674"
+                pressedColor: "#89b4fa"
                 visible: sddm.canReboot
 
                 onClicked: sddm.reboot()

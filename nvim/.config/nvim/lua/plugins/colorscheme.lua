@@ -1,24 +1,32 @@
 return {
-    "folke/tokyonight.nvim",
-    lazy = false, -- Load during startup
-    priority = 1000, -- Load before other plugins
+    "catppuccin/nvim",
+    name = "catppuccin",
+    lazy = false,
+    priority = 1000,
     config = function()
-        require("tokyonight").setup({
-            style = "night", -- storm, night, moon, or day
-            transparent = true, -- Transparent background
-            terminal_colors = true, -- Terminal colors
+        require("catppuccin").setup({
+            flavour = "mocha",
+            transparent_background = true,
+            term_colors = true,
             styles = {
-                comments = {italic = true},
-                keywords = {italic = true},
+                comments = { "italic" },
+                keywords = { "italic" },
                 functions = {},
-                variables = {}
+                variables = {},
             },
-            on_highlights = function(hl, c)
-                hl.NeoTreeNormal = {bg = "NONE"}
-                hl.NeoTreeNormalNC = {bg = "NONE"}
-                hl.NeoTreeEndOfBuffer = {bg = "NONE"}
-            end
+            integrations = {
+                neotree = true,
+                treesitter = true,
+                native_lsp = { enabled = true },
+            },
+            custom_highlights = function(colors)
+                return {
+                    NeoTreeNormal = { bg = "NONE" },
+                    NeoTreeNormalNC = { bg = "NONE" },
+                    NeoTreeEndOfBuffer = { bg = "NONE" },
+                }
+            end,
         })
-        vim.cmd([[colorscheme tokyonight]])
-    end
+        vim.cmd([[colorscheme catppuccin]])
+    end,
 }

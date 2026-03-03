@@ -1,170 +1,200 @@
 * {
-  font-family: "JetBrainsMono Nerd Font", "Pretendard", "Noto Sans CJK KR", "Noto Sans", "Font Awesome 7 Free", "Font Awesome  Brands", "Noto Color Emoji";
-  font-size: 12px;
-  border: none;
-  margin: 0;
-  padding: 0;
+    font-family:
+        "JetBrainsMono Nerd Font", "Pretendard", "Noto Sans CJK KR",
+        "Noto Sans", "Font Awesome 7 Free", "Font Awesome  Brands",
+        "Noto Color Emoji";
+    font-size: 12px;
+    border: none;
+    margin: 0;
+    padding: 0;
 }
 
 window#waybar {
-  background-color: transparent;
-  color: #e6e6e6;
+    background-color: transparent;
+    color: #e2e0f0;
 }
 
 /* ============================================
    WORKSPACES - Minimal pill style
    ============================================ */
 #workspaces {
-  margin: 8px 0;
-  background: rgba(12, 12, 12, 0.5);
-  padding: 0 6px;
-  border-radius: 4px;
+    margin: 8px 0;
+    background: rgba(12, 12, 12, 0.5);
+    padding: 0 6px;
+    border-radius: 4px;
 }
 
 #workspaces button {
-  border-radius: 12px;
-  padding: 2px 8px;
-  margin: 0 2px;
-  color: #e5c07b;
-  transition: all 0.2s ease;
+    border-radius: 12px;
+    padding: 2px 8px;
+    margin: 0 2px;
+    color: #e5c07b;
+    transition: all 0.2s ease;
 }
 
 #workspaces button.active {
-  color: #a8fff0;
+    color: #a8fff0;
 }
 
 #workspaces button.urgent {
-  color: #e06c75;
-  background: rgba(224, 108, 117, 0.15);
+    color: #e06c75;
+    background: rgba(224, 108, 117, 0.15);
 }
 
 #workspaces button:hover {
-  color: #a6a6a6;
-  background: rgba(255, 255, 255, 0.05);
+    color: #a6a6a6;
+    background: rgba(255, 255, 255, 0.05);
 }
 
 /* ============================================
    MODULE PILLS - Unified design
    ============================================ */
-#clock, #custom-uptime, #custom-cpu, #custom-memory, #custom-disk-usage, #custom-server-health, #pulseaudio, #custom-adguardvpn, #battery, #network {
-  margin: 8px 0;
-  background: rgba(12, 12, 12, 0.5);
-  padding: 0 8px;
-  border-radius: 4px;
-  transition: all 0.2s ease;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+#clock,
+#custom-uptime,
+#custom-cpu,
+#custom-memory,
+#custom-disk-usage,
+#custom-server-health,
+#custom-grafana,
+#pulseaudio,
+#custom-adguardvpn,
+#battery,
+#network {
+    margin: 8px 0;
+    background: rgba(8, 8, 16, 0.5);
+    padding: 0 8px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    border: 1px solid rgba(180, 160, 255, 0.06);
 }
 
-#clock:hover, #custom-uptime:hover, #custom-cpu:hover, #custom-memory:hover, #custom-disk-usage:hover, #custom-server-health:hover, #pulseaudio:hover, #battery:hover, #network:hover {
-  background: rgba(20, 20, 20, 0.7);
-  border-color: rgba(255, 255, 255, 0.1);
+#clock:hover,
+#custom-uptime:hover,
+#custom-cpu:hover,
+#custom-memory:hover,
+#custom-disk-usage:hover,
+#custom-server-health:hover,
+#custom-grafana:hover,
+#pulseaudio:hover,
+#battery:hover,
+#network:hover {
+    background: rgba(16, 16, 32, 0.7);
+    border-color: rgba(180, 160, 255, 0.15);
 }
 
 /* ============================================
    INDIVIDUAL MODULE STYLES
    ============================================ */
 #clock {
-  color: #98c379;
-  font-weight: 500;
+    color: #98c379;
+    font-weight: 500;
 }
 #network {
-  color: #83dce7;
+    color: #7dc4e4;
 }
 
 #network.disconnected {
-  color: #e06c75;
+    color: #f38ba8;
 }
 
 #battery {
-  color: #e5c07b;
+    color: #f0c674;
 }
 
 #battery.warning {
-  color: #d19a66;
+    color: #f5a97f;
 }
 
 #battery.critical {
-  color: #e06c75;
+    color: #f38ba8;
 }
 
 #battery.charging {
-  color: #98c379;
+    color: #a8e6a3;
 }
 
 #pulseaudio {
-  color: #eb9199;
+    color: #dbb6ee;
 }
 
 #pulseaudio.muted {
-  color: #5c6370;
-  opacity: 0.7;
+    color: #8885a5;
+    opacity: 0.7;
 }
 
 /* ============================================
    CPU, Memory States
    ============================================ */
 #custom-cpu {
-  color: #8cc9fc;
+    color: #7dc4e4;
 }
 
 #custom-memory {
-  color: #e6c7f0;
+    color: #c8b8ff;
 }
 
 #custom-server-health {
-  color: #98c379;
+    color: #a8e6a3;
 }
 
 #custom-server-health.unhealthy {
-  color: #e06c75;
+    color: #f38ba8;
 }
 
 #custom-uptime {
-  color: #c1c2ff;
+    color: #8bd5ca;
 }
 
 #custom-disk-usage {
-  color: #ffc793;
+    color: #f5a97f;
 }
 
 #custom-disk-usage.critical {
-  color: #e06c75;
+    color: #f38ba8;
 }
 
 #custom-disk-usage.warning {
-  color: #ffc793;
+    color: #f5a97f;
+}
+
+#custom-grafana {
+    color: #c793fa;
+}
+
+#custom-grafana.error {
+    color: #c49deb;
 }
 
 /* ============================================
    ADGUARD VPN STATES
    ============================================ */
 #custom-adguardvpn.connected {
-  color: #98c379;
+    color: #a8e6a3;
 }
 
 #custom-adguardvpn.disconnected {
-  color: #d1d1d1;
-  opacity: 0.7;
+    color: #b8b5d0;
+    opacity: 0.7;
 }
 
 #custom-adguardvpn:hover {
-  background: rgba(20, 20, 20, 0.7);
-  border-color: rgba(255, 255, 255, 0.1);
-  opacity: 1;
+    background: rgba(16, 16, 32, 0.7);
+    border-color: rgba(180, 160, 255, 0.15);
+    opacity: 1;
 }
 
 /* ============================================
    TOOLTIP
    ============================================ */
 tooltip {
-  font-size: 11px;
-  background: rgba(20, 22, 26, 0.95);
-  color: #e6e6e6;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  padding: 8px 12px;
+    font-size: 11px;
+    background: rgba(12, 12, 24, 0.95);
+    color: #e2e0f0;
+    border: 1px solid rgba(180, 160, 255, 0.15);
+    border-radius: 12px;
+    padding: 8px 12px;
 }
 
 tooltip label {
-  font-family: "JetBrainsMono Nerd Font", monospace;
+    font-family: "JetBrainsMono Nerd Font", monospace;
 }
