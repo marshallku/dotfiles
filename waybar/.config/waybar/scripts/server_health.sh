@@ -6,6 +6,7 @@ SERVER_GROUPS=(
 )
 
 TIMEOUT=3
+STATE_FILE="/tmp/server_health_state"
 
 # Check if connected to network
 check_network() {
@@ -121,6 +122,21 @@ display_text="$icon  -  $text"
 if [ -n "$group_display_str" ]; then
   display_text="$display_text($group_display_str)"
 fi
+
+# State change notification
+current_state="up=$up,down=$down"
+if [ -f "$STATE_FILE" ]; then
+  prev_state=$(cat "$STATE_FILE")
+  if [ "$prev_state" != "$current_state" ]; then
+    prev_down=$(echo "$prev_state" | grep -oP 'down=\K\d+')
+    if [ "$down" -gt 0 ] && [ "$prev_down" = "0" ]; then
+      notify-send -u critical "Server Alert" "Some servers went down!\n${status_details//\\n/$'\n'}"
+    elif [ "$down" = "0" ] && [ "$prev_down" -gt 0 ] 2>/dev/null; then
+      notify-send -u normal "Server Recovery" "All servers are back online"
+    fi
+  fi
+fi
+echo "$current_state" > "$STATE_FILE"
 
 echo "{\"text\": \"$display_text\", \"tooltip\": \"Servers Status:${status_details%\\n}\", \"class\": \"$class\"}"
 
