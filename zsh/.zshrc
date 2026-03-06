@@ -333,6 +333,37 @@ function kp {
     fi
 }
 
+# Long-running command notification (notify if command takes >10 seconds)
+__cmd_notify_threshold=10
+__cmd_notify_exclude="^(vim|nvim|htop|top|less|man|ssh|tmux|tms|fzf)"
+
+preexec() {
+  __cmd_start_time=$EPOCHSECONDS
+  __cmd_name="$1"
+}
+
+precmd() {
+  local exit_code=$?
+  if [[ -n "$__cmd_start_time" ]]; then
+    local elapsed=$(( EPOCHSECONDS - __cmd_start_time ))
+    if (( elapsed >= __cmd_notify_threshold )); then
+      if [[ ! "$__cmd_name" =~ $__cmd_notify_exclude ]]; then
+        local status_icon
+        if (( exit_code == 0 )); then
+          status_icon="✓"
+        else
+          status_icon="✗ ($exit_code)"
+        fi
+        notify-send -u normal -t 5000 \
+          "Command finished ${status_icon}" \
+          "${__cmd_name}\nTook ${elapsed}s"
+      fi
+    fi
+    unset __cmd_start_time
+    unset __cmd_name
+  fi
+}
+
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
 
