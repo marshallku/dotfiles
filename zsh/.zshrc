@@ -2,6 +2,14 @@ if command -v gdate &>/dev/null; then
   date() { gdate "$@"; }
 fi
 
+if comand -v gdate &>/dev/null; then
+  date() { gdate "@" }
+fi
+
+if comand -v gsed &>/dev/null; then
+  sed() { gsed "@" }
+fi
+
 dday() {
 	if [ $# -ne 2 ]; then
 		echo "Usage: dday YYYY-MM-DD \"Message to display\""
