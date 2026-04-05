@@ -1,0 +1,26 @@
+[terminal]
+shell = "/bin/zsh"
+font_family = "JetBrainsMono Nerd Font Mono"
+font_size = 11
+
+[background]
+tint = 0.1
+opacity = 0.2
+tint_color = "#000000"
+
+[socket]
+# path = "/tmp/custerm.sock"
+
+[theme]
+name = "catppuccin-mocha"
+#name = "dracula"
+
+[tabs]
+position = 'left'
+#position = 'top'
+width = 200
+
+[keybindings]
+"ctrl+shift+p" = "spawn:~/turm-random-bg.sh --toggle"
+"ctrl+shift+bracketright" = "spawn:~/turm-random-bg.sh --next"
+"ctrl+shift+d" = "spawn:~/turm-random-bg.sh --delete"
