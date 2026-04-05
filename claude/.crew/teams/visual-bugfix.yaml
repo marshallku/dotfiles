@@ -1,0 +1,39 @@
+name: visual-bugfix
+description: "브라우저 검증 + 코드 조사 병렬 → 종합 → 수정 → 시각 확인"
+roles:
+    - browser-tester
+    - investigator
+    - synthesizer
+    - fixer
+
+stages:
+    - name: investigate
+      parallel: true
+      roles:
+          - role: browser-tester
+            output: .crew/browser-report.md
+          - role: investigator
+            output: .crew/investigation-1.md
+          - role: investigator
+            output: .crew/investigation-2.md
+
+    - name: synthesize
+      depends_on: investigate
+      roles:
+          - role: synthesizer
+      output: .crew/synthesis.md
+      approve: true
+
+    - name: fix
+      depends_on: synthesize
+      roles:
+          - role: fixer
+            worktree: true
+            input: .crew/synthesis.md
+            output: .crew/results/fixer/summary.md
+
+    - name: verify
+      depends_on: fix
+      roles:
+          - role: browser-tester
+            output: .crew/visual-verify.md

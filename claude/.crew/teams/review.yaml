@@ -1,0 +1,21 @@
+name: review
+description: "코드 + 보안 병렬 리뷰 → 종합"
+roles:
+    - reviewer
+    - security-reviewer
+    - synthesizer
+
+stages:
+    - name: review
+      parallel: true
+      roles:
+          - role: reviewer
+            output: .crew/code-review.md
+          - role: security-reviewer
+            output: .crew/security-review.md
+
+    - name: summarize
+      depends_on: review
+      roles:
+          - role: synthesizer
+      output: .crew/review-summary.md
