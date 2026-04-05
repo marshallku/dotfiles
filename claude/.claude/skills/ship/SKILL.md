@@ -8,6 +8,7 @@ allowed-tools: Bash,Read,Grep,Glob,Edit,Agent
 ## 워크플로우
 
 ### Step 1: 테스트 실행
+
 - 프로젝트 타입에 맞는 테스트 실행:
   - `package.json` → `npm test` 또는 `pnpm test`
   - `Cargo.toml` → `cargo test`
@@ -16,17 +17,20 @@ allowed-tools: Bash,Read,Grep,Glob,Edit,Agent
 - 린트: `npm run lint` (있으면)
 
 ### Step 2: 테스트 실패 시
+
 - 실패 원인 분석
 - 수정 가능하면 수정 후 재실행
 - 수정 불가능하면 사용자에게 보고 후 중단
 
 ### Step 3: 커밋
+
 - `git diff --staged` + `git diff` 확인
 - 변경 사항 분석 후 conventional commit 메시지 작성
 - `git add` (관련 파일만, `-A` 사용 금지)
 - `git commit`
 
 ### Step 4: PR 생성
+
 - `git push -u origin <branch>`
 - `gh pr create` 실행
 - PR 제목: 70자 이하
