@@ -398,4 +398,5 @@ export PATH="$HOME/docs/scripts:$PATH"
 
 #[[ "$TERM" == "xterm-ghostty" ]] && (~/ghostty-random-bg.sh &>/dev/null &)
 [[ "$TERM" == "xterm-kitty" ]] && (~/kitty-random-bg.sh --daemon --interval 300 &>/dev/null &)
+[[ -n "$TURM_DBUS" ]] && (~/turm-random-bg.sh --daemon --interval 300 &>/dev/null &)
 
