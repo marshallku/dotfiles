@@ -46,7 +46,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /home/marshall/.claude/hooks/careful-with-judge.sh",
+            "command": "bash $HOME/.claude/hooks/careful-with-judge.sh",
             "timeout": 30
           }
         ]
@@ -56,7 +56,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /home/marshall/.claude/hooks/protect-secrets.sh"
+            "command": "bash $HOME/.claude/hooks/protect-secrets.sh"
           }
         ]
       },
@@ -65,7 +65,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /home/marshall/.claude/hooks/freeze.sh"
+            "command": "bash $HOME/.claude/hooks/freeze.sh"
           }
         ]
       }
@@ -75,7 +75,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /home/marshall/.claude/hooks/session-start.sh",
+            "command": "bash $HOME/.claude/hooks/session-start.sh",
             "timeout": 10
           }
         ]
@@ -86,7 +86,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /home/marshall/.claude/hooks/auto-handoff.sh",
+            "command": "bash $HOME/.claude/hooks/auto-handoff.sh",
             "timeout": 15
           }
         ]
@@ -98,7 +98,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /home/marshall/.claude/hooks/post-typecheck.sh",
+            "command": "bash $HOME/.claude/hooks/post-typecheck.sh",
             "timeout": 30
           }
         ]
