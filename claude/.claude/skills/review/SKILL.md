@@ -3,6 +3,7 @@ name: review
 description: PR 사전 리뷰 (Fix-First 패턴)
 user-invocable: true
 allowed-tools: Bash,Read,Grep,Glob,Edit,Agent
+effort: high
 ---
 
 ## 워크플로우

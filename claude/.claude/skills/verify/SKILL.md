@@ -2,9 +2,10 @@
 name: verify
 description: 프론트엔드 시각 검증 — 브라우저 스크린샷 + 비전 분석
 user-invocable: true
-arguments: <URL 또는 검증 대상 설명>
+arguments: url
 argument-hint: http://localhost:3000 또는 "로그인 페이지 확인"
 allowed-tools: Bash,Read,Glob,Grep,mcp__browser-control__tab_list,mcp__browser-control__tab_open,mcp__browser-control__tab_navigate,mcp__browser-control__tab_close,mcp__browser-control__screenshot,mcp__browser-control__screenshot_element,mcp__browser-control__screenshot_diff,mcp__browser-control__get_html,mcp__browser-control__get_text,mcp__browser-control__get_accessibility_tree,mcp__browser-control__click_element,mcp__browser-control__type_text,mcp__browser-control__scroll_page,mcp__browser-control__press_key,mcp__browser-control__execute_js,mcp__browser-control__wait_for_selector,mcp__browser-control__wait_for_navigation,mcp__browser-control__get_console_logs,mcp__browser-control__get_page_errors,mcp__browser-control__annotate_page,mcp__browser-control__get_page_metrics
+effort: high
 ---
 
 # Frontend Visual Verification

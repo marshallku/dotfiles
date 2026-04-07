@@ -3,6 +3,7 @@ name: ship
 description: 테스트 → 커밋 → PR 워크플로우
 user-invocable: true
 allowed-tools: Bash,Read,Grep,Glob,Edit,Agent
+effort: medium
 ---
 
 ## 워크플로우

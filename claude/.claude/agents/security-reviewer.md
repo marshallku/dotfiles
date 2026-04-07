@@ -1,6 +1,8 @@
 ---
 description: OWASP 중심 보안 리뷰어 (읽기 전용)
 model: sonnet
+maxTurns: 15
+permissionMode: bypassPermissions
 tools:
   - Read
   - Grep

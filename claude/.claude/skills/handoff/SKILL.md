@@ -3,6 +3,7 @@ name: handoff
 description: 세션 컨텍스트를 다음 세션으로 전달
 user-invocable: true
 allowed-tools: Bash,Read,Grep,Glob,Write
+effort: medium
 ---
 
 ## 워크플로우

@@ -2,6 +2,8 @@
 description: Worktree 격리 코드 리뷰어
 model: sonnet
 isolation: worktree
+maxTurns: 20
+permissionMode: bypassPermissions
 tools:
   - Bash
   - Read

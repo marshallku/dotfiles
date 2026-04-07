@@ -5,6 +5,7 @@ user-invocable: true
 arguments: description
 argument-hint: <에러 설명 또는 증상>
 allowed-tools: Bash,Read,Grep,Glob,Edit,Agent
+effort: high
 ---
 
 ## Iron Law
