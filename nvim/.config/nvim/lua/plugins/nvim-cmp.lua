@@ -1,51 +1,54 @@
 return {
-    "hrsh7th/nvim-cmp",
+    "saghen/blink.cmp",
     event = "InsertEnter",
+    version = "*",
     dependencies = {
-        "hrsh7th/cmp-buffer", -- Buffer completions
-        "hrsh7th/cmp-path", -- Path completions
-        "L3MON4D3/LuaSnip", -- Snippet engine
-        "saadparwaiz1/cmp_luasnip", -- Snippet completions
-        "rafamadriz/friendly-snippets", -- Useful snippets
-        "onsails/lspkind.nvim" -- VS Code-like pictograms
+        "rafamadriz/friendly-snippets",
+        "fang2hou/blink-copilot",
     },
-    config = function()
-        local cmp = require("cmp")
-        local luasnip = require("luasnip")
-        local lspkind = require("lspkind")
-
-        -- Load friendly-snippets
-        require("luasnip.loaders.from_vscode").lazy_load()
-
-        cmp.setup({
-            completion = {completeopt = "menu,menuone,preview,noselect"},
-            snippet = {
-                expand = function(args)
-                    luasnip.lsp_expand(args.body)
-                end
+    ---@module "blink.cmp"
+    ---@type blink.cmp.Config
+    opts = {
+        keymap = {
+            preset = "default",
+            ["<C-k>"] = { "select_prev", "fallback" },
+            ["<C-j>"] = { "select_next", "fallback" },
+            ["<C-b>"] = { "scroll_documentation_up", "fallback" },
+            ["<C-f>"] = { "scroll_documentation_down", "fallback" },
+            ["<C-Space>"] = { "show", "fallback" },
+            ["<C-e>"] = { "cancel", "fallback" },
+            ["<CR>"] = { "accept", "fallback" },
+        },
+        appearance = {
+            nerd_font_variant = "mono",
+        },
+        sources = {
+            default = { "copilot", "lsp", "path", "snippets", "buffer" },
+            providers = {
+                copilot = {
+                    name = "copilot",
+                    module = "blink-copilot",
+                    score_offset = 100,
+                    async = true,
+                },
             },
-            mapping = cmp.mapping.preset.insert({
-                ["<C-k>"] = cmp.mapping.select_prev_item(), -- Previous suggestion
-                ["<C-j>"] = cmp.mapping.select_next_item(), -- Next suggestion
-                ["<C-b>"] = cmp.mapping.scroll_docs(-4),
-                ["<C-f>"] = cmp.mapping.scroll_docs(4),
-                ["<C-Space>"] = cmp.mapping.complete(), -- Show completion suggestions
-                ["<C-e>"] = cmp.mapping.abort(), -- Close completion window
-                ["<CR>"] = cmp.mapping.confirm({select = false})
-            }),
-            -- Sources for autocompletion
-            sources = cmp.config.sources({
-                {name = "nvim_lsp"}, {name = "luasnip"}, -- Snippets
-                {name = "buffer"}, -- Text within current buffer
-                {name = "path"} -- File system paths
-            }),
-            -- Configure lspkind for VS Code-like pictograms
-            formatting = {
-                format = lspkind.cmp_format({
-                    maxwidth = 50,
-                    ellipsis_char = "..."
-                })
-            }
-        })
-    end
+        },
+        completion = {
+            documentation = {
+                auto_show = true,
+                auto_show_delay_ms = 200,
+            },
+            menu = {
+                draw = {
+                    columns = {
+                        { "label", "label_description", gap = 1 },
+                        { "kind_icon", "kind" },
+                    },
+                },
+            },
+        },
+        signature = {
+            enabled = true,
+        },
+    },
 }

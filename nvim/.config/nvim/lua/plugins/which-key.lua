@@ -16,7 +16,8 @@ return {
             {"<leader>t", group = "Tab"}, {"<leader>c", group = "Code"},
             {"<leader>r", group = "Rename"}, {"<leader>h", group = "Git Hunk"},
             {"<leader>b", group = "Buffer"}, {"<leader>e", group = "Explorer"},
-            {"<leader>m", group = "Format"}
+            {"<leader>m", group = "Format"},
+            {"<leader>a", group = "AI"}
         })
     end
 }

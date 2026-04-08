@@ -21,7 +21,8 @@ return {
 
         mason_lspconfig.setup({
             ensure_installed = {
-                "ts_ls", -- TypeScript/JavaScript
+                "vtsls", -- TypeScript/JavaScript
+                "eslint", -- ESLint language server
                 "rust_analyzer", -- Rust
                 "gopls", -- Go
                 "pyright", -- Python
@@ -31,16 +32,13 @@ return {
                 "cssls", -- CSS
                 "tailwindcss", -- Tailwind CSS
                 "jsonls" -- JSON
-            },
-            automatic_installation = true
+            }
         })
 
         mason_tool_installer.setup({
             ensure_installed = {
                 "prettier", -- Formatter for web langs
                 "stylua", -- Lua formatter
-                "eslint_d", -- JS/TS linter
-                "rustfmt", -- Rust formatter
                 "gofumpt", -- Go formatter
                 "black", -- Python formatter
                 "pylint", -- Python linter
