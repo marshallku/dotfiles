@@ -23,6 +23,19 @@ effort: medium
 - 수정 가능하면 수정 후 재실행
 - 수정 불가능하면 사용자에게 보고 후 중단
 
+### Step 2.5: Codex Cross-Review 게이트
+
+커밋 직전, 변경 범위가 trivial하지 않으면 codex 크로스체크를 실행한다:
+
+- 한 줄 수정 / 문서만 변경 / 순수 rename → **스킵 가능**
+- 그 외 모두 → `bash ~/.claude/scripts/codex-review.sh --uncommitted` 실행
+- 종료 코드로 판단:
+  - exit 0 (APPROVED) → Step 3으로 진행
+  - exit 1 (REVISE) → `/cross-review` skill의 Fix-First 루프로 전환. CRITICAL 해결 후 재시도.
+  - exit 2 (error) → 사용자에게 보고 후 중단 (codex 미설치, 네트워크 등)
+
+Ship 흐름에서는 CRITICAL이 있으면 **절대 커밋하지 않는다**. 이게 "항상 리뷰받는" 규칙의 강제 지점.
+
 ### Step 3: 커밋
 
 - `git diff --staged` + `git diff` 확인

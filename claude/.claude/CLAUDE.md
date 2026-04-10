@@ -9,9 +9,9 @@ Always follow this document, and act like you are a same person as this document
 **For AI Systems:**
 
 1. **Always read this INDEX first** to understand the structure
-2. **Read only the files you need** for the current task
-3. **Don't read all files** - it wastes tokens
-4. **Use the "When to Read" guide** below
+2. **Always load `profile/900-quick-reference.md` and `profile/910-anti-patterns.md`** at the start of every session. These encode the non-negotiable rules and are short enough to always keep in context.
+3. **Read other profile files on-demand** for the current task (use the "When to Read" guide below)
+4. **Don't read all files** - it wastes tokens
 
 **For Humans:**
 
@@ -367,6 +367,62 @@ If you can only read a few things, read these:
 1. Update relevant file(s)
 2. Update "Last Updated" date in that file
 3. Add note in version history if significant
+
+---
+
+## 🤝 Codex Cross-Check (Agent Orchestration)
+
+You are not alone. OpenAI Codex CLI is installed and configured as a peer reviewer / consultant. Treat it as another senior engineer in the room — a different model family with different failure modes, which is exactly why it is useful for cross-checking.
+
+### The tools
+
+| Tool | Purpose | When |
+|---|---|---|
+| `/cross-review` | Full review loop with VERDICT gate, max 3 rounds, Fix-First triage | **End of any non-trivial change**, before commit |
+| `/ask-codex "q"` | One-shot consultation, no loop, low effort | **During work**, when facing a design decision or wanting a second opinion |
+| `@codex-reviewer` | Subagent wrapper for programmatic invocation via Agent() | Inside other workflows (e.g. `/ship`) |
+| `bash ~/.claude/scripts/codex-review.sh` | Direct script call | Scripting / CI / one-off |
+| `bash ~/.claude/scripts/codex-ask.sh "q"` | Direct script call | Piping file contents as context |
+
+Codex also auto-loads `~/.codex/AGENTS.md`, which mirrors this user's coding profile — so any codex call already follows the same principles (Rule of Three, anti-patterns, review format with `VERDICT:` contract).
+
+### The rule (strong)
+
+**After implementing non-trivial changes, invoke `/cross-review` before declaring the task done.** Do not skip this because it feels complete. The review gate exists because self-review misses things.
+
+"Non-trivial" means:
+- Any change touching 2+ files with logic (not just formatting/rename)
+- Anything security-sensitive (auth, input validation, crypto, secrets)
+- Refactors that move or rename public APIs
+- New features, new modules, new endpoints
+
+Skip the gate only for:
+- One-line bug fixes
+- Documentation-only changes
+- Comment / formatting / pure rename operations
+
+### The rule (soft)
+
+**When you find yourself uncertain during work, call `/ask-codex` rather than guessing.** A 30-second consultation is cheaper than a 10-minute wrong turn. Good triggers:
+- "I'm not sure whether X or Y is more idiomatic here"
+- "This trade-off could go either way"
+- "I'm about to introduce a pattern I haven't used in this codebase before"
+
+Do not call it for trivia you are 80%+ confident about — noise is worse than signal loss.
+
+### Principles for dealing with codex output
+
+1. **Codex is not ground truth**. It is another LLM with its own failure modes. Treat its output as a second opinion, never as a verdict you must obey.
+2. **Valid feedback only — Fix-First pattern**. Mechanical fixes get applied immediately; judgment calls go to the user as questions. The suppression rules in `/review` apply here too (style, naming, TODOs, "future improvement" → ignore).
+3. **When you and codex disagree, surface both opinions to the user**. Do not silently pick one side. The disagreement itself is valuable signal.
+4. **Never let codex modify files**. The wrapper scripts force `-s read-only` sandbox. If you need implementation delegated, that is a separate future tool — not the current review/consult flow.
+5. **Limit the loop**. `/cross-review` caps at 3 rounds. If the same CRITICAL finding appears twice in a row, stop and ask the user — either codex is wrong or Claude cannot fix it cleanly.
+
+### Integration with existing workflows
+
+- **`/ship`** — uses `/cross-review` as a gate before committing. Blocking CRITICAL = no ship.
+- **`/review`** — Claude's self-review, complementary to `/cross-review`. Run self-review first, then cross-review for independent verification.
+- **`@code-reviewer`** — Claude-based worktree reviewer (existing). Use together with `@codex-reviewer` for two independent perspectives on the same diff when the stakes are high (CodeX-Verify research shows 2-3 independent agents with different concerns beat single-agent review by ~40 percentage points).
 
 ---
 

@@ -2,7 +2,9 @@
 # PreToolUse hook: 위험 명령 탐지 + LLM-as-judge
 # deny는 --dangerously-skip-permissions에서도 유효
 
+LOG="$HOME/.claude/hooks-debug.log"
 INPUT=$(cat)
+echo "[$(date +%H:%M:%S)] careful triggered: $(echo "$INPUT" | jq -r '.tool_input.command // empty' | head -c 80)" >> "$LOG"
 CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 
 [ -z "$CMD" ] && echo '{}' && exit 0

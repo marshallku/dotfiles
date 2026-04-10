@@ -67,9 +67,22 @@ claude --resume          # 이전 세션 자체를 이어서
 ```
 @code-reviewer     # 일반 리뷰 (worktree 격리)
 @security-reviewer # 보안 전용 (OWASP 포커스, 읽기 전용)
+@codex-reviewer    # 외부 모델(Codex)로 크로스체크 — 다른 failure mode
 ```
 
 에이전트는 별도 worktree에서 독립 실행. 메인 작업을 방해하지 않음.
+
+### Codex 크로스체크 (다른 모델 패밀리의 독립 리뷰)
+
+```
+/cross-review      # VERDICT 루프 + Fix-First, 최대 3라운드
+/ask-codex "질문"   # 작업 중 one-shot 자문
+```
+
+- `/cross-review`는 구현성 변경 후 **항상** 실행 (CLAUDE.md 규칙)
+- `/ask-codex`는 설계 결정에서 second opinion이 필요할 때
+- 둘 다 codex를 read-only sandbox로 잠그므로 파일 수정은 절대 하지 않음
+- `~/.codex/AGENTS.md`에 profile이 주입되어 있어 codex도 동일한 스타일 규칙을 따름
 
 ---
 
@@ -231,22 +244,25 @@ claude -p "이 프로젝트의 테스트 커버리지를 80%로 올려줘" \
 | post-typecheck | PostToolUse (Edit/Write) | 자동 타입 체크 |
 | auto-handoff | Stop | 세션 상태 저장 |
 
-### Skills (5개, 수동 호출)
+### Skills (7개, 수동 호출)
 
 | Skill | 명령 | 용도 |
 |-------|------|------|
 | debug | `/debug <증상>` | 구조화 디버깅 |
-| review | `/review` | PR 사전 리뷰 |
-| ship | `/ship` | 테스트 → 커밋 → PR |
+| review | `/review` | PR 사전 리뷰 (Claude 셀프) |
+| cross-review | `/cross-review` | Codex 외부 리뷰 루프 (VERDICT 게이트) |
+| ask-codex | `/ask-codex <질문>` | 작업 중 one-shot 자문 |
+| ship | `/ship` | 테스트 → cross-review → 커밋 → PR |
 | verify | `/verify <URL>` | 프론트엔드 시각 검증 |
 | handoff | `/handoff` | 수동 세션 인수인계 |
 
-### Agents (3개, @로 호출)
+### Agents (4개, @로 호출)
 
 | Agent | 호출 | 특성 |
 |-------|------|------|
 | code-reviewer | `@code-reviewer` | worktree 격리, 읽기 전용 |
 | security-reviewer | `@security-reviewer` | OWASP 포커스, 읽기 전용 |
+| codex-reviewer | `@codex-reviewer` | 외부 모델 크로스체크, read-only sandbox |
 | doc-updater | `@doc-updater` | worktree 격리, 문서만 수정 |
 
 ### Shell 함수 (3개)
