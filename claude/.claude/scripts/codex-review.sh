@@ -4,11 +4,16 @@
 # cannot modify any files.
 #
 # Usage:
-#   codex-review.sh                         # HEAD vs main (or origin/main)
-#   codex-review.sh --base develop          # HEAD vs given base
-#   codex-review.sh --uncommitted           # working tree changes
-#   codex-review.sh --focus security        # focused review
-#   codex-review.sh --focus performance --base develop
+#   codex-review.sh                              # HEAD vs main (or origin/main)
+#   codex-review.sh --base develop               # HEAD vs given base
+#   codex-review.sh --uncommitted                # working tree changes
+#   codex-review.sh --focus security             # focused review
+#   codex-review.sh --context "user asked to..." # inline intent brief
+#   codex-review.sh --context-file /tmp/brief.md # intent brief from file
+#
+# Intent context is strongly recommended. Without it, codex can only judge
+# "is this good code" — not "does this implement what the user asked for".
+# The skill / Stop hook flow will instruct Claude to write a short brief.
 #
 # Environment overrides:
 #   CODEX_REVIEW_MODEL   — override model passed to `codex exec -m`
@@ -24,6 +29,8 @@ set -euo pipefail
 BASE="main"
 MODE="branch"
 FOCUS=""
+CONTEXT=""
+CONTEXT_FILE=""
 TIMEOUT="${CODEX_REVIEW_TIMEOUT:-300}"
 
 while [[ $# -gt 0 ]]; do
@@ -40,8 +47,16 @@ while [[ $# -gt 0 ]]; do
             FOCUS="$2"
             shift 2
             ;;
+        --context)
+            CONTEXT="$2"
+            shift 2
+            ;;
+        --context-file)
+            CONTEXT_FILE="$2"
+            shift 2
+            ;;
         -h|--help)
-            sed -n '2,22p' "$0"
+            sed -n '2,26p' "$0"
             exit 0
             ;;
         *)
@@ -50,6 +65,15 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Resolve context input
+if [[ -n "$CONTEXT_FILE" ]]; then
+    if [[ ! -f "$CONTEXT_FILE" ]]; then
+        echo "[codex-review] context file not found: $CONTEXT_FILE" >&2
+        exit 2
+    fi
+    CONTEXT=$(cat "$CONTEXT_FILE")
+fi
 
 if ! command -v codex >/dev/null 2>&1; then
     echo "[codex-review] codex CLI not found in PATH" >&2
@@ -91,6 +115,22 @@ if [[ -n "$FOCUS" ]]; then
     FOCUS_LINE="Focus exclusively on: $FOCUS. Ignore everything outside this focus area."
 fi
 
+CONTEXT_SECTION=""
+INTENT_CHECK=""
+if [[ -n "$CONTEXT" ]]; then
+    CONTEXT_SECTION=$(cat <<EOF
+
+--- TASK CONTEXT (from the author) ---
+${CONTEXT}
+--- END TASK CONTEXT ---
+EOF
+)
+    INTENT_CHECK="
+Also judge intent-vs-implementation alignment: does the diff actually do what the Task Context says the author intended? If there is a material mismatch between stated intent and actual code (missing requirement, silent scope creep, subtly different semantics), raise it as CRITICAL with the label [INTENT-MISMATCH]."
+else
+    CONTEXT_SECTION=$'\n(No task context supplied — judging the diff in isolation. Note this in your summary.)'
+fi
+
 MODEL_ARGS=()
 if [[ -n "${CODEX_REVIEW_MODEL:-}" ]]; then
     MODEL_ARGS=(-m "$CODEX_REVIEW_MODEL")
@@ -102,8 +142,10 @@ You are a senior engineer performing an independent code review.
 
 Scope: ${DIFF_DESC}
 ${FOCUS_LINE}
+${CONTEXT_SECTION}
 
 Follow the review principles in AGENTS.md strictly. Classify findings as CRITICAL, INFORMATIONAL, or SUPPRESS. Read files outside the diff when enum completeness, interface compatibility, or caller impact matters.
+${INTENT_CHECK}
 
 End your response with exactly one line: either "VERDICT: APPROVED" or "VERDICT: REVISE".
 APPROVED = zero CRITICAL findings.
@@ -137,8 +179,22 @@ echo "$OUTPUT"
 # Parse the final verdict — check the last 20 lines so conversational preamble does not confuse us
 VERDICT_LINE=$(echo "$OUTPUT" | tail -n 20 | grep -E "^VERDICT: (APPROVED|REVISE)" | tail -n 1 || true)
 
+# On APPROVED: mark the current repo as reviewed so pre-commit-gate.sh lets
+# subsequent save.sh / git commit / git push through.
+mark_repo_reviewed() {
+    local repo_root
+    repo_root=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
+    [ -z "$repo_root" ] && return 0
+    local repo_hash
+    repo_hash=$(printf '%s' "$repo_root" | md5sum | awk '{print $1}' | head -c 12)
+    local state_dir="$HOME/.claude/state"
+    mkdir -p "$state_dir"
+    touch "$state_dir/reviewed-$repo_hash"
+}
+
 case "$VERDICT_LINE" in
     "VERDICT: APPROVED")
+        mark_repo_reviewed
         exit 0
         ;;
     "VERDICT: REVISE")

@@ -11,17 +11,23 @@ You are a thin wrapper agent. Your sole job is to invoke the Codex CLI review wr
 
 ## Process
 
-1. Decide which review scope fits the parent's context:
-   - Working tree has uncommitted changes only → `bash ~/.claude/scripts/codex-review.sh --uncommitted`
-   - Feature branch vs main → `bash ~/.claude/scripts/codex-review.sh` (defaults to main)
-   - Non-standard base branch → `bash ~/.claude/scripts/codex-review.sh --base <branch>`
-   - Security-sensitive change → add `--focus security`
-   - Performance-sensitive change → add `--focus performance`
-2. Run the script. Capture both the full output and the exit code.
-3. Return to the parent:
+1. Expect the parent to pass you an intent brief (user's ask + what was done + key decisions). If they did not, write one short paragraph based on whatever scope they gave you and ask the parent to confirm before proceeding. Without intent context, codex can only judge "is this good code" — not "does it do what the user asked".
+2. Save the brief to a temp file:
+   ```
+   BRIEF=$(mktemp /tmp/codex-brief.XXXXXX.md)
+   echo "<brief contents>" > "$BRIEF"
+   ```
+3. Decide which review scope fits the parent's context:
+   - Uncommitted working tree → `bash ~/.claude/scripts/codex-review.sh --uncommitted --context-file "$BRIEF"`
+   - Feature branch vs main → `bash ~/.claude/scripts/codex-review.sh --context-file "$BRIEF"`
+   - Non-standard base → add `--base <branch>`
+   - Security / performance focus → add `--focus security` or `--focus performance`
+4. Run the script. Capture both the full output and the exit code.
+5. Return to the parent:
    - The full review text (CRITICAL, INFORMATIONAL, Summary)
    - The parsed verdict (APPROVED / REVISE)
    - A one-sentence synthesis naming the single highest-priority issue if REVISE
+   - Flag prominently any `[INTENT-MISMATCH]` CRITICAL findings — these mean codex thinks the implementation drifted from the stated intent
 
 ## Hard rules
 

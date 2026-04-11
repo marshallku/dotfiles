@@ -16,17 +16,42 @@ effort: high
 
 ## 워크플로우 (VERDICT 루프)
 
+### Step 0: 작업 맥락 brief 작성 (필수)
+
+Codex에게 diff만 던지면 "좋은 코드인지"는 판단해도 "사용자가 원한 걸 제대로 했는지"는 모른다. 작업 맥락을 짧게 요약해서 함께 전달해야 intent-vs-implementation 불일치(silent scope creep, 요구사항 누락 등)를 잡을 수 있다.
+
+Claude 본인의 working memory에 있는 정보로 임시 파일에 brief 작성:
+
+```bash
+BRIEF=$(mktemp /tmp/codex-brief.XXXXXX.md)
+cat > "$BRIEF" <<'EOF'
+## User's request
+<사용자가 원한 것, 1-2줄, 원문 그대로가 아니라 paraphrase>
+
+## What was done
+<실제로 구현한 것, 2-3줄. 주요 파일/함수 이름 포함>
+
+## Key decisions
+<의미있는 트레이드오프, 대안을 고려했다가 버린 이유, 범위에서 의도적으로 제외한 것. 없으면 "없음">
+EOF
+```
+
+**원칙**:
+- 전체 150단어 이하. 장황하면 codex가 신호를 못 찾음.
+- 정직하게 써라. 구현 못한 부분/shortcut/TODO를 숨기면 codex가 잡을 기회를 뺏는 것.
+- 대안을 검토하지 않았으면 "Key decisions: 없음"이라고 쓰라. 억지로 만들지 말 것.
+
 ### Round 1
 
 1. 변경 범위 판단:
-   - 커밋 전 상태 (uncommitted) → `bash ~/.claude/scripts/codex-review.sh --uncommitted`
-   - 피쳐 브랜치 → `bash ~/.claude/scripts/codex-review.sh` (또는 `--base <branch>`)
-   - 포커스 필요 → `--focus security` / `--focus performance`
+   - 커밋 전 상태 (uncommitted) → `bash ~/.claude/scripts/codex-review.sh --uncommitted --context-file "$BRIEF"`
+   - 피쳐 브랜치 → `bash ~/.claude/scripts/codex-review.sh --context-file "$BRIEF"` (또는 `--base <branch>`)
+   - 포커스 필요 → `--focus security` / `--focus performance` 추가
 2. 스크립트 실행 후 exit code + 출력 확인:
    - exit 0 (APPROVED) → **즉시 종료**, 사용자에게 리포트
    - exit 1 (REVISE) → step 3
    - exit 2 (error) → 사용자에게 원인 보고 후 중단
-3. 출력에서 CRITICAL / INFORMATIONAL 파싱
+3. 출력에서 CRITICAL / INFORMATIONAL 파싱. 특히 `[INTENT-MISMATCH]` 태그가 붙은 CRITICAL은 최우선.
 
 ### Fix-First 분류 (기존 `/review`와 동일)
 

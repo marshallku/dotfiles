@@ -27,8 +27,12 @@ claude --resume          # 이전 세션 자체를 이어서
 | Hook | 동작 | 트리거 |
 |------|------|--------|
 | **post-typecheck** | `tsc --noEmit` / `cargo check` / `go vet` 자동 실행 | 파일 편집 후 |
+| **track-edit** | 세션별 편집 파일 목록 기록 + repo reviewed marker 무효화 | 파일 편집 후 |
+| **remind-cross-review** | 편집 진행 중이면 매 user turn 시작 시 리뷰 리마인더 주입 | User prompt 도착 시 |
+| **pre-commit-gate** | `save.sh`/`git commit`/`git push` 감지 → 리뷰 안 됐으면 **차단** | Bash 실행 전 |
 | **careful-with-judge** | `rm -rf`, `git push --force` 등 위험 명령 감지 → LLM 판단 | Bash 실행 전 |
 | **protect-secrets** | `.env`, `*.key` 등 민감 파일 편집 차단 | 파일 편집 전 |
+| **auto-cross-review** | 비자명한 변경이 있으면 Stop 시 자동으로 codex 리뷰 지시 주입 | 턴 종료 직전 |
 
 타입 에러가 나면 Claude가 즉시 알고 수정을 제안한다.
 
@@ -233,15 +237,19 @@ claude -p "이 프로젝트의 테스트 커버리지를 80%로 올려줘" \
 
 ## 전체 인벤토리
 
-### Hooks (6개, 자동 실행)
+### Hooks (10개, 자동 실행)
 
 | Hook | 타이밍 | 역할 |
 |------|--------|------|
-| session-start | SessionStart | 이전 handoff 자동 로드 |
+| session-start | SessionStart | 이전 handoff 자동 로드 + state cleanup |
+| remind-cross-review | UserPromptSubmit | 편집 진행 중이면 리뷰 리마인더 주입 |
 | careful-with-judge | PreToolUse (Bash) | 위험 명령 LLM 판단 |
+| pre-commit-gate | PreToolUse (Bash) | save.sh/git commit/push 전 리뷰 강제 (차단형) |
 | protect-secrets | PreToolUse (Edit/Write) | 민감 파일 보호 |
 | freeze | PreToolUse (Edit/Write) | 편집 범위 제한 |
+| track-edit | PostToolUse (Edit/Write) | 세션별 편집 파일 추적 + reviewed marker 무효화 |
 | post-typecheck | PostToolUse (Edit/Write) | 자동 타입 체크 |
+| auto-cross-review | Stop | 비자명한 변경 시 codex 리뷰 자동 지시 |
 | auto-handoff | Stop | 세션 상태 저장 |
 
 ### Skills (7개, 수동 호출)

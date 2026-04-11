@@ -386,9 +386,49 @@ You are not alone. OpenAI Codex CLI is installed and configured as a peer review
 
 Codex also auto-loads `~/.codex/AGENTS.md`, which mirrors this user's coding profile — so any codex call already follows the same principles (Rule of Three, anti-patterns, review format with `VERDICT:` contract).
 
-### The rule (strong)
+### Auto-review (three-layer enforcement)
 
-**After implementing non-trivial changes, invoke `/cross-review` before declaring the task done.** Do not skip this because it feels complete. The review gate exists because self-review misses things.
+Three hooks work together to eliminate the "I forgot to get a review" failure mode, with the last one being the strong gate for projects that use `~/dev/save.sh` (which commits + pushes atomically):
+
+**Hard gate — `pre-commit-gate.sh` (PreToolUse Bash)**
+Blocks any Bash command matching `save.sh`, `git commit`, or `git push` when the current repo has pending edits and no fresh `reviewed-<repo-hash>` marker. The block message tells you to write an intent brief, run `codex-review.sh`, and then re-run the original command. On APPROVED, `codex-review.sh` automatically touches the marker so the re-run passes. On any subsequent Edit/Write in the same repo, `track-edit.sh` invalidates the marker so you must re-review.
+
+This is the layer that matters for "save.sh projects" — it is the only one that fires BEFORE push rather than after. The Stop/UserPromptSubmit layers below are safety nets for sessions that never hit a commit command.
+
+
+
+**Proactive — `remind-cross-review.sh` (UserPromptSubmit)**
+At the start of every user turn, if the session already has ≥ 2 files edited (tracked via `track-edit.sh`), a short reminder is injected as `additionalContext`: *"you have pending edits, run codex-review.sh before concluding"*. This keeps the review goal in your working memory throughout a multi-turn task, not just at the end.
+
+**Reactive — `auto-cross-review.sh` (Stop hook)**
+If you still try to end a turn with non-trivial uncommitted changes, the Stop hook blocks with a `decision: block + reason` telling you to run `codex-review.sh` before concluding. Conditions for injection:
+- ≥ 2 distinct files touched via Edit/Write this session
+- `git diff HEAD` line count ≥ 40
+- Last assistant message does not end with `?` (clarification pause heuristic)
+- Not blocked already this session (single-shot per session)
+
+**Shared gating conditions** (all three hooks):
+- ≥ `AUTO_REVIEW_MIN_FILES` (default 2) distinct files touched via Edit/Write this session
+- Stop hook + pre-commit gate additionally require `git diff HEAD` ≥ `AUTO_REVIEW_MIN_LINES` (default 40) in cwd repo
+- Stop hook additionally skips when last assistant message ends with `?` (clarification pause heuristic)
+- Stop hook skips when `stop-blocked-<session>` marker exists (single-shot per session)
+- All three skip when a fresh `reviewed-<repo-hash>` marker exists for the cwd repo (prevents double-triggering after a successful review + commit)
+- All three skip when `~/.claude/state/auto-review-disabled` exists (global opt-out)
+
+**Per-repo reviewed marker lifecycle**:
+- **Set** by `codex-review.sh` on VERDICT: APPROVED (hash of `git rev-parse --show-toplevel`)
+- **Invalidated** by `track-edit.sh` whenever any file in the same repo is edited
+- **Checked** by `pre-commit-gate.sh` (to allow commits) and the other two hooks (to skip reminders)
+- **Emergency bypass**: `touch ~/.claude/state/reviewed-<hash>` manually, or `touch ~/.claude/state/auto-review-disabled` for session-wide opt-out
+
+When either hook fires, you will receive a message instructing you to run `bash ~/.claude/scripts/codex-review.sh --uncommitted` and handle the verdict. Follow those instructions exactly — do not argue with the hook or try to skip. The point is that self-assessment of "I'm done" is unreliable.
+
+Opt-out (global): `touch ~/.claude/state/auto-review-disabled`
+Tune thresholds: set `AUTO_REVIEW_MIN_FILES` / `AUTO_REVIEW_MIN_LINES` env vars.
+
+### The rule (strong, manual fallback)
+
+Even with auto-review, **manually invoke `/cross-review` before declaring the task done** when you suspect the hook will not fire (e.g., single file with 100 lines changed, or the hook already fired once). Do not skip because it feels complete.
 
 "Non-trivial" means:
 - Any change touching 2+ files with logic (not just formatting/rename)

@@ -49,6 +49,11 @@
             "type": "command",
             "command": "bash $HOME/.claude/hooks/careful-with-judge.sh",
             "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/hooks/pre-commit-gate.sh",
+            "timeout": 10
           }
         ]
       },
@@ -82,9 +87,25 @@
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/hooks/remind-cross-review.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/hooks/auto-cross-review.sh",
+            "timeout": 10
+          },
           {
             "type": "command",
             "command": "bash $HOME/.claude/hooks/auto-handoff.sh",
@@ -97,6 +118,11 @@
       {
         "matcher": "Edit|Write",
         "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/hooks/track-edit.sh",
+            "timeout": 5
+          },
           {
             "type": "command",
             "command": "bash $HOME/.claude/hooks/post-typecheck.sh",

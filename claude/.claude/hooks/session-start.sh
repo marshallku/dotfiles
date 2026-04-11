@@ -2,6 +2,12 @@
 # SessionStart hook: 이전 세션 handoff 자동 로드
 # auto-handoff.sh가 저장한 latest.md를 읽어서 시스템 프롬프트에 주입
 
+# 부수 작업: auto-cross-review state 파일 중 1일 이상 된 것 청소
+STATE_DIR="$HOME/.claude/state"
+if [ -d "$STATE_DIR" ]; then
+    find "$STATE_DIR" -maxdepth 1 -type f \( -name "dirty-*.log" -o -name "stop-blocked-*" \) -mtime +1 -delete 2>/dev/null || true
+fi
+
 HANDOFF_FILE="$HOME/.claude/handoffs/latest.md"
 
 # handoff 파일이 없으면 스킵
