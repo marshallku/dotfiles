@@ -46,6 +46,7 @@ vim.opt.completeopt = "menu,menuone,noselect"
 -- File handling
 vim.opt.backup = false -- No backup file
 vim.opt.swapfile = false -- No swap file
+vim.opt.autoread = true -- Auto-reload files changed outside vim
 
 -- Linked editing (for HTML/XML tags - matching Cursor's editor.linkedEditing)
 vim.opt.matchpairs:append("<:>") -- Enable linked editing for angle brackets

@@ -83,6 +83,12 @@ autocmd("FileType", {
 	end,
 })
 
+-- Auto-reload files changed externally
+autocmd({ "FocusGained", "BufEnter", "CursorHold" }, {
+	group = augroup("auto_reload", { clear = true }),
+	command = "checktime",
+})
+
 -- Python format on type (matching Cursor's editor.formatOnType for Python)
 autocmd("InsertLeave", {
 	group = augroup("python_format_on_type", { clear = true }),
