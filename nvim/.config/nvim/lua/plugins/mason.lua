@@ -39,6 +39,7 @@ return {
             ensure_installed = {
                 "prettier", -- Formatter for web langs
                 "stylua", -- Lua formatter
+                "rustfmt", -- Rust formatter
                 "gofumpt", -- Go formatter
                 "black", -- Python formatter
                 "pylint", -- Python linter
