@@ -38,6 +38,11 @@
     "gopls-lsp@claude-plugins-official": true,
     "typescript-lsp@claude-plugins-official": true
   },
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/statusline.sh",
+    "padding": 1
+  },
   "alwaysThinkingEnabled": true,
   "skipDangerousModePermissionPrompt": true,
   "hooks": {
