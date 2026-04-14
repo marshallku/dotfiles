@@ -96,10 +96,37 @@ return {
             end,
         })
 
+        -- Add missing imports on save (TypeScript/JavaScript)
+        vim.api.nvim_create_autocmd("BufWritePre", {
+            group = vim.api.nvim_create_augroup("lsp_add_imports", { clear = true }),
+            pattern = { "*.ts", "*.tsx", "*.js", "*.jsx" },
+            callback = function()
+                local params = vim.lsp.util.make_range_params()
+                params.context = {
+                    only = { "source.addMissingImports" },
+                    diagnostics = {},
+                }
+                local result = vim.lsp.buf_request_sync(0, "textDocument/codeAction", params, 3000)
+                for _, res in pairs(result or {}) do
+                    for _, action in pairs(res.result or {}) do
+                        if action.edit then
+                            vim.lsp.util.apply_workspace_edit(action.edit, "utf-8")
+                        elseif action.command then
+                            vim.lsp.buf.execute_command(action.command)
+                        end
+                    end
+                end
+            end,
+        })
+
         -- TypeScript/JavaScript (vtsls - VSCode TypeScript extension wrapper)
         vim.lsp.config("vtsls", {
             settings = {
                 typescript = {
+                    suggest = {
+                        autoImports = true,
+                        completeFunctionCalls = true,
+                    },
                     inlayHints = {
                         parameterNames = { enabled = "literals" },
                         parameterTypes = { enabled = true },
@@ -107,6 +134,12 @@ return {
                         propertyDeclarationTypes = { enabled = true },
                         functionLikeReturnTypes = { enabled = true },
                         enumMemberValues = { enabled = true },
+                    },
+                },
+                javascript = {
+                    suggest = {
+                        autoImports = true,
+                        completeFunctionCalls = true,
                     },
                 },
             },
