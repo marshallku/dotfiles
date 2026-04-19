@@ -5,6 +5,8 @@
 
 set -euo pipefail
 
+. "$(dirname "$0")/_lib.sh"
+
 INPUT=$(cat)
 SESSION=$(echo "$INPUT" | jq -r '.session_id // "default"')
 FILE=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
@@ -18,7 +20,7 @@ echo "$FILE" >> "$STATE_DIR/dirty-${SESSION}.log"
 # Invalidate reviewed marker for this file's repo (if it is a git repo)
 FILE_DIR=$(dirname "$FILE")
 if REPO_ROOT=$(cd "$FILE_DIR" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null); then
-    REPO_HASH=$(printf '%s' "$REPO_ROOT" | md5sum | awk '{print $1}' | head -c 12)
+    REPO_HASH=$(repo_hash "$REPO_ROOT")
     rm -f "$STATE_DIR/reviewed-$REPO_HASH"
 fi
 

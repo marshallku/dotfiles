@@ -8,9 +8,11 @@
 #
 # Environment overrides:
 #   CODEX_ASK_MODEL   — override model passed to `codex exec -m`
-#   CODEX_ASK_TIMEOUT — seconds before the call is aborted (default 120)
+#   CODEX_ASK_TIMEOUT — seconds before the call is aborted (default 180)
 
 set -euo pipefail
+
+. "$(dirname "$0")/../hooks/_lib.sh"
 
 if [[ $# -lt 1 ]]; then
     echo "Usage: $0 <question>" >&2
@@ -23,7 +25,7 @@ if ! command -v codex >/dev/null 2>&1; then
 fi
 
 QUESTION="$*"
-TIMEOUT="${CODEX_ASK_TIMEOUT:-120}"
+TIMEOUT="${CODEX_ASK_TIMEOUT:-180}"
 
 STDIN_CONTEXT=""
 if ! [[ -t 0 ]]; then
@@ -54,4 +56,4 @@ EOF
 )
 fi
 
-exec timeout "$TIMEOUT" codex exec --skip-git-repo-check -s read-only "${MODEL_ARGS[@]}" "$PROMPT"
+exec portable_timeout "$TIMEOUT" codex exec --skip-git-repo-check -s read-only "${MODEL_ARGS[@]}" "$PROMPT"

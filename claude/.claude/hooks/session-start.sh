@@ -1,6 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # SessionStart hook: 이전 세션 handoff 자동 로드
 # auto-handoff.sh가 저장한 latest.md를 읽어서 시스템 프롬프트에 주입
+
+. "$(dirname "$0")/_lib.sh"
 
 # 부수 작업: auto-cross-review state 파일 중 1일 이상 된 것 청소
 STATE_DIR="$HOME/.claude/state"
@@ -17,7 +19,8 @@ if [ ! -f "$HANDOFF_FILE" ]; then
 fi
 
 # 24시간 이상 지난 handoff는 무시
-FILE_AGE=$(( $(date +%s) - $(stat -c %Y "$HANDOFF_FILE" 2>/dev/null || echo 0) ))
+HANDOFF_MTIME=$(portable_mtime "$HANDOFF_FILE")
+FILE_AGE=$(( $(date +%s) - HANDOFF_MTIME ))
 if [ "$FILE_AGE" -gt 86400 ]; then
     echo '{}'
     exit 0
@@ -27,7 +30,7 @@ CONTENT=$(cat "$HANDOFF_FILE")
 
 # handoff 내용을 stderr로 출력 (사용자에게 보임)
 cat >&2 << EOF
-[handoff] Previous session context loaded ($(stat -c %Y "$HANDOFF_FILE" | xargs -I{} date -d @{} +"%Y-%m-%d %H:%M"))
+[handoff] Previous session context loaded ($(portable_fmtdate "$HANDOFF_MTIME"))
 EOF
 
 # systemPrompt로 주입

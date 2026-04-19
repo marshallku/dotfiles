@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+. "$(dirname "$0")/hooks/_lib.sh"
 input=$(cat)
 
 # --- Extract fields ---
@@ -50,12 +51,12 @@ COST_FMT=$(printf '$%.2f' "$COST")
 # --- Git (cached) ---
 CACHE_FILE="/tmp/claude-statusline-git-$$"
 # Use a stable cache key based on project dir
-CACHE_KEY="/tmp/claude-statusline-git-$(echo "$DIR" | md5sum | cut -d' ' -f1)"
+CACHE_KEY="/tmp/claude-statusline-git-$(printf '%s' "$DIR" | portable_md5)"
 CACHE_MAX=5
 
 cache_stale() {
     [ ! -f "$CACHE_KEY" ] || \
-    [ $(($(date +%s) - $(stat -c %Y "$CACHE_KEY" 2>/dev/null || echo 0))) -gt $CACHE_MAX ]
+    [ $(($(date +%s) - $(portable_mtime "$CACHE_KEY"))) -gt $CACHE_MAX ]
 }
 
 GIT_INFO=""

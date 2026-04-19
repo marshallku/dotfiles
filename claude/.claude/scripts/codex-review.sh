@@ -17,7 +17,7 @@
 #
 # Environment overrides:
 #   CODEX_REVIEW_MODEL   — override model passed to `codex exec -m`
-#   CODEX_REVIEW_TIMEOUT — seconds before the review is aborted (default 300)
+#   CODEX_REVIEW_TIMEOUT — seconds before the review is aborted (default 420)
 #
 # Exit codes:
 #   0 = VERDICT: APPROVED
@@ -26,12 +26,14 @@
 
 set -euo pipefail
 
+. "$(dirname "$0")/../hooks/_lib.sh"
+
 BASE="main"
 MODE="branch"
 FOCUS=""
 CONTEXT=""
 CONTEXT_FILE=""
-TIMEOUT="${CODEX_REVIEW_TIMEOUT:-300}"
+TIMEOUT="${CODEX_REVIEW_TIMEOUT:-420}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -159,12 +161,17 @@ EOF
 
 # Run codex in read-only sandbox with a timeout so a stuck session does not hang the skill
 set +e
-OUTPUT=$(timeout "$TIMEOUT" codex exec --skip-git-repo-check -s read-only "${MODEL_ARGS[@]}" "$PROMPT" 2>&1)
+OUTPUT=$(portable_timeout "$TIMEOUT" codex exec --skip-git-repo-check -s read-only "${MODEL_ARGS[@]}" "$PROMPT" 2>&1)
 STATUS=$?
 set -e
 
 if [[ $STATUS -eq 124 ]]; then
     echo "[codex-review] timed out after ${TIMEOUT}s" >&2
+    exit 2
+fi
+
+if [[ $STATUS -eq 127 ]]; then
+    echo "[codex-review] timeout binary missing — install GNU coreutils ('brew install coreutils' on macOS)" >&2
     exit 2
 fi
 
@@ -185,11 +192,11 @@ mark_repo_reviewed() {
     local repo_root
     repo_root=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
     [ -z "$repo_root" ] && return 0
-    local repo_hash
-    repo_hash=$(printf '%s' "$repo_root" | md5sum | awk '{print $1}' | head -c 12)
+    local repo_hash_v
+    repo_hash_v=$(repo_hash "$repo_root")
     local state_dir="$HOME/.claude/state"
     mkdir -p "$state_dir"
-    touch "$state_dir/reviewed-$repo_hash"
+    touch "$state_dir/reviewed-$repo_hash_v"
 }
 
 case "$VERDICT_LINE" in

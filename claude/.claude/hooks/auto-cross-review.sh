@@ -16,6 +16,8 @@
 
 set -euo pipefail
 
+. "$(dirname "$0")/_lib.sh"
+
 LOG_FILE="$HOME/.claude/hooks-debug.log"
 INPUT=$(cat)
 
@@ -64,7 +66,7 @@ fi
 # Check git diff size if cwd is a repo — skip near-trivial changes even if spread across files
 if [ -n "$CWD" ] && REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null); then
     # If this repo already has a fresh reviewed marker, skip (pre-commit-gate handled it)
-    REPO_HASH=$(printf '%s' "$REPO_ROOT" | md5sum | awk '{print $1}' | head -c 12)
+    REPO_HASH=$(repo_hash "$REPO_ROOT")
     if [ -f "$STATE_DIR/reviewed-$REPO_HASH" ]; then
         log "skip: repo already reviewed this session ($REPO_ROOT)"
         echo '{}'

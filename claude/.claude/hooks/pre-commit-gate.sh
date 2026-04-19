@@ -15,6 +15,8 @@
 
 set -euo pipefail
 
+. "$(dirname "$0")/_lib.sh"
+
 INPUT=$(cat)
 CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 SESSION=$(echo "$INPUT" | jq -r '.session_id // "default"')
@@ -79,7 +81,7 @@ if ! REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null); then
     exit 0
 fi
 
-REPO_HASH=$(printf '%s' "$REPO_ROOT" | md5sum | awk '{print $1}' | head -c 12)
+REPO_HASH=$(repo_hash "$REPO_ROOT")
 MARKER="$STATE_DIR/reviewed-$REPO_HASH"
 
 # Fresh review marker → allow

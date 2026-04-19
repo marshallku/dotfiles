@@ -12,6 +12,8 @@
 
 set -euo pipefail
 
+. "$(dirname "$0")/_lib.sh"
+
 INPUT=$(cat)
 SESSION=$(echo "$INPUT" | jq -r '.session_id // "default"')
 
@@ -37,7 +39,7 @@ FILE_COUNT=$(sort -u "$DIRTY_LOG" 2>/dev/null | wc -l)
 # If the cwd repo already has a fresh reviewed marker, skip the reminder
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
 if [ -n "$CWD" ] && REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null); then
-    REPO_HASH=$(printf '%s' "$REPO_ROOT" | md5sum | awk '{print $1}' | head -c 12)
+    REPO_HASH=$(repo_hash "$REPO_ROOT")
     if [ -f "$STATE_DIR/reviewed-$REPO_HASH" ]; then
         echo '{}'
         exit 0
