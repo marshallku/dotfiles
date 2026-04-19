@@ -90,12 +90,13 @@
     "tooltip": true,
   },
   "network": {
-    "format-wifi": "󰤨  {essid}",
-    "format-ethernet": "󰛳  {ifname}",
+    "interval": 2,
+    "format-wifi": "󰤨  {bandwidthDownBits} ↓ {bandwidthUpBits} ↑",
+    "format-ethernet": "󰛳  {bandwidthDownBits} ↓ {bandwidthUpBits} ↑",
     "format-disconnected": "󰤮  Offline",
     "tooltip": true,
     "tooltip-format-wifi": "{essid}\nSignal: {signalStrength}%\nIP: {ipaddr}\nFrequency: {frequency}MHz",
-    "tooltip-format-ethernet": "{ifname}\nIP: {ipaddr}/{cidr}\nSpeed: {bandwidthDownBits} ↓ {bandwidthUpBits} ↑",
+    "tooltip-format-ethernet": "{ifname}\nIP: {ipaddr}/{cidr}\nDown: {bandwidthDownBits}   Up: {bandwidthUpBits}",
   },
   "custom/adguardvpn": {
     "exec": "~/.config/waybar/scripts/adguardvpn_status.sh",

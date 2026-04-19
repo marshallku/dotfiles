@@ -15,9 +15,11 @@ else
     class="normal"
 fi
 
+text="$icon  $usage%"
 tooltip="Disk: ${used}/${total} used (${usage}%)"
 
 if command -v sensors &>/dev/null; then
+  first_temp=""
   nvme_temps=$(sensors 2>/dev/null | awk '
     /^nvme-/ { chip=$0; next }
     /^$/ { chip="" }
@@ -30,9 +32,11 @@ if command -v sensors &>/dev/null; then
     }
   ')
   if [ -n "$nvme_temps" ]; then
+    first_temp=$(echo -e "$nvme_temps" | awk -F': ' 'NF>=2 { print $2; exit }')
+    text="$text  ${first_temp}"
     tooltip="${tooltip}${nvme_temps}"
   fi
 fi
 
-echo "{\"text\": \"$icon  $usage%\", \"tooltip\": \"$tooltip\", \"class\": \"$class\"}"
+echo "{\"text\": \"$text\", \"tooltip\": \"$tooltip\", \"class\": \"$class\"}"
 
