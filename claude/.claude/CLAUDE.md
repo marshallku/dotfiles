@@ -24,7 +24,7 @@ Always follow this document, and act like you are a same person as this document
 ## 📁 File Structure
 
 ```
-profiles/
+profile/
 ├── 001-099: MINDSET
 ├── 100-199: CODE & DESIGN
 ├── 200-299: QUALITY & PERFORMANCE
@@ -426,6 +426,33 @@ When either hook fires, you will receive a message instructing you to run `bash 
 Opt-out (global): `touch ~/.claude/state/auto-review-disabled`
 Tune thresholds: set `AUTO_REVIEW_MIN_FILES` / `AUTO_REVIEW_MIN_LINES` env vars.
 
+### Complete hook registry
+
+| Hook | Event | Matcher | Purpose |
+|---|---|---|---|
+| `careful-with-judge.sh` | PreToolUse | Bash | Dangerous-command pattern match (rm -r, DROP TABLE, force push…) → LLM-judge only when matched |
+| `freeze.sh` | PreToolUse | Edit/Write | Block edits outside `~/.claude/freeze-dir.txt` scope (night-agent sandbox) |
+| `protect-secrets.sh` | PreToolUse | Edit/Write | Deny writes to `.env`, `.secrets`, `credentials`, `*.pem`, `*.key`, `id_rsa*` |
+| `pre-commit-gate.sh` | PreToolUse | Bash | Block `save.sh`/`git commit`/`git push` until session has a fresh codex-review marker |
+| `track-edit.sh` | PostToolUse | Edit/Write | Append edited file path to `~/.claude/state/dirty-<session>.log`; invalidate reviewed markers |
+| `post-typecheck.sh` | PostToolUse | Edit/Write | Run `npx tsc --noEmit`/`cargo check`/`go vet ./...` after edits; surface errors as tool result |
+| `session-start.sh` | SessionStart | — | Load last handoff into systemPrompt; GC stale state files |
+| `remind-cross-review.sh` | UserPromptSubmit | — | Inject additionalContext reminding Claude to run codex-review before concluding |
+| `auto-cross-review.sh` | Stop | — | Block stop once/session, inject review mandate if dirty log ≥ N files and no reviewed marker |
+| `auto-handoff.sh` | Stop | — | Capture git status + branch + recent log to `~/.claude/handoffs/latest.md` for next session |
+
+### Installed skills (slash commands)
+
+User-invocable skills live at `~/dotfiles/claude/.claude/skills/<name>/SKILL.md`:
+
+- `/ask-codex` — one-shot design consultation with Codex
+- `/cross-review` — full cross-review loop with VERDICT gate (3 rounds max)
+- `/debug` — 5-phase structured debugging (3-strike + scope lock)
+- `/handoff` — write session context for the next Claude session
+- `/review` — self-review pre-PR (Fix-First pattern)
+- `/ship` — test → commit → PR workflow (uses `/cross-review` as gate)
+- `/verify` — frontend visual verification (browser screenshot + vision analysis)
+
 ### The rule (strong, manual fallback)
 
 Even with auto-review, **manually invoke `/cross-review` before declaring the task done** when you suspect the hook will not fire (e.g., single file with 100 lines changed, or the hook already fired once). Do not skip because it feels complete.
@@ -463,6 +490,9 @@ Do not call it for trivia you are 80%+ confident about — noise is worse than s
 - **`/ship`** — uses `/cross-review` as a gate before committing. Blocking CRITICAL = no ship.
 - **`/review`** — Claude's self-review, complementary to `/cross-review`. Run self-review first, then cross-review for independent verification.
 - **`@code-reviewer`** — Claude-based worktree reviewer (existing). Use together with `@codex-reviewer` for two independent perspectives on the same diff when the stakes are high (CodeX-Verify research shows 2-3 independent agents with different concerns beat single-agent review by ~40 percentage points).
+- **`/debug`** — 5-phase structured debugging. Invoke when `/ask-codex` alone is not enough and you want a scoped debugging session (3-strike rule + scope lock prevents flailing).
+- **`/handoff`** — manually produce a handoff note at any point. The Stop hook also triggers `auto-handoff.sh` automatically; use this skill when you want a higher-quality, narrative handoff between major phases.
+- **`/verify`** — frontend visual verification via browser screenshot + vision model. Use after UI work before declaring done; complements (not replaces) typechecking / tests.
 
 ---
 
