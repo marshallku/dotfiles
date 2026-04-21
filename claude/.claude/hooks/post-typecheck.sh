@@ -1,6 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # PostToolUse hook: 파일 변경 후 자동 타입 체크
 # Edit/Write 도구 사용 후 해당 프로젝트의 타입 체커 실행
+
+set -euo pipefail
 
 INPUT=$(cat)
 TOOL=$(echo "$INPUT" | jq -r '.tool_name // empty')

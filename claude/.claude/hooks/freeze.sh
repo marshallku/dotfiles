@@ -1,6 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # PreToolUse hook: freeze 디렉토리 외 편집 차단
 # 야간 에이전트 편집 범위 제한용
+
+set -euo pipefail
 
 INPUT=$(cat)
 FREEZE_FILE="$HOME/.claude/freeze-dir.txt"

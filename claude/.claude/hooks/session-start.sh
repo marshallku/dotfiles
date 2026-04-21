@@ -2,6 +2,8 @@
 # SessionStart hook: 이전 세션 handoff 자동 로드
 # auto-handoff.sh가 저장한 latest.md를 읽어서 시스템 프롬프트에 주입
 
+set -euo pipefail
+
 . "$(dirname "$0")/_lib.sh"
 
 # 부수 작업: auto-cross-review state 파일 중 1일 이상 된 것 청소

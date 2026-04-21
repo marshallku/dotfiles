@@ -61,14 +61,9 @@ if [ ! -f "$DIRTY_LOG" ]; then
     exit 0
 fi
 
-FILE_COUNT=$(sort -u "$DIRTY_LOG" 2>/dev/null | wc -l)
-if [ "$FILE_COUNT" -lt "$MIN_FILES" ]; then
-    log "allow: only $FILE_COUNT file(s) touched (min $MIN_FILES)"
-    echo '{}'
-    exit 0
-fi
-
-# Determine the repo for this cwd
+# Determine the repo for this cwd first — we want to scope the dirty-log count
+# to files inside the current repo so edits in an unrelated directory don't
+# inflate the gate-trigger count.
 if [ -z "$CWD" ]; then
     log "allow: no cwd provided"
     echo '{}'
@@ -77,6 +72,18 @@ fi
 
 if ! REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null); then
     log "allow: cwd is not a git repo ($CWD)"
+    echo '{}'
+    exit 0
+fi
+
+# Count only *distinct* dirty-log entries whose path is under this repo.
+# track-edit.sh appends one line per edit, so the same file can appear many
+# times; dedupe before counting to match the AUTO_REVIEW_MIN_FILES semantics.
+# The trailing "/" on $REPO_ROOT prevents sibling repos with the same prefix
+# (e.g. /home/foo vs /home/foo-bar) from bleeding into the count.
+FILE_COUNT=$(grep "^${REPO_ROOT}/" "$DIRTY_LOG" 2>/dev/null | sort -u | wc -l)
+if [ "$FILE_COUNT" -lt "$MIN_FILES" ]; then
+    log "allow: only $FILE_COUNT file(s) touched in $REPO_ROOT (min $MIN_FILES)"
     echo '{}'
     exit 0
 fi
@@ -91,10 +98,13 @@ if [ -f "$MARKER" ]; then
     exit 0
 fi
 
-# Trivial diff → allow even without review
-DIFF_LINES=$(git -C "$REPO_ROOT" diff HEAD 2>/dev/null | wc -l)
+# Trivial diff → allow even without review. Weight untracked files (same
+# rationale as auto-cross-review.sh) so a new-file-only session still gates.
+TRACKED_LINES=$(git -C "$REPO_ROOT" diff HEAD 2>/dev/null | wc -l)
+UNTRACKED=$(git -C "$REPO_ROOT" ls-files --others --exclude-standard 2>/dev/null | wc -l)
+DIFF_LINES=$(( TRACKED_LINES + UNTRACKED * 10 ))
 if [ "$DIFF_LINES" -lt "$MIN_LINES" ]; then
-    log "allow: diff only $DIFF_LINES lines (min $MIN_LINES)"
+    log "allow: $TRACKED_LINES tracked lines + $UNTRACKED untracked (weighted=$DIFF_LINES, min $MIN_LINES)"
     echo '{}'
     exit 0
 fi

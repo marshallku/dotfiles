@@ -1,6 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # PreToolUse hook: 민감 파일 편집/쓰기 차단
 # Edit, Write 도구에서 .env, .secrets, credentials 등 보호
+
+set -euo pipefail
 
 INPUT=$(cat)
 FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')

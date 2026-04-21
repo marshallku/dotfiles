@@ -1,6 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Stop hook: 세션 종료 시 자동 핸드오프 저장
 # git 상태를 캡처하여 다음 세션에서 참조 가능
+
+set -euo pipefail
 
 HANDOFF_DIR="$HOME/.claude/handoffs"
 mkdir -p "$HANDOFF_DIR"

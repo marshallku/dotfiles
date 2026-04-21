@@ -73,9 +73,15 @@ if [ -n "$CWD" ] && REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/n
         exit 0
     fi
 
-    DIFF_LINES=$(git -C "$REPO_ROOT" diff HEAD 2>/dev/null | wc -l)
+    # git diff HEAD only shows tracked changes; a session that added only new
+    # files (common during scaffolding) would have DIFF_LINES=0 and get skipped
+    # here even though there are real, un-reviewed edits. Weight untracked
+    # files into the count so those sessions still trigger the gate.
+    TRACKED_LINES=$(git -C "$REPO_ROOT" diff HEAD 2>/dev/null | wc -l)
+    UNTRACKED=$(git -C "$REPO_ROOT" ls-files --others --exclude-standard 2>/dev/null | wc -l)
+    DIFF_LINES=$(( TRACKED_LINES + UNTRACKED * 10 ))
     if [ "$DIFF_LINES" -lt "$MIN_LINES" ]; then
-        log "skip: diff is $DIFF_LINES lines (min $MIN_LINES)"
+        log "skip: $TRACKED_LINES tracked lines + $UNTRACKED untracked (weighted=$DIFF_LINES, min $MIN_LINES)"
         echo '{}'
         exit 0
     fi
@@ -83,9 +89,14 @@ fi
 
 # Clarification-pause heuristic — if the last assistant message ends with a
 # question mark, Claude is likely waiting for the user, not finishing a task.
+# Uses jq to extract the last assistant text field robustly (the previous
+# grep-based regex was fragile to JSONL layout changes).
 if [ -f "$TRANSCRIPT" ]; then
-    LAST_TEXT=$(tail -c 16384 "$TRANSCRIPT" 2>/dev/null | grep -o '"type":"text","text":"[^"]*"' | tail -1 || true)
-    if echo "$LAST_TEXT" | grep -qE '\?(\\n)*"$'; then
+    LAST_TEXT=$(tail -c 16384 "$TRANSCRIPT" 2>/dev/null \
+        | jq -rc 'select(.type=="assistant") | .message.content[]? | select(.type=="text") | .text' 2>/dev/null \
+        | tail -n1 \
+        || true)
+    if echo "$LAST_TEXT" | grep -qE '\?\s*$'; then
         log "skip: last message looks like a clarification question"
         echo '{}'
         exit 0

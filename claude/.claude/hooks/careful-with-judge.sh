@@ -1,10 +1,11 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # PreToolUse hook: 위험 명령 탐지 + LLM-as-judge
 # deny는 --dangerously-skip-permissions에서도 유효
 
+set -euo pipefail
+
 LOG="$HOME/.claude/hooks-debug.log"
 INPUT=$(cat)
-echo "[$(date +%H:%M:%S)] careful triggered: $(echo "$INPUT" | jq -r '.tool_input.command // empty' | head -c 80)" >> "$LOG"
 CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 
 [ -z "$CMD" ] && echo '{}' && exit 0
@@ -30,6 +31,7 @@ case "$CMD" in
 esac
 
 [ -z "$DANGEROUS" ] && echo '{}' && exit 0
+echo "[$(date +%H:%M:%S)] careful: LLM-judge invoked ($DANGEROUS): $(echo "$CMD" | head -c 80)" >> "$LOG"
 
 # 2단계: LLM judge (위험 패턴일 때만 호출)
 TRANSCRIPT=$(echo "$INPUT" | jq -r '.transcript_path // empty')
@@ -43,6 +45,10 @@ Context: $TASK_CTX
 Rules: allow if contextually necessary (disk cleanup, build artifacts, feature branch). deny if targets production data, main branch, or unclear context." 2>/dev/null || echo "deny")
 
 case "$JUDGMENT" in
-    *allow*) echo '{}' ;;
-    *) printf '{"permissionDecision":"deny","message":"[careful] Blocked %s: %s"}\n' "$DANGEROUS" "$CMD" ;;
+    *allow*)
+        echo "[$(date +%H:%M:%S)] careful verdict: allow ($DANGEROUS): $(echo "$CMD" | head -c 60)" >> "$LOG"
+        echo '{}' ;;
+    *)
+        echo "[$(date +%H:%M:%S)] careful verdict: deny ($DANGEROUS): $(echo "$CMD" | head -c 60)" >> "$LOG"
+        printf '{"permissionDecision":"deny","message":"[careful] Blocked %s: %s"}\n' "$DANGEROUS" "$CMD" ;;
 esac
