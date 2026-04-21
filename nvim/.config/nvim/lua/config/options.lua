@@ -36,8 +36,10 @@ vim.opt.incsearch = true -- Incremental search
 vim.opt.scrolloff = 8 -- Minimum lines above/below cursor
 vim.opt.sidescrolloff = 8 -- Minimum columns left/right of cursor
 vim.opt.showmode = false -- Don't show mode (statusline shows it)
-vim.opt.winblend = 10 -- Window transparency (0-100, 0 = opaque, 100 = fully transparent)
-vim.opt.pumblend = 10 -- Popup menu transparency (0-100, 0 = opaque, 100 = fully transparent)
+if not vim.g.vscode then
+    vim.opt.winblend = 10 -- Window transparency (0-100, 0 = opaque, 100 = fully transparent)
+    vim.opt.pumblend = 10 -- Popup menu transparency (0-100, 0 = opaque, 100 = fully transparent)
+end
 vim.opt.conceallevel = 0 -- Don't conceal characters (for ligatures to work properly)
 
 -- Completion menu

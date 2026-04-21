@@ -1,5 +1,6 @@
 return {
     "folke/todo-comments.nvim",
+    cond = function() return not vim.g.vscode end,
     event = { "BufReadPre", "BufNewFile" },
     dependencies = { "nvim-lua/plenary.nvim" },
     opts = {

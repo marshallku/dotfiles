@@ -1,5 +1,6 @@
 return {
     "olimorris/codecompanion.nvim",
+    cond = function() return not vim.g.vscode end,
     cmd = { "CodeCompanion", "CodeCompanionChat", "CodeCompanionActions" },
     keys = {
         { "<leader>ai", "<cmd>CodeCompanionChat Toggle<CR>", mode = { "n", "v" }, desc = "AI Chat" },

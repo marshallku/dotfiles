@@ -1,5 +1,6 @@
 return {
     "neovim/nvim-lspconfig",
+    cond = function() return not vim.g.vscode end,
     event = { "BufReadPre", "BufNewFile" },
     dependencies = {
         { "antosha417/nvim-lsp-file-operations", config = true },

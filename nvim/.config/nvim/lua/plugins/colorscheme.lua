@@ -3,6 +3,7 @@ return {
     name = "catppuccin",
     lazy = false,
     priority = 1000,
+    cond = function() return not vim.g.vscode end,
     config = function()
         require("catppuccin").setup({
             flavour = "mocha",

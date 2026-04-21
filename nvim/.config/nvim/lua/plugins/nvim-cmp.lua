@@ -1,5 +1,6 @@
 return {
     "saghen/blink.cmp",
+    cond = function() return not vim.g.vscode end,
     event = "InsertEnter",
     version = "*",
     dependencies = {

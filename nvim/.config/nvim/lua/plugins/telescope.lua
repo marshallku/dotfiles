@@ -1,5 +1,6 @@
 return {
     "nvim-telescope/telescope.nvim",
+    cond = function() return not vim.g.vscode end,
     dependencies = {
         "nvim-lua/plenary.nvim",
         {"nvim-telescope/telescope-fzf-native.nvim", build = "make"},
