@@ -38,7 +38,7 @@ MIN_FILES="${AUTO_REVIEW_MIN_FILES:-2}"
 # No pending edits → nothing to remind about
 [ -f "$DIRTY_LOG" ] || { log "skip: no dirty log"; echo '{}'; exit 0; }
 
-FILE_COUNT=$(sort -u "$DIRTY_LOG" 2>/dev/null | wc -l)
+FILE_COUNT=$(sort -u "$DIRTY_LOG" 2>/dev/null | wc -l | tr -d ' ')
 if [ "$FILE_COUNT" -lt "$MIN_FILES" ]; then
     log "skip: only $FILE_COUNT file(s) (min $MIN_FILES)"
     echo '{}'

@@ -81,7 +81,7 @@ fi
 # times; dedupe before counting to match the AUTO_REVIEW_MIN_FILES semantics.
 # The trailing "/" on $REPO_ROOT prevents sibling repos with the same prefix
 # (e.g. /home/foo vs /home/foo-bar) from bleeding into the count.
-FILE_COUNT=$(grep "^${REPO_ROOT}/" "$DIRTY_LOG" 2>/dev/null | sort -u | wc -l)
+FILE_COUNT=$(grep "^${REPO_ROOT}/" "$DIRTY_LOG" 2>/dev/null | sort -u | wc -l | tr -d ' ')
 if [ "$FILE_COUNT" -lt "$MIN_FILES" ]; then
     log "allow: only $FILE_COUNT file(s) touched in $REPO_ROOT (min $MIN_FILES)"
     echo '{}'
@@ -100,8 +100,8 @@ fi
 
 # Trivial diff → allow even without review. Weight untracked files (same
 # rationale as auto-cross-review.sh) so a new-file-only session still gates.
-TRACKED_LINES=$(git -C "$REPO_ROOT" diff HEAD 2>/dev/null | wc -l)
-UNTRACKED=$(git -C "$REPO_ROOT" ls-files --others --exclude-standard 2>/dev/null | wc -l)
+TRACKED_LINES=$(git -C "$REPO_ROOT" diff HEAD 2>/dev/null | wc -l | tr -d ' ')
+UNTRACKED=$(git -C "$REPO_ROOT" ls-files --others --exclude-standard 2>/dev/null | wc -l | tr -d ' ')
 DIFF_LINES=$(( TRACKED_LINES + UNTRACKED * 10 ))
 if [ "$DIFF_LINES" -lt "$MIN_LINES" ]; then
     log "allow: $TRACKED_LINES tracked lines + $UNTRACKED untracked (weighted=$DIFF_LINES, min $MIN_LINES)"

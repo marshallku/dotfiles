@@ -56,7 +56,7 @@ if [ -f "$BLOCKED" ]; then
 fi
 
 # Count unique files touched
-FILE_COUNT=$(sort -u "$DIRTY_LOG" 2>/dev/null | wc -l)
+FILE_COUNT=$(sort -u "$DIRTY_LOG" 2>/dev/null | wc -l | tr -d ' ')
 if [ "$FILE_COUNT" -lt "$MIN_FILES" ]; then
     log "skip: only $FILE_COUNT file(s) touched (min $MIN_FILES)"
     echo '{}'
@@ -77,8 +77,8 @@ if [ -n "$CWD" ] && REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/n
     # files (common during scaffolding) would have DIFF_LINES=0 and get skipped
     # here even though there are real, un-reviewed edits. Weight untracked
     # files into the count so those sessions still trigger the gate.
-    TRACKED_LINES=$(git -C "$REPO_ROOT" diff HEAD 2>/dev/null | wc -l)
-    UNTRACKED=$(git -C "$REPO_ROOT" ls-files --others --exclude-standard 2>/dev/null | wc -l)
+    TRACKED_LINES=$(git -C "$REPO_ROOT" diff HEAD 2>/dev/null | wc -l | tr -d ' ')
+    UNTRACKED=$(git -C "$REPO_ROOT" ls-files --others --exclude-standard 2>/dev/null | wc -l | tr -d ' ')
     DIFF_LINES=$(( TRACKED_LINES + UNTRACKED * 10 ))
     if [ "$DIFF_LINES" -lt "$MIN_LINES" ]; then
         log "skip: $TRACKED_LINES tracked lines + $UNTRACKED untracked (weighted=$DIFF_LINES, min $MIN_LINES)"

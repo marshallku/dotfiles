@@ -16,8 +16,14 @@ FREEZE_DIR=$(cat "$FREEZE_FILE")
 FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
 [ -z "$FILE_PATH" ] && echo '{}' && exit 0
 
-# 경로 정규화
-REAL_FILE=$(realpath -m "$FILE_PATH" 2>/dev/null || echo "$FILE_PATH")
+# 경로 정규화 (macOS realpath은 -m 미지원, Python fallback 사용)
+if command -v grealpath >/dev/null 2>&1; then
+    REAL_FILE=$(grealpath -m "$FILE_PATH" 2>/dev/null || echo "$FILE_PATH")
+elif realpath -m / >/dev/null 2>&1; then
+    REAL_FILE=$(realpath -m "$FILE_PATH" 2>/dev/null || echo "$FILE_PATH")
+else
+    REAL_FILE=$(python3 -c "import os,sys; print(os.path.normpath(sys.argv[1]))" "$FILE_PATH" 2>/dev/null || echo "$FILE_PATH")
+fi
 
 # trailing / 보장하여 /src ↔ /src-old 오매칭 방지
 case "$FREEZE_DIR" in

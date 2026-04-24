@@ -28,7 +28,7 @@ set -euo pipefail
 
 . "$(dirname "$0")/../hooks/_lib.sh"
 
-BASE="main"
+BASE=""
 MODE="branch"
 FOCUS=""
 CONTEXT=""
@@ -85,6 +85,25 @@ fi
 if ! git rev-parse --show-toplevel >/dev/null 2>&1; then
     echo "[codex-review] not inside a git repository" >&2
     exit 2
+fi
+
+# Auto-detect default branch if not specified via --base
+if [[ -z "$BASE" ]]; then
+    BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||') \
+        || BASE=""
+    if [[ -z "$BASE" ]]; then
+        for candidate in main master; do
+            if git rev-parse --verify "$candidate" >/dev/null 2>&1 \
+                || git rev-parse --verify "origin/$candidate" >/dev/null 2>&1; then
+                BASE="$candidate"
+                break
+            fi
+        done
+    fi
+    if [[ -z "$BASE" ]]; then
+        echo "[codex-review] could not detect default branch (tried main, master)" >&2
+        exit 2
+    fi
 fi
 
 # Resolve the diff
@@ -161,7 +180,7 @@ EOF
 
 # Run codex in read-only sandbox with a timeout so a stuck session does not hang the skill
 set +e
-OUTPUT=$(portable_timeout "$TIMEOUT" codex exec --skip-git-repo-check -s read-only "${MODEL_ARGS[@]}" "$PROMPT" 2>&1)
+OUTPUT=$(portable_timeout "$TIMEOUT" codex exec --skip-git-repo-check -s read-only ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} "$PROMPT" 2>&1)
 STATUS=$?
 set -e
 
