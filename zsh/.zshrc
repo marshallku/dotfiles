@@ -288,6 +288,32 @@ function p {
   fi
 }
 
+# Claude Code freeze/unfreeze
+freeze() {
+  local dir="${1:?Usage: freeze <directory>}"
+  dir="$(realpath "$dir")"
+  if [ ! -d "$dir" ]; then
+    echo "Error: $dir is not a directory" >&2
+    return 1
+  fi
+  echo "$dir" > "$HOME/.claude/freeze-dir.txt"
+  echo "Frozen to: $dir"
+}
+
+unfreeze() {
+  rm -f "$HOME/.claude/freeze-dir.txt"
+  echo "Unfrozen — edits allowed everywhere"
+}
+
+freeze-status() {
+  local f="$HOME/.claude/freeze-dir.txt"
+  if [ -f "$f" ] && [ -s "$f" ]; then
+    echo "Frozen to: $(cat "$f")"
+  else
+    echo "Not frozen"
+  fi
+}
+
 # Vim
 alias vi='nvim'
 alias vim='nvim'
@@ -378,6 +404,13 @@ precmd() {
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
 
+# Input method (fcitx5) — SSH 세션에서만 적용
+if [[ -n "$SSH_CONNECTION" || -n "$SSH_CLIENT" || -n "$SSH_TTY" ]]; then
+    export GTK_IM_MODULE=fcitx
+    export QT_IM_MODULE=fcitx
+    export XMODIFIERS=@im=fcitx
+fi
+
 export PATH="$HOME/.local/bin:$PATH"
 
 #eval "$(zoxide init zsh)"
@@ -399,7 +432,9 @@ export CHROME_EXECUTABLE=/usr/bin/chromium
 
 export PATH="$HOME/docs/scripts:$PATH"
 
+alias tmux="tmux -u"
+
 #[[ "$TERM" == "xterm-ghostty" ]] && (~/ghostty-random-bg.sh &>/dev/null &)
 [[ "$TERM" == "xterm-kitty" ]] && (~/kitty-random-bg.sh --daemon --interval 300 &>/dev/null &)
-[[ -n "$TURM_DBUS" ]] && (~/turm-random-bg.sh --daemon --interval 300 &>/dev/null &)
+[[ -n "$TURM_SOCKET" ]] && (~/turm-random-bg.sh --daemon --interval 300 &>/dev/null &)
 
