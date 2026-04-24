@@ -4,34 +4,22 @@ CACHE_FILE="$HOME/.cache/terminal-wallpapers.txt"
 MODE_FILE="$HOME/.cache/turm-bg-mode"
 CURRENT_FILE="$HOME/.cache/turm-bg-current"
 DEFAULT_INTERVAL=300
+TURMCTL="turmctl"
 
 g_elapsed=0
 
-dbus_name() {
-    echo "${TURM_DBUS:-}"
+turm_alive() {
+    local id="${1:-$(instance_id)}"
+    [[ -n "$id" ]] && kill -0 "$id" 2>/dev/null
 }
 
-dbus_set_background() {
-    local name="$1" path="$2"
-    gdbus call --session \
-        --dest "$name" \
-        --object-path /com/marshall/turm \
-        --method com.marshall.turm.SetBackground "$path" \
-        &>/dev/null
+socket_set_background() {
+    local path="$1"
+    $TURMCTL background set "$path" &>/dev/null
 }
 
-dbus_clear_background() {
-    local name="$1"
-    gdbus call --session \
-        --dest "$name" \
-        --object-path /com/marshall/turm \
-        --method com.marshall.turm.ClearBackground \
-        &>/dev/null
-}
-
-dbus_alive() {
-    local name="$1"
-    busctl --user status "$name" &>/dev/null
+socket_clear_background() {
+    $TURMCTL background clear &>/dev/null
 }
 
 get_mode() {
@@ -50,9 +38,11 @@ select_random_image() {
 }
 
 instance_id() {
-    local name
-    name=$(dbus_name)
-    echo "${name##*.}"
+    local sock="${TURM_SOCKET:-}"
+    # Extract PID from /tmp/turm-<PID>.sock
+    local base="${sock##*/}"
+    base="${base#turm-}"
+    echo "${base%.sock}"
 }
 
 save_current() {
@@ -68,37 +58,19 @@ get_current() {
 }
 
 apply_by_mode() {
-    local name
-    name=$(dbus_name)
-    [[ -z "$name" ]] && return 1
+    [[ -z "${TURM_SOCKET:-}" ]] && return 1
 
     local id
     id=$(instance_id)
 
     if [[ "$(get_mode)" == "deactive" ]]; then
-        dbus_clear_background "$name"
+        socket_clear_background
     else
         local img
         img=$(select_random_image) || return 1
-        dbus_set_background "$name" "$img"
+        socket_set_background "$img"
         save_current "$id" "$img"
     fi
-}
-
-apply_to_all() {
-    local mode
-    mode=$(get_mode)
-
-    while IFS= read -r name; do
-        [[ -z "$name" ]] && continue
-        if [[ "$mode" == "deactive" ]]; then
-            dbus_clear_background "$name"
-        else
-            local img
-            img=$(select_random_image) || continue
-            dbus_set_background "$name" "$img"
-        fi
-    done < <(busctl --user list 2>/dev/null | awk '/com\.marshall\.turm\.p/{print $1}')
 }
 
 toggle_mode() {
@@ -107,11 +79,11 @@ toggle_mode() {
 
     if [[ "$current" == "active" ]]; then
         echo "deactive" > "$MODE_FILE"
+        socket_clear_background
     else
         echo "active" > "$MODE_FILE"
+        apply_by_mode
     fi
-
-    apply_to_all
 }
 
 next_image() {
@@ -119,13 +91,11 @@ next_image() {
         return 0
     fi
 
-    local name
-    name=$(dbus_name)
-    [[ -z "$name" ]] && return 1
+    [[ -z "${TURM_SOCKET:-}" ]] && return 1
 
     local img
     img=$(select_random_image) || return 1
-    dbus_set_background "$name" "$img"
+    socket_set_background "$img"
     save_current "$(instance_id)" "$img"
 }
 
@@ -163,33 +133,53 @@ daemon_running() {
     return 1
 }
 
-wait_for_dbus() {
-    local name="$1"
+wait_for_socket() {
     local i
     for i in $(seq 1 50); do
-        dbus_alive "$name" && return 0
+        [[ -S "$TURM_SOCKET" ]] && return 0
         sleep 0.1
     done
     return 1
 }
 
+sweep_stale() {
+    local f id
+    shopt -s nullglob
+    for f in "$HOME/.cache/turm-bg-daemon-"*.pid; do
+        id="${f##*turm-bg-daemon-}"
+        id="${id%.pid}"
+        if ! turm_alive "$id"; then
+            local dpid
+            dpid=$(cat "$f" 2>/dev/null)
+            [[ -n "$dpid" ]] && kill -0 "$dpid" 2>/dev/null && kill "$dpid" 2>/dev/null
+            rm -f "$f" "${CURRENT_FILE}-${id}.txt"
+        fi
+    done
+    for f in "${CURRENT_FILE}-"*.txt; do
+        id="${f##*turm-bg-current-}"
+        id="${id%.txt}"
+        turm_alive "$id" || rm -f "$f"
+    done
+    shopt -u nullglob
+}
+
 run_daemon() {
     local interval="${1:-$DEFAULT_INTERVAL}"
-    local name
-    name=$(dbus_name)
 
-    if [[ -z "$name" ]]; then
-        echo "Error: TURM_DBUS is not set" >&2
+    if [[ -z "${TURM_SOCKET:-}" ]]; then
+        echo "Error: TURM_SOCKET is not set" >&2
         exit 1
     fi
 
-    wait_for_dbus "$name" || exit 1
+    wait_for_socket || exit 1
 
-    apply_by_mode
+    sweep_stale
 
     if daemon_running; then
         exit 0
     fi
+
+    apply_by_mode
 
     local id
     id=$(instance_id)
@@ -201,8 +191,8 @@ run_daemon() {
     while true; do
         sleep 10
 
-        # turm D-Bus name이 사라졌으면 종료
-        dbus_alive "$name" || exit 0
+        # turm process가 죽었으면 종료
+        turm_alive "$id" || exit 0
 
         g_elapsed=$((g_elapsed + 10))
         if (( g_elapsed >= interval )); then
