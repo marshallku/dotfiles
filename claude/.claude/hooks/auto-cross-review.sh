@@ -111,7 +111,7 @@ REASON="[auto-review] You edited $FILE_COUNT files this session with no external
 
 1. Write a SHORT intent brief to a temp file (≤150 words total, three sections):
 
-    BRIEF=\$(mktemp /tmp/codex-brief.XXXXXX.md)
+    BRIEF=\$(mktemp /tmp/codex-brief-XXXXXX)
     cat > \"\$BRIEF\" <<'EOF'
     ## User's request
     <paraphrase of what the user asked for, 1-2 lines>
@@ -123,9 +123,9 @@ REASON="[auto-review] You edited $FILE_COUNT files this session with no external
     <tradeoffs, alternatives rejected, scope deliberately excluded, or \"none\">
     EOF
 
-2. Run the cross-review WITH that context:
+2. Run the cross-review WITH that context (--session scopes the diff to only files touched this session, even if already committed):
 
-    bash ~/.claude/scripts/codex-review.sh --uncommitted --context-file \"\$BRIEF\"
+    bash ~/.claude/scripts/codex-review.sh --session \"$SESSION\" --context-file \"\$BRIEF\"
 
 3. Parse the output:
    - exit 0 (VERDICT: APPROVED) → summarize briefly and conclude the turn

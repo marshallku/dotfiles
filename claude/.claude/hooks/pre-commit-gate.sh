@@ -121,7 +121,7 @@ Before re-running this command:
 
 1. Write a short intent brief (≤150 words, three sections):
 
-    BRIEF=$(mktemp /tmp/codex-brief.XXXXXX.md)
+    BRIEF=$(mktemp /tmp/codex-brief-XXXXXX)
     cat > "$BRIEF" <<EOF
     ## User'"'"'s request
     <paraphrase, 1-2 lines>
@@ -133,9 +133,9 @@ Before re-running this command:
     <tradeoffs, alternatives rejected, or "none">
     EOF
 
-2. Run the review:
+2. Run the review (--session scopes the diff to only files touched this session, even if already committed):
 
-    bash ~/.claude/scripts/codex-review.sh --uncommitted --context-file "$BRIEF"
+    bash ~/.claude/scripts/codex-review.sh --session '"$SESSION"' --context-file "$BRIEF"
 
 3. Handle the verdict:
    - APPROVED → a reviewed marker is set automatically; re-run the original command.

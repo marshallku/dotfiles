@@ -58,7 +58,7 @@ fi
 
 log "INJECT: reminder for $FILE_COUNT files"
 
-REMINDER="[auto-review] This session already has pending edits across ${FILE_COUNT} files. When you finish this turn, before concluding: write a short intent brief (user's ask / what was done / key decisions, ≤150 words) to a temp file, then run 'bash ~/.claude/scripts/codex-review.sh --uncommitted --context-file <brief>'. The brief matters — without it codex only judges code quality, not whether you actually did what was asked. Apply Fix-First triage on CRITICAL findings (especially [INTENT-MISMATCH]). Opt-out: touch ~/.claude/state/auto-review-disabled"
+REMINDER="[auto-review] This session already has pending edits across ${FILE_COUNT} files. When you finish this turn, before concluding: write a short intent brief (user's ask / what was done / key decisions, ≤150 words) to a temp file, then run 'bash ~/.claude/scripts/codex-review.sh --session ${SESSION} --context-file <brief>'. Use --session instead of --uncommitted so already-committed changes are included. The brief matters — without it codex only judges code quality, not whether you actually did what was asked. Apply Fix-First triage on CRITICAL findings (especially [INTENT-MISMATCH]). Opt-out: touch ~/.claude/state/auto-review-disabled"
 
 jq -n --arg ctx "$REMINDER" '{
   hookSpecificOutput: {

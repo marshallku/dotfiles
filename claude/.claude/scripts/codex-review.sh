@@ -7,9 +7,17 @@
 #   codex-review.sh                              # HEAD vs main (or origin/main)
 #   codex-review.sh --base develop               # HEAD vs given base
 #   codex-review.sh --uncommitted                # working tree changes
+#   codex-review.sh --session <id>               # session dirty-log files only
+#   codex-review.sh --files f1.ts,f2.ts          # specific files (comma-sep)
 #   codex-review.sh --focus security             # focused review
 #   codex-review.sh --context "user asked to..." # inline intent brief
 #   codex-review.sh --context-file /tmp/brief.md # intent brief from file
+#
+# --session and --files collect diffs per-file, trying (in order):
+#   1. uncommitted changes (git diff HEAD -- <file>)
+#   2. committed changes vs base (git diff <base>...HEAD -- <file>)
+#   3. last commit that touched the file (git log -1 -p -- <file>)
+# This ensures review works regardless of whether changes are committed.
 #
 # Intent context is strongly recommended. Without it, codex can only judge
 # "is this good code" — not "does this implement what the user asked for".
@@ -33,6 +41,8 @@ MODE="branch"
 FOCUS=""
 CONTEXT=""
 CONTEXT_FILE=""
+SESSION_ID=""
+FILE_LIST=""
 TIMEOUT="${CODEX_REVIEW_TIMEOUT:-420}"
 
 while [[ $# -gt 0 ]]; do
@@ -44,6 +54,16 @@ while [[ $# -gt 0 ]]; do
         --uncommitted)
             MODE="uncommitted"
             shift
+            ;;
+        --session)
+            MODE="session"
+            SESSION_ID="$2"
+            shift 2
+            ;;
+        --files)
+            MODE="files"
+            FILE_LIST="$2"
+            shift 2
             ;;
         --focus)
             FOCUS="$2"
@@ -58,7 +78,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         -h|--help)
-            sed -n '2,26p' "$0"
+            sed -n '2,34p' "$0"
             exit 0
             ;;
         *)
@@ -87,8 +107,9 @@ if ! git rev-parse --show-toplevel >/dev/null 2>&1; then
     exit 2
 fi
 
-# Auto-detect default branch if not specified via --base
-if [[ -z "$BASE" ]]; then
+# Auto-detect default branch when needed (branch mode, or session/files fallback)
+detect_base() {
+    if [[ -n "$BASE" ]]; then return 0; fi
     BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||') \
         || BASE=""
     if [[ -z "$BASE" ]]; then
@@ -104,21 +125,95 @@ if [[ -z "$BASE" ]]; then
         echo "[codex-review] could not detect default branch (tried main, master)" >&2
         exit 2
     fi
-fi
-
-# Resolve the diff
-if [[ "$MODE" == "uncommitted" ]]; then
-    DIFF=$(git diff HEAD)
-    DIFF_DESC="uncommitted working tree changes"
-else
+    # Resolve to origin/ if local branch doesn't exist
     if ! git rev-parse --verify "$BASE" >/dev/null 2>&1; then
         if git rev-parse --verify "origin/$BASE" >/dev/null 2>&1; then
             BASE="origin/$BASE"
-        else
-            echo "[codex-review] base branch '$BASE' not found (tried origin/$BASE)" >&2
-            exit 2
         fi
     fi
+}
+
+# Collect diff for a single file, trying multiple strategies.
+# Prints the diff to stdout. Returns 1 if no diff found.
+collect_file_diff() {
+    local file="$1"
+    local d=""
+
+    # 1. Uncommitted changes (staged + unstaged)
+    d=$(git diff HEAD -- "$file" 2>/dev/null || true)
+    if [[ -n "$d" ]]; then echo "$d"; return 0; fi
+
+    # 2. Committed changes vs base branch
+    detect_base
+    d=$(git diff "${BASE}...HEAD" -- "$file" 2>/dev/null || true)
+    if [[ -n "$d" ]]; then echo "$d"; return 0; fi
+
+    # 3. Last commit that touched this file
+    d=$(git log -1 -p --format="" -- "$file" 2>/dev/null || true)
+    if [[ -n "$d" ]]; then echo "$d"; return 0; fi
+
+    return 1
+}
+
+# Resolve file list for session/files modes
+TARGET_FILES=()
+FILES_SUMMARY=""
+
+if [[ "$MODE" == "session" ]]; then
+    DIRTY_LOG="$HOME/.claude/state/dirty-${SESSION_ID}.log"
+    if [[ ! -f "$DIRTY_LOG" ]]; then
+        echo "[codex-review] no dirty log for session $SESSION_ID" >&2
+        exit 2
+    fi
+    REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
+    while IFS= read -r f; do
+        # Scope to current repo
+        if [[ -n "$REPO_ROOT" ]] && [[ "$f" != "${REPO_ROOT}/"* ]]; then
+            continue
+        fi
+        TARGET_FILES+=("$f")
+    done < <(sort -u "$DIRTY_LOG")
+
+elif [[ "$MODE" == "files" ]]; then
+    IFS=',' read -ra TARGET_FILES <<< "$FILE_LIST"
+fi
+
+# Collect diffs based on mode
+if [[ "$MODE" == "session" || "$MODE" == "files" ]]; then
+    if [[ ${#TARGET_FILES[@]} -eq 0 ]]; then
+        echo "## Summary" >&2
+        echo "No files to review." >&2
+        echo ""
+        echo "VERDICT: APPROVED"
+        exit 0
+    fi
+
+    DIFF=""
+    SUMMARY_LINES=""
+    DIFF_SOURCE_DESC=""
+    for file in "${TARGET_FILES[@]}"; do
+        file_diff=$(collect_file_diff "$file" || true)
+        if [[ -n "$file_diff" ]]; then
+            DIFF="${DIFF}${file_diff}"$'\n'
+            rel_path="${file#"$(git rev-parse --show-toplevel 2>/dev/null)/"}"
+            SUMMARY_LINES="${SUMMARY_LINES}- ${rel_path}"$'\n'
+        fi
+    done
+    FILE_TOTAL=${#TARGET_FILES[@]}
+    if [[ "$MODE" == "session" ]]; then
+        DIFF_DESC="session ${SESSION_ID} (${FILE_TOTAL} files touched)"
+    else
+        DIFF_DESC="specified files (${FILE_TOTAL} files)"
+    fi
+    FILES_SUMMARY="## Files in scope (${FILE_TOTAL} files)
+${SUMMARY_LINES}"
+
+elif [[ "$MODE" == "uncommitted" ]]; then
+    DIFF=$(git diff HEAD)
+    DIFF_DESC="uncommitted working tree changes"
+
+else
+    detect_base
     DIFF=$(git diff "${BASE}...HEAD")
     DIFF_DESC="HEAD vs ${BASE}"
 fi
@@ -158,12 +253,18 @@ if [[ -n "${CODEX_REVIEW_MODEL:-}" ]]; then
 fi
 
 # Build the prompt
+FILES_SECTION=""
+if [[ -n "$FILES_SUMMARY" ]]; then
+    FILES_SECTION="${FILES_SUMMARY}
+"
+fi
+
 PROMPT=$(cat <<EOF
 You are a senior engineer performing an independent code review.
 
 Scope: ${DIFF_DESC}
 ${FOCUS_LINE}
-${CONTEXT_SECTION}
+${FILES_SECTION}${CONTEXT_SECTION}
 
 Follow the review principles in AGENTS.md strictly. Classify findings as CRITICAL, INFORMATIONAL, or SUPPRESS. Read files outside the diff when enum completeness, interface compatibility, or caller impact matters.
 ${INTENT_CHECK}
