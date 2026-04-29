@@ -279,9 +279,12 @@ ${DIFF}
 EOF
 )
 
-# Run codex in read-only sandbox with a timeout so a stuck session does not hang the skill
+# Run codex in read-only sandbox with a timeout so a stuck session does not hang the skill.
+# stdin must be redirected from /dev/null — codex exec reads stdin until EOF when stdin is
+# a non-tty pipe (e.g. when invoked from a Claude background task), which makes the process
+# hang long after the turn's task_complete event has fired, producing false timeouts.
 set +e
-OUTPUT=$(portable_timeout "$TIMEOUT" codex exec --skip-git-repo-check -s read-only ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} "$PROMPT" 2>&1)
+OUTPUT=$(portable_timeout "$TIMEOUT" codex exec --skip-git-repo-check -s read-only ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} "$PROMPT" </dev/null 2>&1)
 STATUS=$?
 set -e
 

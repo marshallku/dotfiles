@@ -56,4 +56,7 @@ EOF
 )
 fi
 
-portable_timeout "$TIMEOUT" codex exec --skip-git-repo-check -s read-only ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} "$PROMPT"
+# Redirect stdin from /dev/null — codex exec waits for stdin EOF when stdin is
+# a non-tty pipe (e.g. when invoked from a background task), which causes the
+# process to hang long after task_complete has been emitted.
+portable_timeout "$TIMEOUT" codex exec --skip-git-repo-check -s read-only ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} "$PROMPT" </dev/null
