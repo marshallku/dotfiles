@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# codex-review.sh — Wraps `codex exec` to run a cross-check review with a
-# strict VERDICT output contract. Runs in a read-only sandbox so codex
-# cannot modify any files.
+# codex-review.sh — Cross-check review with a strict VERDICT output contract.
+# Routes through the codex-companion app-server runtime so progress phases
+# stream to the user (instead of silent capture). Read-only sandbox.
 #
 # Usage:
 #   codex-review.sh                              # HEAD vs main (or origin/main)
@@ -24,7 +24,7 @@
 # The skill / Stop hook flow will instruct Claude to write a short brief.
 #
 # Environment overrides:
-#   CODEX_REVIEW_MODEL   — override model passed to `codex exec -m`
+#   CODEX_REVIEW_MODEL   — override model passed to the companion (--model)
 #   CODEX_REVIEW_TIMEOUT — seconds before the review is aborted (default 420)
 #
 # Exit codes:
@@ -97,8 +97,9 @@ if [[ -n "$CONTEXT_FILE" ]]; then
     CONTEXT=$(cat "$CONTEXT_FILE")
 fi
 
-if ! command -v codex >/dev/null 2>&1; then
-    echo "[codex-review] codex CLI not found in PATH" >&2
+COMPANION="$(dirname "$0")/codex-companion.sh"
+if [[ ! -x "$COMPANION" ]]; then
+    echo "[codex-review] companion wrapper missing: $COMPANION" >&2
     exit 2
 fi
 
@@ -106,6 +107,24 @@ if ! git rev-parse --show-toplevel >/dev/null 2>&1; then
     echo "[codex-review] not inside a git repository" >&2
     exit 2
 fi
+
+# Defined early so that empty-diff APPROVED early-exits below can call it.
+# On APPROVED: mark the current repo as reviewed so pre-commit-gate.sh lets
+# subsequent save.sh / git commit / git push through. Also clear any pending
+# codex-delegate marker for this repo — the review just covered whatever
+# codex wrote (or confirmed it wrote nothing), so the gate-bypass flag is
+# no longer needed.
+mark_repo_reviewed() {
+    local repo_root
+    repo_root=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
+    [ -z "$repo_root" ] && return 0
+    local repo_hash_v
+    repo_hash_v=$(repo_hash "$repo_root")
+    local state_dir="$HOME/.claude/state"
+    mkdir -p "$state_dir"
+    touch "$state_dir/reviewed-$repo_hash_v"
+    rm -f "$state_dir/codex-delegate-pending-$repo_hash_v"
+}
 
 # Auto-detect default branch when needed (branch mode, or session/files fallback)
 detect_base() {
@@ -152,6 +171,14 @@ collect_file_diff() {
     d=$(git log -1 -p --format="" -- "$file" 2>/dev/null || true)
     if [[ -n "$d" ]]; then echo "$d"; return 0; fi
 
+    # 4. Untracked new file: synthetic diff vs /dev/null. Otherwise files
+    #    that were created (e.g. by /codex-delegate) but never committed
+    #    return empty here and slip through the empty-DIFF early-exit.
+    if [[ -f "$file" ]]; then
+        d=$(git diff --no-index --binary -- /dev/null "$file" 2>/dev/null || true)
+        if [[ -n "$d" ]]; then echo "$d"; return 0; fi
+    fi
+
     return 1
 }
 
@@ -162,17 +189,23 @@ FILES_SUMMARY=""
 if [[ "$MODE" == "session" ]]; then
     DIRTY_LOG="$HOME/.claude/state/dirty-${SESSION_ID}.log"
     if [[ ! -f "$DIRTY_LOG" ]]; then
-        echo "[codex-review] no dirty log for session $SESSION_ID" >&2
-        exit 2
+        # Fallback: a /codex-delegate --write only session never invokes
+        # track-edit.sh, so no dirty log exists, but the working tree still
+        # has codex's writes that need review. Treat as --uncommitted so the
+        # gate's "run --session ${SESSION}" instruction Just Works for that
+        # case instead of hard-failing.
+        echo "[codex-review] no dirty log for session ${SESSION_ID}; falling back to --uncommitted" >&2
+        MODE="uncommitted"
+    else
+        REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
+        while IFS= read -r f; do
+            # Scope to current repo
+            if [[ -n "$REPO_ROOT" ]] && [[ "$f" != "${REPO_ROOT}/"* ]]; then
+                continue
+            fi
+            TARGET_FILES+=("$f")
+        done < <(sort -u "$DIRTY_LOG")
     fi
-    REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
-    while IFS= read -r f; do
-        # Scope to current repo
-        if [[ -n "$REPO_ROOT" ]] && [[ "$f" != "${REPO_ROOT}/"* ]]; then
-            continue
-        fi
-        TARGET_FILES+=("$f")
-    done < <(sort -u "$DIRTY_LOG")
 
 elif [[ "$MODE" == "files" ]]; then
     IFS=',' read -ra TARGET_FILES <<< "$FILE_LIST"
@@ -181,12 +214,29 @@ fi
 # Collect diffs based on mode
 if [[ "$MODE" == "session" || "$MODE" == "files" ]]; then
     if [[ ${#TARGET_FILES[@]} -eq 0 ]]; then
-        echo "## Summary" >&2
-        echo "No files to review." >&2
-        echo ""
-        echo "VERDICT: APPROVED"
-        exit 0
+        # No targets to review. For session mode this is the cross-repo edge
+        # case: the dirty log exists (other repo touched) but has zero entries
+        # for the cwd repo. Falling through to APPROVED would clear the
+        # delegate-pending marker for the cwd repo without actually reviewing
+        # codex's working-tree writes — exactly the bypass we are trying to
+        # close. Fall back to --uncommitted instead so the cwd repo's working
+        # tree is what gets reviewed.
+        if [[ "$MODE" == "session" ]]; then
+            echo "[codex-review] no session-tracked files for this repo; falling back to --uncommitted" >&2
+            MODE="uncommitted"
+        else
+            # explicit --files mode with empty list. This is a caller error
+            # (or empty-set query). Do NOT mark reviewed — that would clear
+            # the repo's reviewed/pending markers without ever reviewing the
+            # actual working tree, granting a free gate bypass.
+            echo "[codex-review] --files mode requires at least one file" >&2
+            exit 2
+        fi
     fi
+fi
+
+# Branch the diff collection on (possibly fallback-adjusted) MODE.
+if [[ "$MODE" == "session" || "$MODE" == "files" ]]; then
 
     DIFF=""
     SUMMARY_LINES=""
@@ -209,8 +259,20 @@ if [[ "$MODE" == "session" || "$MODE" == "files" ]]; then
 ${SUMMARY_LINES}"
 
 elif [[ "$MODE" == "uncommitted" ]]; then
+    # `git diff HEAD` excludes untracked files. A /codex-delegate that only
+    # creates new files would show an empty diff here and bypass review via
+    # the empty-DIFF path below. Append a synthetic diff for each untracked
+    # file (vs /dev/null) so they actually get reviewed.
     DIFF=$(git diff HEAD)
-    DIFF_DESC="uncommitted working tree changes"
+    while IFS= read -r untracked; do
+        [ -z "$untracked" ] && continue
+        # --no-index always exits 1 when files differ; swallow it.
+        u_diff=$(git diff --no-index --binary -- /dev/null "$untracked" 2>/dev/null || true)
+        if [[ -n "$u_diff" ]]; then
+            DIFF="${DIFF}"$'\n'"${u_diff}"
+        fi
+    done < <(git ls-files --others --exclude-standard 2>/dev/null)
+    DIFF_DESC="uncommitted working tree changes (incl. untracked files)"
 
 else
     detect_base
@@ -223,6 +285,13 @@ if [[ -z "$DIFF" ]]; then
     echo "No diff to review (${DIFF_DESC})." >&2
     echo ""
     echo "VERDICT: APPROVED"
+    # Mark reviewed only for auto-scoped modes (uncommitted, branch). For an
+    # explicit --files request that resolves to empty diffs, the user asked
+    # about a narrow set; granting the wider repo's reviewed/pending marker
+    # would be an unauthorized gate bypass.
+    if [[ "$MODE" != "files" ]]; then
+        mark_repo_reviewed
+    fi
     exit 0
 fi
 
@@ -249,7 +318,7 @@ fi
 
 MODEL_ARGS=()
 if [[ -n "${CODEX_REVIEW_MODEL:-}" ]]; then
-    MODEL_ARGS=(-m "$CODEX_REVIEW_MODEL")
+    MODEL_ARGS=(--model "$CODEX_REVIEW_MODEL")
 fi
 
 # Build the prompt
@@ -279,12 +348,18 @@ ${DIFF}
 EOF
 )
 
-# Run codex in read-only sandbox with a timeout so a stuck session does not hang the skill.
-# stdin must be redirected from /dev/null — codex exec reads stdin until EOF when stdin is
-# a non-tty pipe (e.g. when invoked from a Claude background task), which makes the process
-# hang long after the turn's task_complete event has fired, producing false timeouts.
+# Run review through the companion (app-server runtime) with a timeout.
+# Progress phases stream to stderr in real time; final assistant message
+# (containing the VERDICT line) is captured from stdout for parsing.
+# Use --prompt-file rather than passing the prompt as argv: a large diff
+# pushes the argv past the size that node's spawnSync can hand to its
+# `codex --version` / `codex app-server --help` probes, and the probe
+# failures surface as a confusing "Codex CLI is not installed" error.
+PROMPT_FILE=$(mktemp /tmp/codex-review-prompt.XXXXXX)
+trap 'rm -f "$PROMPT_FILE"' EXIT
+printf '%s' "$PROMPT" > "$PROMPT_FILE"
 set +e
-OUTPUT=$(portable_timeout "$TIMEOUT" codex exec --skip-git-repo-check -s read-only ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} "$PROMPT" </dev/null 2>&1)
+OUTPUT=$(portable_timeout "$TIMEOUT" "$COMPANION" task --prompt-file "$PROMPT_FILE" ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} </dev/null)
 STATUS=$?
 set -e
 
@@ -299,7 +374,7 @@ if [[ $STATUS -eq 127 ]]; then
 fi
 
 if [[ $STATUS -ne 0 ]]; then
-    echo "[codex-review] codex exec failed with status $STATUS" >&2
+    echo "[codex-review] companion task failed with status $STATUS" >&2
     echo "$OUTPUT" >&2
     exit 2
 fi
@@ -309,22 +384,16 @@ echo "$OUTPUT"
 # Parse the final verdict — check the last 20 lines so conversational preamble does not confuse us
 VERDICT_LINE=$(echo "$OUTPUT" | tail -n 20 | grep -E "^VERDICT: (APPROVED|REVISE)" | tail -n 1 || true)
 
-# On APPROVED: mark the current repo as reviewed so pre-commit-gate.sh lets
-# subsequent save.sh / git commit / git push through.
-mark_repo_reviewed() {
-    local repo_root
-    repo_root=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
-    [ -z "$repo_root" ] && return 0
-    local repo_hash_v
-    repo_hash_v=$(repo_hash "$repo_root")
-    local state_dir="$HOME/.claude/state"
-    mkdir -p "$state_dir"
-    touch "$state_dir/reviewed-$repo_hash_v"
-}
-
 case "$VERDICT_LINE" in
     "VERDICT: APPROVED")
-        mark_repo_reviewed
+        # Mark reviewed only for auto-scoped reviews (uncommitted, session,
+        # branch). An explicit --files request is a narrow query that does
+        # not cover the entire working tree; granting the repo-wide gate
+        # marker on its APPROVED would let unrelated unreviewed changes
+        # slip past pre-commit-gate.sh.
+        if [[ "$MODE" != "files" ]]; then
+            mark_repo_reviewed
+        fi
         exit 0
         ;;
     "VERDICT: REVISE")

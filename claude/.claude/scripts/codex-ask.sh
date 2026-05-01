@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # codex-ask.sh — Ask Codex for a quick opinion on a design question.
-# Runs in read-only sandbox. Intended for one-shot consultations during work.
+# Routes through the codex-companion app-server runtime so the user sees
+# streaming progress phases (starting / investigating / finalizing) instead
+# of a black box. Read-only sandbox — codex cannot modify files.
 #
 # Usage:
 #   codex-ask.sh "Should I use X or Y?"
 #   cat src/auth.ts | codex-ask.sh "Is this middleware order correct?"
 #
 # Environment overrides:
-#   CODEX_ASK_MODEL   — override model passed to `codex exec -m`
+#   CODEX_ASK_MODEL   — override model passed to the companion (--model)
 #   CODEX_ASK_TIMEOUT — seconds before the call is aborted (default 180)
 
 set -euo pipefail
@@ -19,8 +21,9 @@ if [[ $# -lt 1 ]]; then
     exit 2
 fi
 
-if ! command -v codex >/dev/null 2>&1; then
-    echo "[codex-ask] codex CLI not found in PATH" >&2
+COMPANION="$(dirname "$0")/codex-companion.sh"
+if [[ ! -x "$COMPANION" ]]; then
+    echo "[codex-ask] companion wrapper missing: $COMPANION" >&2
     exit 2
 fi
 
@@ -34,7 +37,7 @@ fi
 
 MODEL_ARGS=()
 if [[ -n "${CODEX_ASK_MODEL:-}" ]]; then
-    MODEL_ARGS=(-m "$CODEX_ASK_MODEL")
+    MODEL_ARGS=(--model "$CODEX_ASK_MODEL")
 fi
 
 if [[ -n "$STDIN_CONTEXT" ]]; then
@@ -56,7 +59,6 @@ EOF
 )
 fi
 
-# Redirect stdin from /dev/null — codex exec waits for stdin EOF when stdin is
-# a non-tty pipe (e.g. when invoked from a background task), which causes the
-# process to hang long after task_complete has been emitted.
-portable_timeout "$TIMEOUT" codex exec --skip-git-repo-check -s read-only ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} "$PROMPT" </dev/null
+# stdin must be /dev/null — companion `task` falls back to reading piped stdin
+# as the prompt otherwise.
+portable_timeout "$TIMEOUT" "$COMPANION" task ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} "$PROMPT" </dev/null

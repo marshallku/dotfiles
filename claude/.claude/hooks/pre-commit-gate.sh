@@ -54,16 +54,10 @@ if [ "$COMMIT_LIKE" = false ]; then
     exit 0
 fi
 
-# Nothing edited this session → nothing to review
-DIRTY_LOG="$STATE_DIR/dirty-${SESSION}.log"
-if [ ! -f "$DIRTY_LOG" ]; then
-    echo '{}'
-    exit 0
-fi
-
-# Determine the repo for this cwd first — we want to scope the dirty-log count
-# to files inside the current repo so edits in an unrelated directory don't
-# inflate the gate-trigger count.
+# Resolve cwd → repo → pending marker BEFORE checking dirty log. A pure
+# /codex-delegate --write session never invokes track-edit.sh, so no
+# dirty log exists for this session — but codex-delegate-pending DOES,
+# and we must respect it as proof the change is non-trivial.
 if [ -z "$CWD" ]; then
     log "allow: no cwd provided"
     echo '{}'
@@ -76,20 +70,48 @@ if ! REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null); then
     exit 0
 fi
 
-# Count only *distinct* dirty-log entries whose path is under this repo.
-# track-edit.sh appends one line per edit, so the same file can appear many
-# times; dedupe before counting to match the AUTO_REVIEW_MIN_FILES semantics.
-# The trailing "/" on $REPO_ROOT prevents sibling repos with the same prefix
-# (e.g. /home/foo vs /home/foo-bar) from bleeding into the count.
-FILE_COUNT=$(grep "^${REPO_ROOT}/" "$DIRTY_LOG" 2>/dev/null | sort -u | wc -l | tr -d ' ')
-if [ "$FILE_COUNT" -lt "$MIN_FILES" ]; then
-    log "allow: only $FILE_COUNT file(s) touched in $REPO_ROOT (min $MIN_FILES)"
+REPO_HASH=$(repo_hash "$REPO_ROOT")
+MARKER="$STATE_DIR/reviewed-$REPO_HASH"
+DELEGATE_PENDING="$STATE_DIR/codex-delegate-pending-$REPO_HASH"
+
+# Nothing edited via Claude this session AND no pending delegate → nothing
+# to review. The pending marker overrides this fast-path because a
+# delegate-only session has no dirty log but still has writes.
+DIRTY_LOG="$STATE_DIR/dirty-${SESSION}.log"
+if [ ! -f "$DIRTY_LOG" ] && [ ! -f "$DELEGATE_PENDING" ]; then
     echo '{}'
     exit 0
 fi
 
-REPO_HASH=$(repo_hash "$REPO_ROOT")
-MARKER="$STATE_DIR/reviewed-$REPO_HASH"
+# Count only *distinct* dirty-log entries whose path is under this repo.
+# track-edit.sh appends one line per edit, so the same file can appear many
+# times; dedupe before counting to match the AUTO_REVIEW_MIN_FILES semantics.
+# The trailing "/" on $REPO_ROOT prevents sibling repos with the same prefix
+# (e.g. /home/foo vs /home/foo-bar) from bleeding into the count. When the
+# dirty log is missing entirely (delegate-only session) skip grep — `set -e`
+# + `pipefail` would otherwise kill the script on grep's non-zero exit
+# before we reach the pending-marker logic below.
+FILE_COUNT=0
+if [ -f "$DIRTY_LOG" ]; then
+    # awk index() does literal substring matching, no regex. This avoids two
+    # grep failure modes that would trip `set -euo pipefail`: (a) zero matches
+    # → grep exit 1, (b) repo path containing regex metachars (e.g. "[")
+    # → grep exit 2 (parse error). Both would otherwise abort the hook
+    # before reaching the pending-marker logic.
+    FILE_COUNT=$(awk -v p="${REPO_ROOT}/" 'index($0, p) == 1' "$DIRTY_LOG" | sort -u | wc -l | tr -d ' ')
+fi
+
+# Honor the file-count early-exit only when codex-delegate has not run with
+# write access since the last cross-review. The pending flag means codex
+# wrote files outside Claude's Edit/Write tools — track-edit.sh did not
+# count those, so dirty-log undercounts and the early-exit would falsely
+# allow the commit. The flag is cleared by mark_repo_reviewed() in
+# codex-review.sh on APPROVED.
+if [ "$FILE_COUNT" -lt "$MIN_FILES" ] && [ ! -f "$DELEGATE_PENDING" ]; then
+    log "allow: only $FILE_COUNT file(s) touched in $REPO_ROOT (min $MIN_FILES)"
+    echo '{}'
+    exit 0
+fi
 
 # Fresh review marker → allow
 if [ -f "$MARKER" ]; then
@@ -100,10 +122,14 @@ fi
 
 # Trivial diff → allow even without review. Weight untracked files (same
 # rationale as auto-cross-review.sh) so a new-file-only session still gates.
+# As with the file-count check above, the codex-delegate-pending flag
+# overrides the trivial-diff allow-path: we cannot trust the diff size to
+# represent the change because codex may have written and reverted, or
+# made small but consequential edits, outside Claude's tracked path.
 TRACKED_LINES=$(git -C "$REPO_ROOT" diff HEAD 2>/dev/null | wc -l | tr -d ' ')
 UNTRACKED=$(git -C "$REPO_ROOT" ls-files --others --exclude-standard 2>/dev/null | wc -l | tr -d ' ')
 DIFF_LINES=$(( TRACKED_LINES + UNTRACKED * 10 ))
-if [ "$DIFF_LINES" -lt "$MIN_LINES" ]; then
+if [ "$DIFF_LINES" -lt "$MIN_LINES" ] && [ ! -f "$DELEGATE_PENDING" ]; then
     log "allow: $TRACKED_LINES tracked lines + $UNTRACKED untracked (weighted=$DIFF_LINES, min $MIN_LINES)"
     echo '{}'
     exit 0

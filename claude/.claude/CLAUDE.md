@@ -376,13 +376,21 @@ You are not alone. OpenAI Codex CLI is installed and configured as a peer review
 
 ### The tools
 
-| Tool | Purpose | When |
-|---|---|---|
-| `/cross-review` | Full review loop with VERDICT gate, max 3 rounds, Fix-First triage | **End of any non-trivial change**, before commit |
-| `/ask-codex "q"` | One-shot consultation, no loop, low effort | **During work**, when facing a design decision or wanting a second opinion |
-| `@codex-reviewer` | Subagent wrapper for programmatic invocation via Agent() | Inside other workflows (e.g. `/ship`) |
-| `bash ~/.claude/scripts/codex-review.sh` | Direct script call | Scripting / CI / one-off |
-| `bash ~/.claude/scripts/codex-ask.sh "q"` | Direct script call | Piping file contents as context |
+The full collaboration surface, mapped to where they belong in the workflow:
+
+| Stage | Tool | Mode | Notes |
+|---|---|---|---|
+| Quick design Q during work | `/ask-codex "q"` | foreground, read-only, 1 turn | Low-effort, treat as 30s consult. Do not use for trivia you are 80%+ confident on. |
+| Plan validation before implementation | `/codex-plan` | foreground, read-only, **multi-round** | Same codex thread across rounds via `--continue`. Frames codex as adversarial planner, not implementer. |
+| Sub-task delegation | `/codex-delegate` | **background, write** | Codex actually edits files. Returns job id; check progress with `--status`/`--tail`/`--result`. |
+| Code review before commit | `/cross-review` | foreground, read-only, VERDICT loop | 3 rounds max, Fix-First triage. Hooks tied to exit code. |
+| Subagent wrapper | `@codex-reviewer` | — | For programmatic Agent() invocation inside other workflows like `/ship`. |
+| Direct script calls | `bash ~/.claude/scripts/codex-{ask,review,plan,delegate}.sh` | — | For scripting / CI / piping context via stdin. |
+
+All four user-facing skills (`/ask-codex`, `/codex-plan`, `/codex-delegate`, `/cross-review`) route through `~/.claude/scripts/codex-companion.sh`, which wraps the @openai/codex-plugin-cc app-server runtime at `~/dev/codex-plugin-cc`. This gives:
+- **Streaming progress** to stderr (`[codex] Running command: …`, `[codex] Assistant message captured: …`) so codex is not a black box
+- **Broker reuse** — one app-server process is shared across calls in the same workspace, so subsequent calls start instantly and share thread state
+- **Persistent jobs** at `~/.claude/state/codex-companion/state/<workspace-slug>-<hash>/` (background tasks survive Claude session restarts)
 
 Codex also auto-loads `~/.codex/AGENTS.md`, which mirrors this user's coding profile — so any codex call already follows the same principles (Rule of Three, anti-patterns, review format with `VERDICT:` contract).
 
@@ -421,7 +429,7 @@ If you still try to end a turn with non-trivial uncommitted changes, the Stop ho
 - **Checked** by `pre-commit-gate.sh` (to allow commits) and the other two hooks (to skip reminders)
 - **Emergency bypass**: `touch ~/.claude/state/reviewed-<hash>` manually, or `touch ~/.claude/state/auto-review-disabled` for session-wide opt-out
 
-When either hook fires, you will receive a message instructing you to run `bash ~/.claude/scripts/codex-review.sh --uncommitted` and handle the verdict. Follow those instructions exactly — do not argue with the hook or try to skip. The point is that self-assessment of "I'm done" is unreliable.
+When either hook fires, you will receive a message instructing you to run `bash ~/.claude/scripts/codex-review.sh --session "<session-id>" --context-file <brief>` (with intent brief inline). Follow those instructions exactly — do not argue with the hook or try to skip. The point is that self-assessment of "I'm done" is unreliable. The `--session` mode falls back to `--uncommitted` when no dirty log exists for the session (e.g. pure `/codex-delegate` writes), so the instruction works for both Claude-edit and codex-edit cases.
 
 Opt-out (global): `touch ~/.claude/state/auto-review-disabled`
 Tune thresholds: set `AUTO_REVIEW_MIN_FILES` / `AUTO_REVIEW_MIN_LINES` env vars.
@@ -446,6 +454,8 @@ Tune thresholds: set `AUTO_REVIEW_MIN_FILES` / `AUTO_REVIEW_MIN_LINES` env vars.
 User-invocable skills live at `~/dotfiles/claude/.claude/skills/<name>/SKILL.md`:
 
 - `/ask-codex` — one-shot design consultation with Codex
+- `/codex-plan` — multi-round plan pressure-testing with Codex (pre-implementation)
+- `/codex-delegate` — delegate a sub-task to Codex (write-capable, background by default)
 - `/cross-review` — full cross-review loop with VERDICT gate (3 rounds max)
 - `/debug` — 5-phase structured debugging (3-strike + scope lock)
 - `/handoff` — write session context for the next Claude session
@@ -482,12 +492,14 @@ Do not call it for trivia you are 80%+ confident about — noise is worse than s
 1. **Codex is not ground truth**. It is another LLM with its own failure modes. Treat its output as a second opinion, never as a verdict you must obey.
 2. **Valid feedback only — Fix-First pattern**. Mechanical fixes get applied immediately; judgment calls go to the user as questions. The suppression rules in `/review` apply here too (style, naming, TODOs, "future improvement" → ignore).
 3. **When you and codex disagree, surface both opinions to the user**. Do not silently pick one side. The disagreement itself is valuable signal.
-4. **Never let codex modify files**. The wrapper scripts force `-s read-only` sandbox. If you need implementation delegated, that is a separate future tool — not the current review/consult flow.
-5. **Limit the loop**. `/cross-review` caps at 3 rounds. If the same CRITICAL finding appears twice in a row, stop and ask the user — either codex is wrong or Claude cannot fix it cleanly.
+4. **Read-only by default; write-capable only via `/codex-delegate`**. `/ask-codex`, `/codex-plan`, and `/cross-review` all run codex in `read-only` sandbox so it can investigate but not edit. `/codex-delegate` is the one path that grants `workspace-write`, and the user must opt in to it explicitly. Code that codex writes via delegate should be reviewed by Claude (and ideally by `/cross-review`) before commit — same as any third-party patch.
+5. **Limit the loop**. `/cross-review` caps at 3 rounds. `/codex-plan` should also stop at ~3 rounds — beyond that the plan itself probably needs a rewrite, not more critique. If the same CRITICAL finding appears twice in a row, stop and ask the user — either codex is wrong or Claude cannot fix it cleanly.
 
 ### Integration with existing workflows
 
 - **`/ship`** — uses `/cross-review` as a gate before committing. Blocking CRITICAL = no ship.
+- **`/codex-plan` before non-trivial implementation** — pair it with the existing `ExitPlanMode` checkpoint. After Claude writes a plan and before going wide on edits, run `/codex-plan --plan-file <path>` to pressure-test it. Cheaper than discovering plan flaws via `/cross-review` after the code is written.
+- **`/codex-delegate` for clean-cut sub-tasks** — when a piece of work is well-scoped (clear input, clear acceptance) and would burn Claude's context, delegate it. Always verify the diff afterwards; never trust codex's "I ran the tests" claim without checking.
 - **`/review`** — Claude's self-review, complementary to `/cross-review`. Run self-review first, then cross-review for independent verification.
 - **`@code-reviewer`** — Claude-based worktree reviewer (existing). Use together with `@codex-reviewer` for two independent perspectives on the same diff when the stakes are high (CodeX-Verify research shows 2-3 independent agents with different concerns beat single-agent review by ~40 percentage points).
 - **`/debug`** — 5-phase structured debugging. Invoke when `/ask-codex` alone is not enough and you want a scoped debugging session (3-strike rule + scope lock prevents flailing).
