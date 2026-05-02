@@ -17,9 +17,15 @@
 # (apply minimum-viable change, leave a summary, no scope creep). Pass
 # --raw to send the prompt unwrapped.
 #
+# --tail by default pretty-prints the log (codex's spoken text prefixed
+# with 💬, reasoning summaries with 🧠, commands with ▶, results with ✓,
+# turn lifecycle with 🟢/🔵, errors with ❌). Set CODEX_DELEGATE_TAIL_RAW=1
+# to see the raw companion log instead.
+#
 # Environment overrides:
-#   CODEX_DELEGATE_MODEL  — model passed to companion (--model)
-#   CODEX_DELEGATE_EFFORT — reasoning effort (none|minimal|low|medium|high|xhigh)
+#   CODEX_DELEGATE_MODEL    — model passed to companion (--model)
+#   CODEX_DELEGATE_EFFORT   — reasoning effort (none|minimal|low|medium|high|xhigh)
+#   CODEX_DELEGATE_TAIL_RAW — 1 → bypass --tail's awk pretty-printer
 
 set -euo pipefail
 
@@ -140,7 +146,108 @@ case "$MODE" in
             "$COMPANION" status "$JOB_ID" >&2 || true
             exit 2
         fi
-        exec tail -f "$LOG_FILE"
+        # Default: pretty-printed view that strips ISO timestamps and shows
+        # codex's messages, reasoning, commands, and turn lifecycle as
+        # readable lines. Set CODEX_DELEGATE_TAIL_RAW=1 to see the raw
+        # companion log (useful for debugging the wrapper itself).
+        if [[ "${CODEX_DELEGATE_TAIL_RAW:-0}" == "1" ]]; then
+            exec tail -f "$LOG_FILE"
+        fi
+        # `tail -F` (capital) follows by name and survives log rotation.
+        # Try to force line buffering so awk receives lines as they arrive,
+        # but fall back gracefully when neither stdbuf (Linux/coreutils) nor
+        # gstdbuf (macOS via brew install coreutils) is available — plain
+        # tail works too, just with some kernel-pipe buffering. The `|| true`
+        # is required because awk exits on the [final] marker, which leaves
+        # tail writing into a closed pipe → SIGPIPE → exit 141 under
+        # `set -euo pipefail`.
+        # `-n +1` reads the entire log from the start, then follows.
+        # Without this, tail's default 10-line window misses the
+        # "[<ts>] Final output" header for completed jobs whose rendered
+        # body is more than 9 lines long, and the awk auto-exit never
+        # fires → --tail hangs forever when attached after completion.
+        TAIL_CMD=(tail -n +1 -F "$LOG_FILE")
+        if command -v stdbuf >/dev/null 2>&1; then
+            TAIL_CMD=(stdbuf -oL tail -n +1 -F "$LOG_FILE")
+        elif command -v gstdbuf >/dev/null 2>&1; then
+            TAIL_CMD=(gstdbuf -oL tail -n +1 -F "$LOG_FILE")
+        fi
+        # Companion writes both timestamped progress lines (e.g.
+        # "[2026-05-01T08:10:11.521Z] Assistant message captured: …") AND
+        # raw body text (the assistant's actual reply). The body can
+        # contain phrases like "Final output" or "Turn completed" that
+        # would falsely trigger a substring match. Anchor every pattern
+        # to a literal "[ISO_TIMESTAMP] " prefix so model body text never
+        # acts as control input. (Hardcoded inside the awk script — passing
+        # the regex via -v ts= would have awk's variable parser strip one
+        # level of escape and break the [/] char-class characters.)
+        # Event types in the companion log we care about:
+        #   - Assistant message captured: ...  → codex's spoken text (💬)
+        #   - Reasoning summary captured: ...  → reasoning trace (🧠)
+        #   - Running command: / Command completed: ... → tool calls (▶/✓)
+        #   - Turn started / Turn <status>.  → turn lifecycle (🟢/🔵/🟠)
+        #     where <status> is "completed", "failed", "cancelled", or other
+        #   - Codex error: ...                 → hard runtime error (❌)
+        #   - Final output                     → always written when the
+        #     runner finishes, success OR failure. Outcome must be inferred
+        #     from the most recent "Turn X." line, NOT from "Final output"
+        #     itself, otherwise failed/cancelled jobs report as success.
+        "${TAIL_CMD[@]}" 2>/dev/null | awk '
+            /^\[20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9:.Z+-]+\] Final output$/ {
+                if (last_turn == "completed" || last_turn == "") {
+                    print "[final marker — codex done]"
+                } else {
+                    print "[final marker — codex " last_turn "]"
+                }
+                exit
+            }
+            /^\[20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9:.Z+-]+\] Codex error: / {
+                sub(/^\[[^]]*\] Codex error: /, "❌ ");
+                print; fflush();
+                print "[final marker — codex errored]"; exit
+            }
+            /^\[20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9:.Z+-]+\] Assistant message captured: / {
+                sub(/^\[[^]]*\] Assistant message captured: /, "💬 ");
+                print; fflush(); next
+            }
+            /^\[20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9:.Z+-]+\] Reasoning summary captured: / {
+                sub(/^\[[^]]*\] Reasoning summary captured: /, "🧠 ");
+                print; fflush(); next
+            }
+            /^\[20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9:.Z+-]+\] Running command: / {
+                sub(/^\[[^]]*\] Running command: /, "▶ ");
+                sub(/\/usr\/bin\/zsh -lc /, "");
+                print; fflush(); next
+            }
+            /^\[20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9:.Z+-]+\] Command completed: / {
+                if (match($0, /\(exit [0-9]+\)/)) {
+                    print "  ✓ " substr($0, RSTART, RLENGTH);
+                    fflush();
+                }
+                next
+            }
+            /^\[20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9:.Z+-]+\] Turn started/ {
+                print "🟢 turn started"; fflush(); next
+            }
+            # Match ONLY the strict status form `Turn <single-word>.`
+            # emitted by codex.mjs. Anything broader (e.g. the
+            # "Turn completion inferred ..." informational line) would
+            # otherwise be misread as a status value and corrupt the
+            # final marker.
+            /^\[20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9:.Z+-]+\] Turn [a-z]+\.$/ {
+                line = $0;
+                sub(/^\[[^]]*\] Turn /, "", line);
+                sub(/\.$/, "", line);
+                last_turn = line;
+                if (last_turn == "completed") {
+                    print "🔵 turn completed";
+                } else {
+                    print "🟠 turn " last_turn;
+                }
+                fflush(); next
+            }
+        ' || true
+        exit 0
         ;;
 esac
 
