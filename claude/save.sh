@@ -1,13 +1,12 @@
 #!/bin/bash
 
+# Commit message prefix conventions (suggestive, not enforced):
+#   Verb-style:   Add, Remove, Move, Improve, Pass, Verify, Modify, Allow, Bump, Fix, Implement, Make, Update, Use
+#   Conventional: feat:, fix:, test:, chore:, doc:
+# Any non-empty message is accepted — pick one if it fits, or skip the prefix.
+
 if [[ -z "$1" ]]; then
     echo "Usage: $0 <commit message>"
-    exit 1
-fi
-
-allowed_verbs="Add|Remove|Move|Improve|Pass|Verify|Modify|Allow|Bump|Fix|Implement|Make|Update|Use"
-if [[ ! "$1" =~ ^($allowed_verbs)[[:space:]] ]]; then
-    echo "Error: commit message must start with one of: ${allowed_verbs//|/, }"
     exit 1
 fi
 
