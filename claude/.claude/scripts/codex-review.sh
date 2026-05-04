@@ -280,6 +280,38 @@ else
     DIFF_DESC="HEAD vs ${BASE}"
 fi
 
+# Strip well-known package-manager lock files from a git-diff stream.
+# Lock-file diffs are pure dependency-resolver output — reviewing them line by
+# line burns codex tokens with zero signal, and a single dep bump can dominate
+# the entire diff. We drop the whole `diff --git` block for each match.
+filter_lock_files() {
+    awk '
+        BEGIN {
+            keep = 1
+            stripped = 0
+            lock_re = "(^|/)(package-lock\\.json|yarn\\.lock|pnpm-lock\\.yaml|bun\\.lockb|bun\\.lock|npm-shrinkwrap\\.json|Cargo\\.lock|Pipfile\\.lock|poetry\\.lock|uv\\.lock|composer\\.lock|Gemfile\\.lock|go\\.sum|mix\\.lock|flake\\.lock|pubspec\\.lock|Podfile\\.lock)( |$)"
+        }
+        /^diff --git / {
+            if ($0 ~ lock_re) {
+                keep = 0
+                stripped++
+            } else {
+                keep = 1
+                print
+            }
+            next
+        }
+        keep { print }
+        END {
+            if (stripped > 0) {
+                print "[codex-review] filtered " stripped " lock-file diff(s) from review" > "/dev/stderr"
+            }
+        }
+    '
+}
+
+DIFF=$(filter_lock_files <<< "$DIFF")
+
 if [[ -z "$DIFF" ]]; then
     echo "## Summary" >&2
     echo "No diff to review (${DIFF_DESC})." >&2
