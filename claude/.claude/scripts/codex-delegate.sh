@@ -265,27 +265,14 @@ fi
 if [[ "$RAW" -eq 1 ]]; then
     PROMPT="$INPUT_TEXT"
 else
-    SCOPE_HINT="You may edit files in the cwd repo to complete this task."
-    if [[ "$WRITE" -eq 0 ]]; then
-        SCOPE_HINT="Read-only sandbox: investigate and propose a diff but do not modify any files."
-    fi
+    # Delegation-specific imperatives (write-capable agent must not expand
+    # scope, must report back). AGENTS.md "What NOT to do" forbids
+    # *suggesting* rewrites in reviews — it does NOT constrain a write-capable
+    # delegate from doing incidental refactors, so we keep that rule inline.
+    SCOPE_HINT="You may edit files in the cwd repo."
+    [[ "$WRITE" -eq 0 ]] && SCOPE_HINT="Read-only: propose a diff, do not modify files."
     PROMPT=$(cat <<EOF
-You are completing a delegated sub-task on behalf of another agent.
-Apply the principles in AGENTS.md.
-
-${SCOPE_HINT}
-
-Operating rules:
-- Make the smallest viable change. No refactors, renames, or cleanups
-  beyond what the task requires.
-- If the task is ambiguous, pick the most likely interpretation and
-  state your assumption in the final summary instead of stalling.
-- After finishing, end your reply with a "## Summary" section listing:
-  the files you touched, what you changed, what you intentionally
-  did not change, and any follow-ups for the calling agent.
-- Run the project's tests / typecheck if they exist and the change
-  could plausibly affect them. Report the result.
-- Never push, commit, or modify git remotes. Leave changes uncommitted.
+Delegated sub-task per AGENTS.md. ${SCOPE_HINT} Make the smallest viable change — no refactors, renames, or cleanups beyond what the task requires. If ambiguous, pick the most likely interpretation and state the assumption. Run tests/typecheck if relevant. Do not commit/push. End with a ## Summary section listing touched files, what changed, what was intentionally not changed, and follow-ups for the calling agent.
 
 --- TASK ---
 ${INPUT_TEXT}

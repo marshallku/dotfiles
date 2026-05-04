@@ -94,25 +94,11 @@ RESUME_FLAG="--fresh"
 
 # Frame codex as an adversarial planner — challenge, don't rubber-stamp.
 # Read-only sandbox is enforced by the companion `task` (no --write flag).
+# AGENTS.md "Code Review Principles" + "What NOT to do" already cover the
+# attitude; we just point codex at the plan and the angles to check.
 if [[ "$RESUME_FLAG" == "--fresh" ]]; then
     PROMPT=$(cat <<EOF
-You are a senior engineer pressure-testing a plan before implementation.
-Your job is NOT to rubber-stamp the plan. Your job is to find what would
-break it. Apply the principles in AGENTS.md.
-
-Specifically check:
-- Hidden assumptions that may not hold
-- Edge cases or failure modes the author missed
-- Simpler / safer alternatives the author may have skipped
-- Scope / requirement gaps between what was asked and what is planned
-- Concrete risks (data loss, race conditions, rollback, perf, security)
-
-If you genuinely think the plan is sound, say so briefly and stop. Do
-not invent objections to seem useful. If you do raise concerns, list
-them in priority order with a one-line "why this matters" each.
-
-Read the codebase as needed to ground your critique. Do not write or
-modify files. Do not propose to implement anything yourself.
+Pressure-test this plan before implementation per AGENTS.md. Find what would break it: hidden assumptions, missed edge cases / failure modes, simpler alternatives skipped, scope gaps vs the ask, concrete risks (data loss, race, rollback, perf, security). If genuinely sound, say so briefly and stop. Read the codebase as needed; do not edit files or propose to implement.
 
 --- PLAN UNDER REVIEW ---
 ${INPUT_TEXT}

@@ -360,19 +360,16 @@ if [[ -n "$FILES_SUMMARY" ]]; then
 "
 fi
 
+# Review role + classification scheme + VERDICT contract live in
+# ~/.codex/AGENTS.md "Code Review Principles" / "Review Output Contract".
+# Auto-loaded — don't restate. We only supply scope + context + diff.
 PROMPT=$(cat <<EOF
-You are a senior engineer performing an independent code review.
+Code review per AGENTS.md.
 
 Scope: ${DIFF_DESC}
 ${FOCUS_LINE}
 ${FILES_SECTION}${CONTEXT_SECTION}
-
-Follow the review principles in AGENTS.md strictly. Classify findings as CRITICAL, INFORMATIONAL, or SUPPRESS. Read files outside the diff when enum completeness, interface compatibility, or caller impact matters.
 ${INTENT_CHECK}
-
-End your response with exactly one line: either "VERDICT: APPROVED" or "VERDICT: REVISE".
-APPROVED = zero CRITICAL findings.
-REVISE   = at least one CRITICAL finding.
 
 --- DIFF ---
 ${DIFF}

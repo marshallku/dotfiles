@@ -40,9 +40,11 @@ if [[ -n "${CODEX_ASK_MODEL:-}" ]]; then
     MODEL_ARGS=(--model "$CODEX_ASK_MODEL")
 fi
 
+# Consultation-mode rules (concrete recommendation + 1 tradeoff, no hedging,
+# ~150-word cap) live in ~/.codex/AGENTS.md and auto-load. Don't restate.
 if [[ -n "$STDIN_CONTEXT" ]]; then
     PROMPT=$(cat <<EOF
-You are in consultation mode (see AGENTS.md). Give a concrete recommendation and the single most important tradeoff. No hedging, no multi-option comparison, no caveat lists.
+Consultation mode.
 
 Context:
 ${STDIN_CONTEXT}
@@ -51,12 +53,9 @@ Question: ${QUESTION}
 EOF
 )
 else
-    PROMPT=$(cat <<EOF
-You are in consultation mode (see AGENTS.md). Give a concrete recommendation and the single most important tradeoff. No hedging, no multi-option comparison, no caveat lists.
+    PROMPT="Consultation mode.
 
-Question: ${QUESTION}
-EOF
-)
+Question: ${QUESTION}"
 fi
 
 # stdin must be /dev/null — companion `task` falls back to reading piped stdin
