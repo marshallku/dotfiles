@@ -47,3 +47,66 @@ portable_fmtdate() {
     local fmt="${2:-%Y-%m-%d %H:%M}"
     date -d "@$epoch" +"$fmt" 2>/dev/null || date -r "$epoch" +"$fmt" 2>/dev/null || echo ""
 }
+
+# Predicate: would auto-cross-review.sh block this Stop event right now?
+# Returns 0 if it would block, 1 otherwise. Pure read-only — writes nothing.
+# Mirrors auto-cross-review.sh's gating; keep in sync.
+#
+# Race-aware: auto-cross-review.sh creates stop-blocked-<session> AS it blocks
+# the current Stop. A naive presence check misclassifies that event as
+# "already blocked, will skip" when it's actually "blocking right now".
+# Resolved with a freshness window: a marker newer than ~2s is treated as
+# evidence of an in-flight block by the parallel hook (suppress the
+# notification); only an older marker is trusted as "previous-session block,
+# this Stop will pass through".
+#
+# Args: session_id, cwd, transcript_path
+auto_review_would_block() {
+    local session="${1:-default}" cwd="${2:-}" transcript="${3:-}"
+    local state="$HOME/.claude/state"
+    local dirty="$state/dirty-${session}.log"
+    local blocked="$state/stop-blocked-${session}"
+    local disabled="$state/auto-review-disabled"
+    local min_files="${AUTO_REVIEW_MIN_FILES:-2}"
+    local min_lines="${AUTO_REVIEW_MIN_LINES:-40}"
+    local freshness="${AUTO_REVIEW_BLOCK_FRESH_SECS:-2}"
+
+    [[ -f "$disabled" ]] && return 1
+    [[ ! -f "$dirty" ]] && return 1
+    if [[ -f "$blocked" ]]; then
+        local age=$(( $(date +%s) - $(portable_mtime "$blocked") ))
+        if [[ "$age" -gt "$freshness" ]]; then
+            return 1  # old marker → previous-session block; this Stop passes
+        else
+            return 0  # fresh marker → parallel auto-cross-review just blocked this Stop
+        fi
+    fi
+
+    local file_count
+    file_count=$(sort -u "$dirty" 2>/dev/null | wc -l | tr -d ' ')
+    [[ "${file_count:-0}" -lt "$min_files" ]] && return 1
+
+    if [[ -n "$cwd" ]]; then
+        local repo
+        if repo=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null); then
+            local rh
+            rh=$(repo_hash "$repo")
+            [[ -f "$state/reviewed-$rh" ]] && return 1
+            local tracked untracked weighted
+            tracked=$(git -C "$repo" diff HEAD 2>/dev/null | wc -l | tr -d ' ')
+            untracked=$(git -C "$repo" ls-files --others --exclude-standard 2>/dev/null | wc -l | tr -d ' ')
+            weighted=$(( ${tracked:-0} + ${untracked:-0} * 10 ))
+            [[ "$weighted" -lt "$min_lines" ]] && return 1
+        fi
+    fi
+
+    if [[ -f "$transcript" ]]; then
+        local last_text
+        last_text=$(tail -c 16384 "$transcript" 2>/dev/null \
+            | jq -rc 'select(.type=="assistant") | .message.content[]? | select(.type=="text") | .text' 2>/dev/null \
+            | tail -n1 || true)
+        echo "$last_text" | grep -qE '\?\s*$' && return 1
+    fi
+
+    return 0
+}
