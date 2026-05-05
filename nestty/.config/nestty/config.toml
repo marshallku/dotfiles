@@ -1,0 +1,114 @@
+[terminal]
+shell = "/bin/zsh"
+font_family = "JetBrainsMono Nerd Font Mono"
+font_size = 11
+
+[background]
+#image = "/mnt/disk2/Wallpapers/02.jpg"
+tint = 0.1
+opacity = 0.2
+tint_color = "#000000"
+
+[socket]
+# path = "/tmp/custerm.sock"
+
+[theme]
+name = "catppuccin-mocha"
+#name = "dracula"
+
+[tabs]
+position = 'left'
+#position = 'top'
+width = 200
+
+[keybindings]
+"ctrl+shift+p" = "spawn:~/nestty-random-bg.sh --toggle"
+"ctrl+shift+bracketright" = "spawn:~/nestty-random-bg.sh --next"
+"ctrl+shift+d" = "spawn:~/nestty-random-bg.sh --delete"
+
+# ----------------------------------------------------------------------
+# Vision Flow 3 — click "Start" on a Todo → fresh worktree → claude
+# session in tmux with the layered prompt pre-pasted.
+# Mirror of examples/triggers/vision-flow-3.toml.
+# ----------------------------------------------------------------------
+
+# Todo with linked_jira → branch from sanitized Jira key.
+[[triggers]]
+name = "vision3-start-with-jira"
+action = "git.worktree_add"
+params = { workspace = "{event.workspace}", branch = "{event.linked_jira}", sanitize_jira = true, prompt = "{event.assembled_prompt}" }
+condition = "event.linked_jira != null"
+[triggers.when]
+event_kind = "todo.start_requested"
+
+# Todo without linked_jira → branch `todo-<id>`.
+[[triggers]]
+name = "vision3-start-without-jira"
+action = "git.worktree_add"
+params = { workspace = "{event.workspace}", branch = "todo-{event.id}", prompt = "{event.assembled_prompt}" }
+condition = "event.linked_jira == null"
+[triggers.when]
+event_kind = "todo.start_requested"
+
+# Once the worktree exists, drop a Claude session there with the
+# layered prompt pre-seeded. `event.prompt` is the passthrough field
+# echoed by git.worktree_add (NOT the raw Todo prompt frontmatter).
+[[triggers]]
+name = "vision3-claude-after-worktree"
+action = "claude.start"
+params = { workspace_path = "{event.path}", prompt = "{event.prompt}" }
+[triggers.when]
+event_kind = "git.worktree_add.completed"
+
+# ----------------------------------------------------------------------
+# Discord 📝 reaction → Todo capture (slice 2.5).
+# Two-trigger chain via Phase 14.2 await for correlation:
+#   1. fetch reacts on 📝 → calls discord.get_message
+#   2. create listens for the synthesized <fetch>.awaited event
+#      (unique per trigger instance) → todo.create with the URL
+#      embedded in the body so a downstream claude session can
+#      re-fetch full thread context via the link.
+# ----------------------------------------------------------------------
+[[triggers]]
+name = "discord-memo-capture-fetch"
+action = "discord.get_message"
+params = { channel_id = "{event.channel_id}", message_id = "{event.message_id}" }
+condition = """event.emoji_name == "📝" """
+[triggers.when]
+event_kind = "discord.reaction"
+[triggers.await]
+event_kind = "discord.get_message.completed"
+timeout_seconds = 10
+on_timeout = "abort"
+
+[[triggers]]
+name = "discord-memo-capture-create"
+action = "todo.create"
+# Title kept short and stable (always populated, never gets cut off
+# in the kanban). Body has the full content + the URL so a future
+# claude session with a Slack/Discord-link MCP tool can re-resolve
+# context. Interpolation DSL has no truncate/fallback, so deriving
+# the title from content directly would break on empty-content
+# messages (image-only reacts) and explode on 2000-char ones.
+params = { title = "Discord capture {event.message_id}", body = """
+{event.await.content}
+
+Source: {event.message_url}
+""", workspace = "default" }
+[triggers.when]
+event_kind = "discord-memo-capture-fetch.awaited"
+
+# ----------------------------------------------------------------------
+# Hyprland WebKit panel-freeze auto-cure (WR-2). See
+# docs/troubleshooting.md and examples/triggers/hyprland-webkit-fix.toml.
+# ----------------------------------------------------------------------
+[[triggers]]
+name = "hyprland-webkit-cure"
+action = "system.spawn"
+params = { argv = ["sh", "-c", "hyprctl dispatch resizewindowpixel '1 0,class:com.marshall.nestty' && hyprctl dispatch -- resizewindowpixel '-1 0,class:com.marshall.nestty'"] }
+[triggers.when]
+event_kind = "window.restored"
+
+
+
+
