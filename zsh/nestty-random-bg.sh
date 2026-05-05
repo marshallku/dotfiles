@@ -1,25 +1,25 @@
 #!/bin/bash
 
 CACHE_FILE="$HOME/.cache/terminal-wallpapers.txt"
-MODE_FILE="$HOME/.cache/turm-bg-mode"
-CURRENT_FILE="$HOME/.cache/turm-bg-current"
+MODE_FILE="$HOME/.cache/nestty-bg-mode"
+CURRENT_FILE="$HOME/.cache/nestty-bg-current"
 DEFAULT_INTERVAL=300
-TURMCTL="turmctl"
+NESTCTL="nestctl"
 
 g_elapsed=0
 
-turm_alive() {
+nestty_alive() {
     local id="${1:-$(instance_id)}"
     [[ -n "$id" ]] && kill -0 "$id" 2>/dev/null
 }
 
 socket_set_background() {
     local path="$1"
-    $TURMCTL background set "$path" &>/dev/null
+    $NESTCTL background set "$path" &>/dev/null
 }
 
 socket_clear_background() {
-    $TURMCTL background clear &>/dev/null
+    $NESTCTL background clear &>/dev/null
 }
 
 get_mode() {
@@ -38,10 +38,10 @@ select_random_image() {
 }
 
 instance_id() {
-    local sock="${TURM_SOCKET:-}"
-    # Extract PID from /tmp/turm-<PID>.sock
+    local sock="${NESTTY_SOCKET:-}"
+    # Extract PID from /tmp/nestty-<PID>.sock
     local base="${sock##*/}"
-    base="${base#turm-}"
+    base="${base#nestty-}"
     echo "${base%.sock}"
 }
 
@@ -58,7 +58,7 @@ get_current() {
 }
 
 apply_by_mode() {
-    [[ -z "${TURM_SOCKET:-}" ]] && return 1
+    [[ -z "${NESTTY_SOCKET:-}" ]] && return 1
 
     local id
     id=$(instance_id)
@@ -91,7 +91,7 @@ next_image() {
         return 0
     fi
 
-    [[ -z "${TURM_SOCKET:-}" ]] && return 1
+    [[ -z "${NESTTY_SOCKET:-}" ]] && return 1
 
     local img
     img=$(select_random_image) || return 1
@@ -120,7 +120,7 @@ delete_current() {
 }
 
 daemon_running() {
-    local pid_file="$HOME/.cache/turm-bg-daemon-$(instance_id).pid"
+    local pid_file="$HOME/.cache/nestty-bg-daemon-$(instance_id).pid"
 
     if [[ -f "$pid_file" ]]; then
         local pid
@@ -136,7 +136,7 @@ daemon_running() {
 wait_for_socket() {
     local i
     for i in $(seq 1 50); do
-        [[ -S "$TURM_SOCKET" ]] && return 0
+        [[ -S "$NESTTY_SOCKET" ]] && return 0
         sleep 0.1
     done
     return 1
@@ -145,10 +145,10 @@ wait_for_socket() {
 sweep_stale() {
     local f id
     shopt -s nullglob
-    for f in "$HOME/.cache/turm-bg-daemon-"*.pid; do
-        id="${f##*turm-bg-daemon-}"
+    for f in "$HOME/.cache/nestty-bg-daemon-"*.pid; do
+        id="${f##*nestty-bg-daemon-}"
         id="${id%.pid}"
-        if ! turm_alive "$id"; then
+        if ! nestty_alive "$id"; then
             local dpid
             dpid=$(cat "$f" 2>/dev/null)
             [[ -n "$dpid" ]] && kill -0 "$dpid" 2>/dev/null && kill "$dpid" 2>/dev/null
@@ -156,9 +156,9 @@ sweep_stale() {
         fi
     done
     for f in "${CURRENT_FILE}-"*.txt; do
-        id="${f##*turm-bg-current-}"
+        id="${f##*nestty-bg-current-}"
         id="${id%.txt}"
-        turm_alive "$id" || rm -f "$f"
+        nestty_alive "$id" || rm -f "$f"
     done
     shopt -u nullglob
 }
@@ -166,8 +166,8 @@ sweep_stale() {
 run_daemon() {
     local interval="${1:-$DEFAULT_INTERVAL}"
 
-    if [[ -z "${TURM_SOCKET:-}" ]]; then
-        echo "Error: TURM_SOCKET is not set" >&2
+    if [[ -z "${NESTTY_SOCKET:-}" ]]; then
+        echo "Error: NESTTY_SOCKET is not set" >&2
         exit 1
     fi
 
@@ -183,7 +183,7 @@ run_daemon() {
 
     local id
     id=$(instance_id)
-    local pid_file="$HOME/.cache/turm-bg-daemon-${id}.pid"
+    local pid_file="$HOME/.cache/nestty-bg-daemon-${id}.pid"
     echo $$ > "$pid_file"
     local current_file="${CURRENT_FILE}-${id}.txt"
     trap 'rm -f "$pid_file" "$current_file"; exit' EXIT INT TERM HUP
@@ -191,8 +191,8 @@ run_daemon() {
     while true; do
         sleep 10
 
-        # turm process가 죽었으면 종료
-        turm_alive "$id" || exit 0
+        # nestty process가 죽었으면 종료
+        nestty_alive "$id" || exit 0
 
         g_elapsed=$((g_elapsed + 10))
         if (( g_elapsed >= interval )); then

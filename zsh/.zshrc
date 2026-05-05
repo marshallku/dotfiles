@@ -436,5 +436,5 @@ alias tmux="tmux -u"
 
 #[[ "$TERM" == "xterm-ghostty" ]] && (~/ghostty-random-bg.sh &>/dev/null &)
 [[ "$TERM" == "xterm-kitty" ]] && (~/kitty-random-bg.sh --daemon --interval 300 &>/dev/null &)
-[[ -n "$TURM_SOCKET" ]] && (~/turm-random-bg.sh --daemon --interval 300 &>/dev/null &)
+[[ -n "$NESTTY_SOCKET" ]] && (~/nestty-random-bg.sh --daemon --interval 300 &>/dev/null &)
 
