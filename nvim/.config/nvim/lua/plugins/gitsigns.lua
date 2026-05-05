@@ -12,6 +12,30 @@ return {
                 changedelete = {text = "~"},
                 untracked = {text = "┆"}
             },
+            current_line_blame = true,
+            current_line_blame_opts = {
+                virt_text = true,
+                virt_text_pos = "eol",
+                delay = 300,
+                ignore_whitespace = false,
+            },
+            current_line_blame_formatter = function(_, blame_info)
+                if not blame_info.author or blame_info.author == "Not Committed Yet" then
+                    return {{"  uncommitted", "GitSignsCurrentLineBlame"}}
+                end
+                local ts = tonumber(blame_info["author_time"]) or 0
+                local diff = os.time() - ts
+                local rel
+                if diff < 60 then rel = diff .. "s ago"
+                elseif diff < 3600 then rel = math.floor(diff / 60) .. "m ago"
+                elseif diff < 86400 then rel = math.floor(diff / 3600) .. "h ago"
+                elseif diff < 86400 * 30 then rel = math.floor(diff / 86400) .. "d ago"
+                elseif diff < 86400 * 365 then rel = math.floor(diff / (86400 * 30)) .. "mo ago"
+                else rel = math.floor(diff / (86400 * 365)) .. "y ago"
+                end
+                local text = string.format("  %s, %s · %s", blame_info.author, rel, blame_info.summary or "")
+                return {{text, "GitSignsCurrentLineBlame"}}
+            end,
             on_attach = function(bufnr)
                 local gs = package.loaded.gitsigns
 
@@ -50,9 +74,11 @@ return {
                 map("n", "<leader>hp", gs.preview_hunk, {desc = "Preview hunk"})
                 map("n", "<leader>hb",
                     function() gs.blame_line({full = true}) end,
-                    {desc = "Blame line"})
+                    {desc = "Blame line (full)"})
+                map("n", "<leader>gB", "<cmd>Gitsigns blame<cr>",
+                    {desc = "Blame buffer"})
                 map("n", "<leader>tb", gs.toggle_current_line_blame,
-                    {desc = "Toggle line blame"})
+                    {desc = "Toggle inline blame"})
                 map("n", "<leader>hd", gs.diffthis, {desc = "Diff this"})
             end
         })

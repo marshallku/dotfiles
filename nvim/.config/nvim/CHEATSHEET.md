@@ -35,9 +35,40 @@
 | Key | Action |
 |-----|--------|
 | `<leader>gg` | Open lazygit |
-| `]h` / `[h>` | Next/previous hunk |
+| `<leader>gn` | Neogit (magit-style) |
+| `<leader>gd` | Diffview open |
+| `<leader>gh` | File history |
+| `<leader>gx` | Diffview close |
+| `<leader>gB` | Blame buffer |
+| `]h` / `[h` | Next/previous hunk |
 | `<leader>hp` | Preview hunk |
-| `<leader>hb` | Blame line |
+| `<leader>hb` | Blame line (full) |
+| `<leader>tb` | Toggle inline blame |
+
+Inline blame (author, relative time, summary) is **on by default** at the end of the current line.
+
+### Claude Code
+| Key | Action | Mode |
+|-----|--------|------|
+| `<leader>cc` | Toggle Claude Code | n |
+| `<M-c>` | Toggle Claude Code (also from inside the Claude terminal) | n + t |
+| `<leader>cf` | Focus Claude Code | n |
+| `<leader>cs` | Send selection (visual) | v |
+| `<leader>cb` | Add buffer to chat | n |
+| `<leader>cda` | Accept Claude diff | n |
+| `<leader>cdd` | Deny Claude diff | n |
+
+`<M-c>` is the only one that works while focus is inside the Claude terminal buffer — leader chords don't fire in terminal mode. Use `<leader>cc` from a normal buffer, `<M-c>` from anywhere.
+
+On **macOS**, Option-key combos send special characters by default (Option+c → ç). For `<M-c>` to work, set the terminal's option-as-meta:
+- ghostty: `macos-option-as-alt = true` in config
+- iTerm2: Profile → Keys → Left/Right Option = "Esc+"
+- Terminal.app: Preferences → Profiles → Keyboard → "Use Option as Meta key"
+
+The bridge starts a WebSocket+MCP server (same protocol as the Cursor VS Code extension), so `claude` running in the embedded terminal sees the buffer, selection and diagnostics in real time.
+
+### Text case (parity with `change-case`)
+Prefix `gA` (uppercase, so built-in `ga` ASCII inspect is preserved). Examples: `gAu` upper, `gAl` lower, `gAs` snake, `gAc` camel, `gAp` pascal, `gAd` dash (kebab), `gAn` constant.
 
 ### Terminal
 | Key | Action |
@@ -121,3 +152,21 @@
 3. **Use macros**: `qa` starts recording to register `a`, `q` stops, `@a` plays
 4. **Use marks**: `ma` sets mark `a`, `'a` jumps to it
 5. **Use clipboard**: Visual select + `"+y` to copy to system clipboard
+
+## Per-project setup: Yarn PnP TypeScript
+
+If a project uses Yarn Berry PnP (`.pnp.cjs` at the root), `vtsls` automatically
+points its TypeScript SDK at `<repo>/.yarn/sdks/typescript/lib`. To bootstrap that
+SDK once per project:
+
+```sh
+yarn add -D @yarnpkg/sdks   # writes to package.json — creates a commit
+yarn sdks base              # generates .yarn/sdks/typescript/...
+```
+
+Then `:LspRestart` in any open TS buffer. Plain `gd` (LSP go-to-definition)
+into a vendored type opens the file directly out of `.yarn/cache/*.zip`
+courtesy of vim-rzip.
+
+If the team prefers not to commit `@yarnpkg/sdks`, install it in a sibling dir
+and symlink `.yarn/sdks` from there.

@@ -32,7 +32,9 @@ return {
                 "html", -- HTML
                 "cssls", -- CSS
                 "tailwindcss", -- Tailwind CSS
-                "jsonls" -- JSON
+                "jsonls", -- JSON
+                "yamlls", -- YAML (k8s, GitHub Actions, docker-compose schemas)
+                "svelte" -- Svelte
             }
         })
 

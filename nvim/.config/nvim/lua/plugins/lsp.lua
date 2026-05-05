@@ -121,8 +121,12 @@ return {
         })
 
         -- TypeScript/JavaScript (vtsls - VSCode TypeScript extension wrapper)
+        -- Yarn PnP: detect .pnp.cjs upward from buffer dir (NOT cwd, which breaks
+        -- in monorepos and when opening files outside the project root) and point
+        -- typescript.tsdk at the workspace's .yarn/sdks/typescript/lib.
         vim.lsp.config("vtsls", {
             settings = {
+                vtsls = {},
                 typescript = {
                     suggest = {
                         autoImports = true,
@@ -144,6 +148,19 @@ return {
                     },
                 },
             },
+            before_init = function(_, config)
+                local buf = vim.api.nvim_get_current_buf()
+                local bufname = vim.api.nvim_buf_get_name(buf)
+                local search_from = bufname ~= "" and vim.fs.dirname(bufname) or vim.uv.cwd()
+                local pnp = vim.fs.find({ ".pnp.cjs", ".pnp.js" }, { upward = true, path = search_from })[1]
+                if pnp then
+                    local sdk = vim.fs.dirname(pnp) .. "/.yarn/sdks/typescript/lib"
+                    if vim.uv.fs_stat(sdk) then
+                        config.settings.typescript.tsdk = sdk
+                        config.settings.vtsls.autoUseWorkspaceTsdk = true
+                    end
+                end
+            end,
         })
 
         -- ESLint (language server for linting + auto-fix)
@@ -191,6 +208,22 @@ return {
         -- PHP
         vim.lsp.config("intelephense", {})
 
+        -- YAML (k8s, GitHub Actions, docker-compose schemas)
+        vim.lsp.config("yamlls", {
+            settings = {
+                yaml = {
+                    keyOrdering = false,
+                    schemaStore = {
+                        enable = true,
+                        url = "https://www.schemastore.org/api/json/catalog.json",
+                    },
+                },
+            },
+        })
+
+        -- Svelte
+        vim.lsp.config("svelte", {})
+
         -- Lua (for Neovim config)
         vim.lsp.config("lua_ls", {
             settings = {
@@ -211,6 +244,7 @@ return {
             "vtsls", "eslint", "rust_analyzer", "gopls",
             "pyright", "intelephense", "lua_ls",
             "html", "cssls", "tailwindcss", "jsonls",
+            "yamlls", "svelte",
         })
     end,
 }
