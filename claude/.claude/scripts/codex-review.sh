@@ -25,7 +25,7 @@
 #
 # Environment overrides:
 #   CODEX_REVIEW_MODEL   — override model passed to the companion (--model)
-#   CODEX_REVIEW_TIMEOUT — seconds before the review is aborted (default 420)
+#   CODEX_REVIEW_TIMEOUT — seconds before the review is aborted (default 1200)
 #
 # Exit codes:
 #   0 = VERDICT: APPROVED
@@ -43,7 +43,7 @@ CONTEXT=""
 CONTEXT_FILE=""
 SESSION_ID=""
 FILE_LIST=""
-TIMEOUT="${CODEX_REVIEW_TIMEOUT:-420}"
+TIMEOUT="${CODEX_REVIEW_TIMEOUT:-1200}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
