@@ -60,20 +60,30 @@ params = { workspace_path = "{event.path}", prompt = "{event.prompt}" }
 [triggers.when]
 event_kind = "git.worktree_add.completed"
 
-# ----------------------------------------------------------------------
-# Discord 📝 reaction → Todo capture (slice 2.5).
-# Two-trigger chain via Phase 14.2 await for correlation:
-#   1. fetch reacts on 📝 → calls discord.get_message
-#   2. create listens for the synthesized <fetch>.awaited event
-#      (unique per trigger instance) → todo.create with the URL
-#      embedded in the body so a downstream claude session can
-#      re-fetch full thread context via the link.
-# ----------------------------------------------------------------------
+# ====================================================================
+# 📝 reaction → Todo capture (Discord + Slack)
+# --------------------------------------------------------------------
+# React with 📝 on a Discord/Slack message → nestty captures the
+# body + permalink as a Todo. Click Start in the Todo panel to
+# spawn a worktree + claude session with the captured context in
+# the layered prompt (vision-flow-3 chain).
+#
+# 🔧 EMOJI CONFIG — change EXACTLY ONE line per platform:
+#   Discord: line marked  ◀ EMOJI HERE  in discord-memo-capture-fetch
+#   Slack:   line marked  ◀ EMOJI HERE  in slack-memo-capture-fetch
+#
+# Discord uses unicode literals: "📝", "⭐", "🔖", "🐛", ...
+# Slack uses reaction NAMES (no colons): "memo" = 📝,
+#   "bookmark" = 🔖, "star" = ⭐, "pushpin" = 📌, "fire" = 🔥,
+#   "white_check_mark" = ✅. Find any emoji's name via Slack's
+#   emoji picker tooltip — drop the colons.
+# ====================================================================
+
 [[triggers]]
 name = "discord-memo-capture-fetch"
 action = "discord.get_message"
 params = { channel_id = "{event.channel_id}", message_id = "{event.message_id}" }
-condition = """event.emoji_name == "📝" """
+condition = """event.emoji_name == "📝" """          # ◀ EMOJI HERE (Discord)
 [triggers.when]
 event_kind = "discord.reaction"
 [triggers.await]
@@ -97,6 +107,32 @@ Source: {event.message_url}
 """, workspace = "default" }
 [triggers.when]
 event_kind = "discord-memo-capture-fetch.awaited"
+
+[[triggers]]
+name = "slack-memo-capture-fetch"
+action = "slack.get_message"
+params = { channel = "{event.channel}", ts = "{event.ts}" }
+condition = """event.reaction == "memo" """          # ◀ EMOJI HERE (Slack — name, no colons)
+[triggers.when]
+event_kind = "slack.reaction"
+[triggers.await]
+event_kind = "slack.get_message.completed"
+timeout_seconds = 10
+on_timeout = "abort"
+
+[[triggers]]
+name = "slack-memo-capture-create"
+action = "todo.create"
+# Same shape as discord-memo-capture-create. event.permalink may
+# be null when chat.getPermalink failed at event time (rare —
+# usually a missing scope on the bot token).
+params = { title = "Slack capture {event.ts}", body = """
+{event.await.text}
+
+Source: {event.permalink}
+""", workspace = "default" }
+[triggers.when]
+event_kind = "slack-memo-capture-fetch.awaited"
 
 # ----------------------------------------------------------------------
 # Hyprland WebKit panel-freeze auto-cure (WR-2). See
