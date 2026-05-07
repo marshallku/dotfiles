@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Global commit-msg hook — enforce the user's commit-message policy across
+# every repo where core.hooksPath is not overridden (husky / lefthook /
+# repo-local .githooks/ break this layer; layered defenses cover those).
+#
+# Per-repo opt-out:    git config commit.skipGlobalHook true
+# Per-commit bypass:   git commit --no-verify
+
+set -euo pipefail
+
+msg_file="${1:-}"
+[[ -z "$msg_file" || ! -f "$msg_file" ]] && exit 0
+
+if [[ "$(git config --get commit.skipGlobalHook 2>/dev/null)" == "true" ]]; then
+    exit 0
+fi
+
+# Block AI co-author trailers anywhere in the message.
+if grep -qiE 'Co-Authored-By:.*(Claude|Anthropic|noreply@anthropic\.com|GPT-|Codex|ChatGPT|OpenAI)' "$msg_file"; then
+    cat >&2 <<'EOF'
+✗ commit-msg: AI co-author attribution is disabled by user policy.
+
+  Remove the `Co-Authored-By: ...` line(s) referring to Claude / Anthropic /
+  Codex / GPT / OpenAI from the commit message and retry.
+
+  Per-commit bypass:    git commit --no-verify
+  Per-repo opt-out:     git config commit.skipGlobalHook true
+EOF
+    exit 1
+fi
+
+exit 0

@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Global pre-commit hook — block staged BRIEF / codex-brief working files
+# from being committed. They belong in /tmp, not in the repo.
+#
+# Per-repo opt-out:    git config commit.skipGlobalHook true
+# Per-commit bypass:   git commit --no-verify
+
+set -euo pipefail
+
+if [[ "$(git config --get commit.skipGlobalHook 2>/dev/null)" == "true" ]]; then
+    exit 0
+fi
+
+mapfile -t staged < <(git diff --cached --name-only --diff-filter=ACMR)
+[[ ${#staged[@]} -eq 0 ]] && exit 0
+
+bad=()
+for f in "${staged[@]}"; do
+    case "$f" in
+        BRIEF*.md|*/BRIEF*.md|brief.md|*/brief.md|codex-brief*|*/codex-brief*|cross-review-brief*|*/cross-review-brief*)
+            bad+=("$f")
+            ;;
+    esac
+done
+
+if [[ ${#bad[@]} -gt 0 ]]; then
+    {
+        echo "✗ pre-commit: brief / codex-brief files cannot be committed:"
+        for f in "${bad[@]}"; do echo "    $f"; done
+        echo
+        echo "  These are cross-review / codex-plan working files. Move to /tmp:"
+        echo "    git rm --cached <file>  &&  mv <file> /tmp/"
+        echo
+        echo "  Per-commit bypass:    git commit --no-verify"
+        echo "  Per-repo opt-out:     git config commit.skipGlobalHook true"
+    } >&2
+    exit 1
+fi
+
+exit 0

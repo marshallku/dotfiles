@@ -59,6 +59,11 @@
             "type": "command",
             "command": "bash $HOME/.claude/hooks/pre-commit-gate.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/hooks/commit-policy-gate.sh",
+            "timeout": 5
           }
         ]
       },
