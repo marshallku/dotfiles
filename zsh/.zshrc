@@ -372,7 +372,7 @@ function kp {
 
 # Long-running command notification (notify if command takes >10 seconds)
 __cmd_notify_threshold=10
-__cmd_notify_exclude="^(vim|nvim|htop|top|less|man|ssh|tmux|tms|fzf)"
+__cmd_notify_exclude="^(vim|nvim|htop|top|less|man|ssh|tmux|tms|tmx|fzf)"
 
 preexec() {
   __cmd_start_time=$EPOCHSECONDS
@@ -415,6 +415,8 @@ export PATH="$HOME/.local/bin:$PATH"
 
 #eval "$(zoxide init zsh)"
 eval "$(mise activate zsh)"
+command -v tmx >/dev/null && eval "$(tmx shell-init zsh)"
+alias tms='tmx switch'
 
 # bun completions
 [ -s "/home/marshall/.bun/_bun" ] && source "/home/marshall/.bun/_bun"
