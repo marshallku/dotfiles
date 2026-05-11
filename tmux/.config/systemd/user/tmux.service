@@ -5,6 +5,7 @@ Documentation=man:tmux(1)
 [Service]
 Type=forking
 Environment=DISPLAY=:0
+Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=/usr/bin/tmux new-session -d
 
 ExecStop=/home/marshall/.tmux/plugins/tmux-resurrect/scripts/save.sh
