@@ -438,3 +438,7 @@ alias tmux="tmux -u"
 [[ "$TERM" == "xterm-kitty" ]] && (~/kitty-random-bg.sh --daemon --interval 300 &>/dev/null &)
 [[ -n "$NESTTY_SOCKET" ]] && (~/nestty-random-bg.sh --daemon --interval 300 &>/dev/null &)
 
+
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
