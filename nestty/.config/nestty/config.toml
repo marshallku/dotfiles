@@ -148,3 +148,12 @@ event_kind = "window.restored"
 
 
 
+
+# === STEP 5B VERIFICATION (TEMPORARY) — remove after smoke test ===
+[[triggers]]
+name = "step5b-chain-test"
+action = "system.log"
+params = { message = "STEP5B_CHAIN_VERIFIED_AT_{event.timestamp_ms}" }
+[triggers.when]
+event_kind = "echo.ping.completed"
+# === END STEP 5B VERIFICATION ===
