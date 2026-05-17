@@ -53,6 +53,7 @@ window#waybar {
 #custom-uptime,
 #custom-cpu,
 #custom-memory,
+#custom-gpu,
 #custom-disk-usage,
 #custom-server-health,
 #custom-grafana,
@@ -72,6 +73,7 @@ window#waybar {
 #custom-uptime:hover,
 #custom-cpu:hover,
 #custom-memory:hover,
+#custom-gpu:hover,
 #custom-disk-usage:hover,
 #custom-server-health:hover,
 #custom-grafana:hover,
@@ -131,6 +133,10 @@ window#waybar {
 
 #custom-memory {
     color: #c8b8ff;
+}
+
+#custom-gpu {
+    color: #74c7ec;
 }
 
 #custom-server-health {
