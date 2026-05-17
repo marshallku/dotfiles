@@ -50,4 +50,81 @@ if [[ -n "$bad_brief" ]]; then
     exit 1
 fi
 
-git add -A && git commit -m "$msg" && git push -u origin "$branch"
+# Locate the active intent file for THIS commit's session, if any. The
+# intent-capture.sh hook + intent-finalize.sh registered a session→intent
+# mapping at ~/.claude/state/intent-active-<session>-<repo>.path.
+#
+# Multiple Claude sessions can touch the same repo, so we cannot just take
+# the newest marker — that would risk binding this commit to another
+# session's intent. Instead: find the dirty-<session>.log whose entries
+# include a file under this repo and which was most recently written
+# (track-edit.sh updates its mtime on every Edit/Write). That session is
+# the one responsible for the current pending changes, and its intent
+# marker is the one we want.
+intent_file=""
+intent_basename=""
+if command -v md5sum >/dev/null 2>&1; then
+    repo_hash=$(printf '%s' "$toplevel" | md5sum | head -c 12)
+else
+    repo_hash=$(printf '%s' "$toplevel" | md5 -q | head -c 12)
+fi
+
+session_for_repo=""
+# `ls -t` sorts by mtime descending — newest dirty log first
+for log in $(ls -t "$HOME/.claude/state"/dirty-*.log 2>/dev/null); do
+    if grep -Fq "${toplevel}/" "$log" 2>/dev/null; then
+        session_for_repo=$(basename "$log" .log | sed 's/^dirty-//')
+        break
+    fi
+done
+
+if [[ -n "$session_for_repo" ]]; then
+    marker_file="$HOME/.claude/state/intent-active-${session_for_repo}-${repo_hash}.path"
+    if [[ -f "$marker_file" ]]; then
+        candidate=$(cat "$marker_file" 2>/dev/null || true)
+        if [[ -n "$candidate" ]] && [[ -f "$candidate" ]]; then
+            intent_file="$candidate"
+            intent_basename=$(basename "$intent_file" .md)
+        fi
+    fi
+fi
+
+# If we found an intent file, append Intent-Summary / Intent-Ref trailers so
+# the commit body carries the "why" for future maintainers reading git log.
+# Skip when the user already wrote them manually (idempotent).
+final_msg="$msg"
+if [[ -n "$intent_file" ]]; then
+    commit_summary=$(awk '/^---$/{c++; if(c==2)exit; next} c==1 && /^commit_summary: /{sub(/^commit_summary: /, ""); print; exit}' "$intent_file" 2>/dev/null || true)
+    if [[ -n "$commit_summary" ]] && ! printf '%s' "$msg" | grep -q '^Intent-Summary:'; then
+        # Display path as ~/docs/... not absolute /home/... for portability
+        intent_display="${intent_file/#$HOME/~}"
+        final_msg=$(printf '%s\n\nIntent-Summary: %s\nIntent-Ref: %s\n' "$msg" "$commit_summary" "$intent_display")
+    fi
+fi
+
+git add -A && git commit -m "$final_msg" && git push -u origin "$branch"
+git_rc=$?
+
+# After a successful main push, persist the intent file into ~/docs so the
+# SourceItem layer reflects this session's captured intent. ~/docs is private
+# and not pushed externally — the commit is purely for local SSoT history.
+if [[ $git_rc -eq 0 ]] && [[ -n "$intent_file" ]] && [[ -f "$intent_file" ]]; then
+    docs_root="$HOME/docs"
+    if [[ "$intent_file" == "$docs_root"/* ]]; then
+        rel_path="${intent_file#$docs_root/}"
+        if cd "$docs_root" 2>/dev/null; then
+            # Only commit if the intent file has pending changes
+            if git status --porcelain -- "$rel_path" 2>/dev/null | grep -q .; then
+                if git add "$rel_path" 2>/dev/null \
+                    && git commit -m "ingest: session intent ${intent_basename}" >/dev/null 2>&1; then
+                    echo "[save.sh] ~/docs: ingested session intent ($rel_path)" >&2
+                else
+                    echo "[save.sh] warn: ~/docs ingest commit failed for $rel_path" >&2
+                fi
+            fi
+            cd - >/dev/null
+        fi
+    fi
+fi
+
+exit $git_rc

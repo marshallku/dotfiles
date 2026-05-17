@@ -12,6 +12,10 @@
 #   codex-review.sh --focus security             # focused review
 #   codex-review.sh --context "user asked to..." # inline intent brief
 #   codex-review.sh --context-file /tmp/brief.md # intent brief from file
+#   codex-review.sh --intent-file ~/docs/sources/sessions/.../intent.md  # structured
+#                                                # SourceItem intent (preferred:
+#                                                # changes the review framing to
+#                                                # code-vs-intent comparison)
 #
 # --session and --files collect diffs per-file, trying (in order):
 #   1. uncommitted changes (git diff HEAD -- <file>)
@@ -41,6 +45,7 @@ MODE="branch"
 FOCUS=""
 CONTEXT=""
 CONTEXT_FILE=""
+INTENT_FILE=""
 SESSION_ID=""
 FILE_LIST=""
 TIMEOUT="${CODEX_REVIEW_TIMEOUT:-1200}"
@@ -77,6 +82,10 @@ while [[ $# -gt 0 ]]; do
             CONTEXT_FILE="$2"
             shift 2
             ;;
+        --intent-file)
+            INTENT_FILE="$2"
+            shift 2
+            ;;
         -h|--help)
             sed -n '2,34p' "$0"
             exit 0
@@ -95,6 +104,37 @@ if [[ -n "$CONTEXT_FILE" ]]; then
         exit 2
     fi
     CONTEXT=$(cat "$CONTEXT_FILE")
+fi
+
+# Intent file takes precedence — it carries structured fields the prompt
+# can index against (goal / acceptance_criteria / out_of_scope / assumptions).
+# When supplied, the review reframes from "is this good code?" to "does this
+# diff match the captured intent?".
+INTENT_GOAL=""
+INTENT_AC=""
+INTENT_OOS=""
+INTENT_ASSUMP=""
+INTENT_E2E=""
+INTENT_COMMIT_SUMMARY=""
+INTENT_AVAILABLE=0
+if [[ -n "$INTENT_FILE" ]]; then
+    if [[ ! -f "$INTENT_FILE" ]]; then
+        echo "[codex-review] intent file not found: $INTENT_FILE" >&2
+        exit 2
+    fi
+    # Extract frontmatter once, then pull fields out of it with awk.
+    INTENT_FM=$(awk '/^---$/{c++; if(c==2)exit; next} c==1' "$INTENT_FILE")
+    INTENT_GOAL=$(awk '/^goal: /{sub(/^goal: /, ""); print; exit}' <<< "$INTENT_FM")
+    INTENT_COMMIT_SUMMARY=$(awk '/^commit_summary: /{sub(/^commit_summary: /, ""); print; exit}' <<< "$INTENT_FM")
+    INTENT_AC=$(awk '/^acceptance_criteria:$/{f=1; next} f && /^[a-z_]+:/{f=0} f && /^  - /' <<< "$INTENT_FM")
+    INTENT_OOS=$(awk '/^out_of_scope:$/{f=1; next} f && /^[a-z_]+:/{f=0} f && /^  - /' <<< "$INTENT_FM")
+    INTENT_ASSUMP=$(awk '/^assumptions:$/{f=1; next} f && /^[a-z_]+:/{f=0} f && /^  - /' <<< "$INTENT_FM")
+    INTENT_E2E=$(awk '/^verification:$/{f=1; next} f && /^[a-z_]+:/ && !/^  /{f=0} f && /^  e2e: /{sub(/^  e2e: /, ""); print; exit}' <<< "$INTENT_FM")
+    if [[ -z "$INTENT_GOAL" || -z "$INTENT_AC" || -z "$INTENT_OOS" ]]; then
+        echo "[codex-review] intent file missing required fields (goal / acceptance_criteria / out_of_scope): $INTENT_FILE" >&2
+        exit 2
+    fi
+    INTENT_AVAILABLE=1
 fi
 
 COMPANION="$(dirname "$0")/codex-companion.sh"
@@ -334,7 +374,40 @@ fi
 
 CONTEXT_SECTION=""
 INTENT_CHECK=""
-if [[ -n "$CONTEXT" ]]; then
+if [[ "$INTENT_AVAILABLE" = "1" ]]; then
+    # Structured intent — the review is now primarily a code-vs-intent
+    # comparison. Each acceptance_criteria must be verifiable in the diff;
+    # each out_of_scope must NOT be touched; assumptions must hold.
+    CONTEXT_SECTION=$(cat <<EOF
+
+--- TASK INTENT (captured before implementation, SourceItem at ${INTENT_FILE}) ---
+Goal: ${INTENT_GOAL}
+Commit summary (will be in git log): ${INTENT_COMMIT_SUMMARY}
+
+Acceptance criteria (every item must be verifiable from the diff):
+${INTENT_AC}
+
+Out of scope (the diff must NOT touch any of these):
+${INTENT_OOS}
+
+Author's assumptions (flag if any are violated by the diff):
+${INTENT_ASSUMP}
+
+E2E verification declared: ${INTENT_E2E}
+--- END TASK INTENT ---
+EOF
+)
+    INTENT_CHECK="
+This review is primarily a CODE-VS-INTENT comparison, not a generic quality pass.
+
+For each acceptance_criteria item, locate the change in the diff that satisfies it. If you cannot, raise it as CRITICAL with the label [INTENT-MISMATCH] and the unmet criterion.
+
+For each out_of_scope item, scan the diff for any touch on it. Any violation is CRITICAL [INTENT-MISMATCH].
+
+If any author assumption is invalidated by the diff (e.g. assumption said \"X stays unchanged\" but X was changed), raise CRITICAL [INTENT-MISMATCH].
+
+Generic code-quality issues outside the intent should be tagged [CODE-DEFECT] in CRITICAL and be limited to genuine breakage (security / correctness / type safety). Suppress style, naming, future-improvement noise per AGENTS.md."
+elif [[ -n "$CONTEXT" ]]; then
     CONTEXT_SECTION=$(cat <<EOF
 
 --- TASK CONTEXT (from the author) ---
@@ -343,7 +416,7 @@ ${CONTEXT}
 EOF
 )
     INTENT_CHECK="
-Also judge intent-vs-implementation alignment: does the diff actually do what the Task Context says the author intended? If there is a material mismatch between stated intent and actual code (missing requirement, silent scope creep, subtly different semantics), raise it as CRITICAL with the label [INTENT-MISMATCH]."
+Also judge intent-vs-implementation alignment: does the diff actually do what the Task Context says the author intended? If there is a material mismatch between stated intent and actual code (missing requirement, silent scope creep, subtly different semantics), raise it as CRITICAL with the label [INTENT-MISMATCH]. Other CRITICAL findings get [CODE-DEFECT]."
 else
     CONTEXT_SECTION=$'\n(No task context supplied — judging the diff in isolation. Note this in your summary.)'
 fi

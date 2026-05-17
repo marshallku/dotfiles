@@ -434,6 +434,51 @@ When either hook fires, you will receive a message instructing you to run `bash 
 Opt-out (global): `touch ~/.claude/state/auto-review-disabled`
 Tune thresholds: set `AUTO_REVIEW_MIN_FILES` / `AUTO_REVIEW_MIN_LINES` env vars.
 
+### Intent capture (workflow gate — fires upstream of review)
+
+**Why this exists.** Cross-review at commit time can't recover what intent-extraction missed at edit time. The mechanism: LLMs optimize for plausible next-token completion + RLHF rewards helpfulness over precise execution, so on a casual prompt they fill ambiguity with majority-pattern defaults and drift starts in the *first response*. The fix is to capture *user intent* before any non-trivial edit and persist it as a SourceItem so future review can compare *code-vs-intent* (a narrow comparison task) instead of *code-vs-prompt* (the same failure mode the writer had).
+
+**Where intent lives.** `~/docs/sources/sessions/<repo-slug>/<YYYY-MM-DD>-session-<short-id>.md` following the SourceItem standard (see `~/docs/CLAUDE.md:41` for envelope). Immutable per `~/docs` rules — revisions create a new file with `supersedes:` pointing at the prior. The ack state lives separately in `~/.claude/state/intent-acks/<basename>.ack` so the SourceItem itself stays raw-immutable.
+
+**Schema (v1) — fields the intent file is validated on:**
+- `acceptance_criteria` ≥1 — observable success signals (theater wedge: forces verifiable claims, not introspection)
+- `out_of_scope` ≥1 — explicit non-goals (counters "do more than asked" sycophancy bias)
+- `assumptions` ≥1 — unstated assumptions surfaced (so codex review can flag if any get violated)
+- `goal`, `summary`, `commit_summary` — non-empty, single line each
+- `verification.e2e` ∈ {required, not_applicable, deferred} — declares e2e applicability; if `deferred`, `verification.reason` required
+- Plus SourceItem fields: `source_type: sessions`, `canonical_url: claude://session/<id>`, `content_hash` (sha256 of immutable payload excluding `## Notes`), `dedupe_key`, `tags` (3-axis: stack/domain/activity), `repo: owner/repo`
+
+**Hooks involved:**
+
+1. **`intent-capture.sh` (PreToolUse Edit|Write)** — On first non-trivial edit (≥`AUTO_INTENT_MIN_FILES` files or ≥`AUTO_INTENT_MIN_LINES` weighted diff lines, defaults inherit from `AUTO_REVIEW_*`), blocks the edit and instructs Claude to write the intent file + ask user for ack + run `intent-finalize.sh`. Allows on:
+   - `AUTO_INTENT_SOFT_GATE=1` (dogfood default — warn-only)
+   - `intent-capture-disabled` global marker
+   - intent file already exists, ack marker exists, and ack is newer than intent file
+2. **`intent-finalize.sh`** (helper, Claude invokes) — Validates schema; computes `content_hash` over the immutable payload (frontmatter excluding hash fields + body before `## Notes`); computes `dedupe_key = sha256(canonical_url + content_hash)`; writes ack marker; registers `intent-active-<session>-<repo>.path` so the hook fast-paths subsequent edits.
+3. **`pre-commit-gate.sh` extension** — In hard-gate mode, also blocks `save.sh`/`git commit`/`git push` when the active intent marker is missing, ack is stale (intent modified after ack), or `verification.e2e: required` but no test/e2e evidence in transcript.
+4. **`codex-review.sh --intent-file <path>`** — Reframes review from "is this good code?" to "does this diff match this intent?" by injecting goal/acceptance_criteria/out_of_scope/assumptions as a `TASK INTENT` section. Codex returns CRITICAL findings classified `[INTENT-MISMATCH]` or `[CODE-DEFECT]`.
+5. **`save.sh` extension** — On successful commit/push, appends `Intent-Summary:` + `Intent-Ref:` trailers to the commit body (commit_summary from the intent file) and runs `git -C ~/docs commit` with `ingest: session intent <slug>` to persist the SourceItem in the private SSoT.
+
+**Bypass / tuning env vars:**
+- `AUTO_INTENT_SOFT_GATE=1` (default during initial rollout) — warn-only, no block
+- `AUTO_INTENT_SOFT_GATE=0` — hard block on missing intent
+- `AUTO_INTENT_MIN_FILES` / `AUTO_INTENT_MIN_LINES` — gate thresholds (inherit from `AUTO_REVIEW_*` if unset)
+- `touch ~/.claude/state/intent-capture-disabled` — session-wide opt-out (intent gate only; review gate still fires)
+- `touch ~/.claude/state/auto-review-disabled` — disables both review and intent gates
+
+**The flow (when not bypassed):**
+```
+user prompt → first Edit/Write
+  ↓ intent-capture.sh blocks
+Claude writes intent file (template provided in block message)
+  ↓ Claude surfaces goal+AC+OOS to user, asks for ack
+user replies "proceed" (or modifications)
+  ↓ Claude runs intent-finalize.sh (validates schema, sets ack)
+edits proceed normally, codex-review.sh --intent-file at end
+  ↓ VERDICT classification routes [INTENT-MISMATCH] vs [CODE-DEFECT]
+save.sh injects Intent-Summary trailer + ~/docs ingest commit
+```
+
 ### Complete hook registry
 
 | Hook | Event | Matcher | Purpose |
@@ -441,7 +486,8 @@ Tune thresholds: set `AUTO_REVIEW_MIN_FILES` / `AUTO_REVIEW_MIN_LINES` env vars.
 | `careful-with-judge.sh` | PreToolUse | Bash | Dangerous-command pattern match (rm -r, DROP TABLE, force push…) → LLM-judge only when matched |
 | `freeze.sh` | PreToolUse | Edit/Write | Block edits outside `~/.claude/freeze-dir.txt` scope (night-agent sandbox) |
 | `protect-secrets.sh` | PreToolUse | Edit/Write | Deny writes to `.env`, `.secrets`, `credentials`, `*.pem`, `*.key`, `id_rsa*` |
-| `pre-commit-gate.sh` | PreToolUse | Bash | Block `save.sh`/`git commit`/`git push` until session has a fresh codex-review marker |
+| `intent-capture.sh` | PreToolUse | Edit/Write | Capture user intent (SourceItem in `~/docs/sources/sessions/`) before non-trivial sessions accumulate drift |
+| `pre-commit-gate.sh` | PreToolUse | Bash | Block `save.sh`/`git commit`/`git push` until session has a fresh codex-review marker AND (hard-gate mode) acked intent file |
 | `track-edit.sh` | PostToolUse | Edit/Write | Append edited file path to `~/.claude/state/dirty-<session>.log`; invalidate reviewed markers |
 | `post-typecheck.sh` | PostToolUse | Edit/Write | Run `npx tsc --noEmit`/`cargo check`/`go vet ./...` after edits; surface errors as tool result |
 | `session-start.sh` | SessionStart | — | Load last handoff into systemPrompt; GC stale state files |

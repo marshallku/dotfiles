@@ -150,6 +150,43 @@ VERDICT: APPROVED
 
 ---
 
+## Intent-Aware Review (when TASK INTENT is supplied)
+
+When the review prompt contains a `--- TASK INTENT ---` section with structured fields (`goal`, `acceptance_criteria`, `out_of_scope`, `assumptions`), this is a **code-vs-intent comparison**, not a generic quality pass. The intent was captured before implementation and persisted as a SourceItem in `~/docs/sources/sessions/`.
+
+### Classification (mandatory tag on every CRITICAL)
+
+Every CRITICAL finding MUST be prefixed with exactly one of these labels:
+
+- **[INTENT-MISMATCH]** — diff does not match the captured intent
+  - An `acceptance_criteria` item is not satisfied by any change in the diff
+  - An `out_of_scope` item is touched by the diff
+  - An author `assumption` is invalidated by the diff (e.g. assumption said "X stays untouched" but X changed)
+- **[CODE-DEFECT]** — diff has a genuine code defect unrelated to intent
+  - Security (SQL/command/XSS injection, missing auth checks, hardcoded secrets, etc.)
+  - Correctness (race conditions, off-by-one, null/undefined propagation)
+  - Type safety abuse
+  - Other items from the CRITICAL list above
+
+The classification matters because Claude routes them differently — INTENT-MISMATCH fixes are usually mechanical (add the missing change / revert the OOS touch), while CODE-DEFECT requires more judgment.
+
+### Acceptance-criteria verification
+
+For each `acceptance_criteria` item, locate the specific change in the diff that satisfies it. If you cannot, that item is `[INTENT-MISMATCH]`. Be concrete:
+
+```
+## CRITICAL
+- [C1] [INTENT-MISMATCH] AC#2 ("retry on 429 with backoff") — no retry logic added in src/api/fetch.ts. The diff handles 5xx but ignores 429.
+- [C2] [INTENT-MISMATCH] OOS#1 ("do not touch session manager") — src/session/manager.ts:88 reassigns the timeout, violating the explicit out-of-scope item.
+- [C3] [CODE-DEFECT] src/db/query.ts:42 — user input concatenated into raw SQL.
+```
+
+### Iteration escalation (informational, for Claude's loop)
+
+If you produce the same CRITICAL finding twice in consecutive rounds without it being addressed, the cross-review skill will halt the loop and surface both opinions to the user. Be precise enough in the finding ID/description that "same item" is detectable across rounds.
+
+---
+
 ## Consultation Mode
 
 When asked for an opinion rather than a review (e.g., "should I use X or Y?", "what's the best approach for Z?"), respond with:

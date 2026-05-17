@@ -84,6 +84,16 @@
             "command": "bash $HOME/.claude/hooks/freeze.sh"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/hooks/intent-capture.sh",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "SessionStart": [
