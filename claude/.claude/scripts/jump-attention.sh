@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Jump to the tmux session of the most recent attention queue entry.
-# Bind to tmux prefix+a (and optionally a global hotkey).
+# Jump to the tmux session of the most recent attention queue entry and
+# remove that entry from the queue (most-recent-pop semantics — repeated
+# presses drain the queue rather than looping on the same entry).
 #
-# Behavior: most-recent-wins. Stale entries (>1h) are ignored.
-# Multi-attention disambiguation (fzf picker) is a future enhancement.
+# For deliberate selection over multiple pending entries, use the fzf picker
+# at scripts/attention-picker.sh (tmux: prefix+A).
 
 set -u
 
@@ -20,7 +21,16 @@ entry=$(tac "$queue" 2>/dev/null | awk -v c="$cutoff" '
 
 [[ -z "$entry" ]] && { echo "no fresh attention" >&2; exit 0; }
 
+ts=$(printf '%s' "$entry" | jq -r '.ts // ""' 2>/dev/null)
 session=$(printf '%s' "$entry" | jq -r '.tmux_session // ""' 2>/dev/null)
+
+# Consume the entry. Delete before switch so failed switches still drain the
+# queue — the next notification will re-populate if attention truly needed.
+if [[ -n "$ts" ]]; then
+    awk -v t="\"ts\":${ts}," '!index($0, t) { print }' "$queue" > "${queue}.tmp" \
+        && mv "${queue}.tmp" "$queue"
+fi
+
 [[ -z "$session" ]] && { echo "no tmux_session in latest entry" >&2; exit 0; }
 
 if ! command -v tmx >/dev/null 2>&1; then
