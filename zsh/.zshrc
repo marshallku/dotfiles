@@ -391,7 +391,7 @@ precmd() {
         else
           status_icon="✗ ($exit_code)"
         fi
-        notify-send -u normal -t 5000 \
+        xnotify -u normal -t 5000 \
           "Command finished ${status_icon}" \
           "${__cmd_name}\nTook ${elapsed}s"
       fi
