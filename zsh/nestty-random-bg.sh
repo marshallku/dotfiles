@@ -39,8 +39,8 @@ select_random_image() {
 
 instance_id() {
     local sock="${NESTTY_SOCKET:-}"
-    # Extract PID from /tmp/nestty-<PID>.sock
     local base="${sock##*/}"
+    base="${base#gui-}"
     base="${base#nestty-}"
     echo "${base%.sock}"
 }
