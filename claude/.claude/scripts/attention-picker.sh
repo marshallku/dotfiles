@@ -32,16 +32,22 @@ cmd_list() {
     local now cutoff
     now=$(date +%s)
     cutoff=$((now - 3600))
-    tac "$queue" 2>/dev/null \
+    # `tac` is GNU-only — macOS BSD coreutils don't ship it. Reverse via
+    # awk so the picker shows newest-first on every platform.
+    #
+    # Field separator is ASCII Unit Separator ( / \037) rather than
+    # TAB: bash's `read` treats tab as whitespace and collapses consecutive
+    # ones, so an empty `tmux_session` would shift later fields and break
+    # `human_age` (it sees the body text where it expects an integer and
+    # `set -u` trips inside `(( secs < 60 ))`). US is non-whitespace and
+    # cannot appear in JSON string content, so empty fields stay empty.
+    awk '{ lines[NR] = $0 } END { for (i = NR; i > 0; i--) print lines[i] }' "$queue" \
       | jq -rc --argjson now "$now" --argjson cutoff "$cutoff" '
             select(.ts >= $cutoff)
-            | [(.ts|tostring),
-               "\(.source)·\(.kind)",
-               (.tmux_session // "?"),
-               ($now - .ts),
-               ((.body // "") | gsub("\n"; " ") | .[0:80])]
-            | @tsv' 2>/dev/null \
-      | while IFS=$'\t' read -r ts label session age body; do
+            | "\(.ts)\(.source)·\(.kind)\(.tmux_session // "?")\($now - .ts)\((.body // "") | gsub("\n"; " ") | .[0:80])"
+        ' 2>/dev/null \
+      | while IFS=$'\037' read -r ts label session age body; do
+            [[ -n "$session" ]] || session="—"
             printf "%s\t%-18s %-18s %4s  %s\n" \
                 "$ts" "[$label]" "$session" "$(human_age "$age")" "$body"
         done

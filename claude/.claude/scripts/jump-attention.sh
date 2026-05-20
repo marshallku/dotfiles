@@ -13,11 +13,17 @@ queue="${XDG_CACHE_HOME:-$HOME/.cache}/claude-attention/queue.jsonl"
 
 cutoff=$(( $(date +%s) - 3600 ))
 
-entry=$(tac "$queue" 2>/dev/null | awk -v c="$cutoff" '
+# Find the newest entry with ts >= cutoff. Scanning forward and keeping the
+# last match avoids `tac` (GNU-only — macOS BSD coreutils don't ship it; the
+# previous `tac …2>/dev/null` swallowed the missing-binary error and the
+# whole pipeline silently produced no entry, making `a` look like a no-op
+# popup-close on macOS).
+entry=$(awk -v c="$cutoff" '
     match($0, /"ts":[0-9]+/) {
         ts = substr($0, RSTART+5, RLENGTH-5) + 0
-        if (ts >= c) { print; exit }
-    }')
+        if (ts >= c) latest = $0
+    }
+    END { if (length(latest)) print latest }' "$queue")
 
 [[ -z "$entry" ]] && { echo "no fresh attention" >&2; exit 0; }
 
