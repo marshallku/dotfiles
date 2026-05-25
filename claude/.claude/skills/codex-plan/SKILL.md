@@ -23,6 +23,29 @@ effort: medium
 
 ## 워크플로우
 
+### Step -1: Prior context retrieval (~/docs SSoT)
+
+Plan brief를 쓰기 **전에** 30초 투자해서 SSoT를 본다. 비슷한 결정을 과거에 했거나, 다른 repo에서 같은 접근을 시도한 적이 있으면 plan에 인용한다 — codex가 같은 영역에 집중 비판할 수 있어 신호의 질이 한 단계 올라간다.
+
+```bash
+# Plan의 핵심 명사 2-3개로 검색
+dn search "<keyword1> <keyword2>"
+# 현재 repo가 topics/repos/에 있으면 인접 자료
+dn related <repo-note>            # 예: dn related kagi
+# 같은 도메인의 다른 repo도 살피기 (사용자가 명시적으로 차용을 원함)
+ls ~/docs/topics/repos/           # 비슷한 프로젝트 후보
+ls ~/docs/topics/decisions/ 2>/dev/null  # 과거 결정 기록
+```
+
+우선순위 hit:
+- `sources/sessions/<repo-slug>/` — 같은 repo의 직전 작업들
+- `topics/repos/<repo>.md` — 이 repo의 누적 지식
+- `topics/repos/<다른 repo>.md` — 비슷한 도메인/스택의 다른 프로젝트 아이디어
+- `topics/decisions/` — 과거 결정 기록
+- `sources/debug/` — 과거 debug saga (관련 root cause)
+
+hit이 있으면 Read해서 Step 0의 plan brief 안 `## Prior context` 섹션에 1-3줄로 인용. hit 0개면 그냥 다음으로. 검색에 5분 이상 쓰지 말 것.
+
 ### Step 0: Plan brief 작성
 
 Claude 본인의 working memory에 있는 plan을 짧게 정리한다. codex가 코드도 직접 읽으니까 너무 장황할 필요 없음 — 의도와 핵심 결정만.
@@ -32,6 +55,9 @@ PLAN=$(mktemp /tmp/codex-plan.XXXXXX.md)
 cat > "$PLAN" <<'EOF'
 ## Goal
 <무엇을 왜 한다 — 1-2줄>
+
+## Prior context (from ~/docs)
+<Step -1에서 찾은 자료 1-3줄. 예: "kagi에서 같은 패턴을 Y로 풀었음 (~/docs/topics/repos/kagi.md). 이번엔 Z 제약 때문에 다르게 가야 함." 없으면 "없음".>
 
 ## Approach
 <어떻게 한다 — 주요 파일/함수/단계 3-5개 bullet>
@@ -45,7 +71,7 @@ EOF
 ```
 
 **원칙**:
-- 전체 200단어 이하
+- 전체 200단어 이하 (Prior context 포함)
 - 정직하게 써라. "사실 이 부분 어떻게 할지 모르겠음"이라고 적어도 OK — codex가 그 부분을 집중적으로 본다
 - "Risks I see"에 본인이 본 리스크를 미리 적으면 codex가 같은 걸 다시 지적하는 노이즈를 줄여줌
 
