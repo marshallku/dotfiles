@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Commit message prefix conventions (suggestive, not enforced):
+# Commit message prefix conventions (ENFORCED — see style check below):
 #   Verb-style:   Add, Remove, Move, Improve, Pass, Verify, Modify, Allow, Bump, Fix, Implement, Make, Update, Use
 #   Conventional: feat:, fix:, test:, chore:, doc:
-# Any non-empty message is accepted — pick one if it fits, or skip the prefix.
+# The subject line must start with one of the above. Mismatches are rejected.
 
 if [[ -z "$1" ]]; then
     echo "Usage: $0 <commit message>"
@@ -17,6 +17,28 @@ msg="$1"
 if printf '%s' "$msg" | grep -qiE 'Co-Authored-By:.*(Claude|Anthropic|noreply@anthropic\.com|GPT-|Codex|ChatGPT|OpenAI)'; then
     echo "Error: commit message contains an AI co-author trailer." >&2
     echo "       Remove the 'Co-Authored-By: ...' line and try again." >&2
+    exit 1
+fi
+
+# Enforce commit subject style. Either verb-style (capitalized imperative from
+# the documented list) or conventional prefix (lowercase type + colon). Both
+# require a space/content after, so single-word messages like "Add" fail too.
+subject=$(printf '%s' "$msg" | head -n1)
+verb_re='^(Add|Remove|Move|Improve|Pass|Verify|Modify|Allow|Bump|Fix|Implement|Make|Update|Use) .+'
+conv_re='^(feat|fix|test|chore|doc): .+'
+if ! printf '%s' "$subject" | grep -qE "$verb_re" \
+    && ! printf '%s' "$subject" | grep -qE "$conv_re"; then
+    {
+        echo "Error: commit subject does not follow an accepted style."
+        echo "       Got: $subject"
+        echo ""
+        echo "  Use one of:"
+        echo "    Verb-style:   <Verb> <subject>"
+        echo "                  Verbs: Add, Remove, Move, Improve, Pass, Verify, Modify,"
+        echo "                         Allow, Bump, Fix, Implement, Make, Update, Use"
+        echo "    Conventional: <type>: <subject>"
+        echo "                  Types: feat, fix, test, chore, doc"
+    } >&2
     exit 1
 fi
 
