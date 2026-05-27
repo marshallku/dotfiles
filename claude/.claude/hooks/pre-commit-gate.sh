@@ -341,7 +341,7 @@ Emergency bypass (use sparingly, documents the skip):
 To disable the gate entirely for this session:
     touch ~/.claude/state/auto-review-disabled'
 
-# NESTTY_HOOK_PUBLISH: claude.commit_blocked $(jq -n --arg c "$CMD" '{reason:"missing-review",command:$c}')
-command -v nestctl >/dev/null && nestctl event publish claude.commit_blocked --quiet "$(jq -n --arg c "$CMD" '{reason:"missing-review",command:$c}')" &
-# NESTTY_HOOK_PUBLISH_END
+# COPAD_HOOK_PUBLISH: claude.commit_blocked $(jq -n --arg c "$CMD" '{reason:"missing-review",command:$c}')
+command -v coctl >/dev/null && coctl event publish claude.commit_blocked --quiet "$(jq -n --arg c "$CMD" '{reason:"missing-review",command:$c}')" &
+# COPAD_HOOK_PUBLISH_END
 jq -n --arg msg "$REASON" '{permissionDecision: "deny", message: $msg}'

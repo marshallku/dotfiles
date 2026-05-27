@@ -496,9 +496,9 @@ case "$VERDICT_LINE" in
         if [[ "$MODE" != "files" ]]; then
             mark_repo_reviewed
         fi
-        # NESTTY_HOOK_PUBLISH: claude.review_approved $(jq -n --arg s "$SESSION_ID" --arg m "$MODE" '{session:$s,mode:$m}')
-        command -v nestctl >/dev/null && nestctl event publish claude.review_approved --quiet "$(jq -n --arg s "$SESSION_ID" --arg m "$MODE" '{session:$s,mode:$m}')" &
-        # NESTTY_HOOK_PUBLISH_END
+        # COPAD_HOOK_PUBLISH: claude.review_approved $(jq -n --arg s "$SESSION_ID" --arg m "$MODE" '{session:$s,mode:$m}')
+        command -v coctl >/dev/null && coctl event publish claude.review_approved --quiet "$(jq -n --arg s "$SESSION_ID" --arg m "$MODE" '{session:$s,mode:$m}')" &
+        # COPAD_HOOK_PUBLISH_END
         exit 0
         ;;
     "VERDICT: REVISE")

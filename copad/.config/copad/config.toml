@@ -22,9 +22,9 @@ position = 'left'
 width = 200
 
 [keybindings]
-"ctrl+shift+p" = "spawn:~/nestty-random-bg.sh --toggle"
-"ctrl+shift+bracketright" = "spawn:~/nestty-random-bg.sh --next"
-"ctrl+shift+d" = "spawn:~/nestty-random-bg.sh --delete"
+"ctrl+shift+y" = "spawn:~/copad-random-bg.sh --toggle"
+"ctrl+shift+bracketright" = "spawn:~/copad-random-bg.sh --next"
+"ctrl+shift+d" = "spawn:~/copad-random-bg.sh --delete"
 
 # ----------------------------------------------------------------------
 # Vision Flow 3 — click "Start" on a Todo → fresh worktree → claude
@@ -63,7 +63,7 @@ event_kind = "git.worktree_add.completed"
 # ====================================================================
 # 📝 reaction → Todo capture (Discord + Slack)
 # --------------------------------------------------------------------
-# React with 📝 on a Discord/Slack message → nestty captures the
+# React with 📝 on a Discord/Slack message → copad captures the
 # body + permalink as a Todo. Click Start in the Todo panel to
 # spawn a worktree + claude session with the captured context in
 # the layered prompt (vision-flow-3 chain).
@@ -141,19 +141,55 @@ event_kind = "slack-memo-capture-fetch.awaited"
 [[triggers]]
 name = "hyprland-webkit-cure"
 action = "system.spawn"
-params = { argv = ["sh", "-c", "hyprctl dispatch resizewindowpixel '1 0,class:com.marshall.nestty' && hyprctl dispatch -- resizewindowpixel '-1 0,class:com.marshall.nestty'"] }
+params = { argv = ["sh", "-c", "hyprctl dispatch resizewindowpixel '1 0,class:com.marshall.copad' && hyprctl dispatch -- resizewindowpixel '-1 0,class:com.marshall.copad'"] }
 [triggers.when]
 event_kind = "window.restored"
+# Privileged-action opt-in (commit d03a01a). Without this, the new
+# trust-boundary gate skips system.spawn on every fire.
+[triggers.security]
+allow_privileged = true
 
+# ----------------------------------------------------------------------
+# Claude harness hook → desktop toast (Option A slice 1A, commit 28a0b6a).
+# Mirror of examples/triggers/claude-hooks.toml. accept_external = true
+# because these fire on `coctl event publish` calls made from
+# `~/.claude/scripts/*.sh` hooks (External origin per trust boundary #37).
+# ----------------------------------------------------------------------
 
-
-
-
-# === STEP 5B VERIFICATION (TEMPORARY) — remove after smoke test ===
 [[triggers]]
-name = "step5b-chain-test"
-action = "system.log"
-params = { message = "STEP5B_CHAIN_VERIFIED_AT_{event.timestamp_ms}" }
+name = "claude-commit-blocked-toast"
+action = "notify.show"
+params = { title = "Commit blocked", body = "{event.reason}", level = "warn" }
 [triggers.when]
-event_kind = "echo.ping.completed"
-# === END STEP 5B VERIFICATION ===
+event_kind = "claude.commit_blocked"
+[triggers.security]
+accept_external = true
+
+[[triggers]]
+name = "claude-commit-blocked-discord"
+action = "discord.send_message"
+params = { channel_id = "1507255807132176394", content = ":no_entry: commit blocked in `{event.repo}`: {event.reason}" }
+condition = 'context.presence == "away"'
+[triggers.when]
+event_kind = "claude.commit_blocked"
+[triggers.security]
+accept_external = true
+
+[[triggers]]
+name = "claude-review-approved-toast"
+action = "notify.show"
+params = { title = "Codex review approved", body = "session {event.session}", level = "info" }
+[triggers.when]
+event_kind = "claude.review_approved"
+[triggers.security]
+accept_external = true
+
+[[triggers]]
+name = "claude-review-approved-discord"
+action = "discord.send_message"
+params = { channel_id = "1507255807132176394", content = ":white_check_mark: codex review APPROVED (session `{event.session}`)" }
+condition = 'context.presence == "away"'
+[triggers.when]
+event_kind = "claude.review_approved"
+[triggers.security]
+accept_external = true

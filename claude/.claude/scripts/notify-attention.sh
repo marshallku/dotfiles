@@ -63,7 +63,7 @@ find_terminal_pid() {
         comm=$(ps -o comm= -p "$pid" 2>/dev/null | awk '{print $1}')
         case "$comm" in
             kitty|ghostty|alacritty|foot|wezterm-gui|wezterm|st|urxvt|rxvt|xterm|\
-konsole|terminator|tilix|nestty|turm|sakura|hyper|tilda|guake|gnome-terminal*|\
+konsole|terminator|tilix|copad|sakura|hyper|tilda|guake|gnome-terminal*|\
 io.elementary.terminal|qterminal|cool-retro-term|Terminal|iTerm2|WezTerm)
                 echo "$pid"
                 return
