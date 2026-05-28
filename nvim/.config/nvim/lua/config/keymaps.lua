@@ -52,3 +52,31 @@ keymap.set("n", "<leader>to", "<cmd>tabnew<CR>", { desc = "Open new tab" })
 keymap.set("n", "<leader>tx", "<cmd>tabclose<CR>", { desc = "Close tab" })
 keymap.set("n", "<leader>tn", "<cmd>tabn<CR>", { desc = "Next tab" })
 keymap.set("n", "<leader>tp", "<cmd>tabp<CR>", { desc = "Previous tab" })
+
+-- Yank file reference as @path:line or @path:start-end (for Claude / chat paste)
+local function yank_ref(range)
+    local abs = vim.fn.expand("%:p")
+    if abs == "" then
+        vim.notify("yank_ref: no file", vim.log.levels.WARN)
+        return
+    end
+    local root = vim.fn.systemlist("git -C " .. vim.fn.shellescape(vim.fn.expand("%:p:h")) .. " rev-parse --show-toplevel")[1]
+    local path
+    if vim.v.shell_error == 0 and root and root ~= "" then
+        path = abs:sub(#root + 2) -- strip "<root>/"
+    else
+        path = vim.fn.fnamemodify(abs, ":.")
+    end
+    local ref = range and ("@%s:%d-%d"):format(path, range[1], range[2]) or ("@%s:%d"):format(path, vim.fn.line("."))
+    vim.fn.setreg("+", ref)
+    vim.notify(ref)
+end
+
+keymap.set("n", "<leader>yr", function() yank_ref(nil) end, { desc = "Yank @path:line ref" })
+keymap.set("x", "<leader>yr", function()
+    local s, e = vim.fn.line("v"), vim.fn.line(".")
+    if s > e then s, e = e, s end
+    -- leave visual mode so getpos marks settle (cosmetic; line() already correct here)
+    vim.cmd("normal! \27")
+    yank_ref({ s, e })
+end, { desc = "Yank @path:start-end ref" })
