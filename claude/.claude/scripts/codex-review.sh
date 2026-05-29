@@ -16,6 +16,12 @@
 #                                                # SourceItem intent (preferred:
 #                                                # changes the review framing to
 #                                                # code-vs-intent comparison)
+#   codex-review.sh --resume ...                 # VERDICT-loop round 2+: resume
+#                                                # the previous review thread so
+#                                                # codex keeps its prior analysis
+#                                                # and reasons only about the
+#                                                # fixes (big token saving). Round
+#                                                # 1 must run WITHOUT --resume.
 #
 # --session and --files collect diffs per-file, trying (in order):
 #   1. uncommitted changes (git diff HEAD -- <file>)
@@ -48,6 +54,7 @@ CONTEXT_FILE=""
 INTENT_FILE=""
 SESSION_ID=""
 FILE_LIST=""
+RESUME=0
 TIMEOUT="${CODEX_REVIEW_TIMEOUT:-1200}"
 
 while [[ $# -gt 0 ]]; do
@@ -85,6 +92,10 @@ while [[ $# -gt 0 ]]; do
         --intent-file)
             INTENT_FILE="$2"
             shift 2
+            ;;
+        --resume)
+            RESUME=1
+            shift
             ;;
         -h|--help)
             sed -n '2,34p' "$0"
@@ -436,7 +447,30 @@ fi
 # Review role + classification scheme + VERDICT contract live in
 # ~/.codex/AGENTS.md "Code Review Principles" / "Review Output Contract".
 # Auto-loaded — don't restate. We only supply scope + context + diff.
-PROMPT=$(cat <<EOF
+#
+# RESUME rounds (VERDICT-loop round 2+) reuse the prior review thread via the
+# companion's --resume-last. Codex already holds round 1's diff, its analysis,
+# and the task context/intent, so we DON'T resend CONTEXT_SECTION / INTENT_CHECK
+# (would just re-bill tokens codex already has). We send a short continuation
+# framing + the freshly-recomputed diff so codex reasons only about the fixes
+# instead of re-analysing the whole change from scratch. The diff is still
+# embedded (not "go run git diff yourself") to preserve exact review scope
+# across all collection strategies — committed, uncommitted, and untracked.
+build_resume_prompt() {
+    cat <<EOF
+Continuation of the code review in this thread. I have applied fixes for your previous findings.
+
+Below is the UPDATED diff for the same scope (${DIFF_DESC}). Compared with the diff you reviewed earlier in this thread: confirm each prior CRITICAL is resolved, and check the fixes introduced no regressions. Apply the same contract/intent as before — re-issue VERDICT: APPROVED or VERDICT: REVISE per AGENTS.md.
+${FOCUS_LINE}
+
+--- UPDATED DIFF ---
+${DIFF}
+--- END UPDATED DIFF ---
+EOF
+}
+
+build_fresh_prompt() {
+    cat <<EOF
 Code review per AGENTS.md.
 
 Scope: ${DIFF_DESC}
@@ -448,7 +482,13 @@ ${INTENT_CHECK}
 ${DIFF}
 --- END DIFF ---
 EOF
-)
+}
+
+if [[ "$RESUME" == "1" ]]; then
+    PROMPT=$(build_resume_prompt)
+else
+    PROMPT=$(build_fresh_prompt)
+fi
 
 # Run review through the companion (app-server runtime) with a timeout.
 # Progress phases stream to stderr in real time; final assistant message
@@ -458,12 +498,50 @@ EOF
 # `codex --version` / `codex app-server --help` probes, and the probe
 # failures surface as a confusing "Codex CLI is not installed" error.
 PROMPT_FILE=$(mktemp /tmp/codex-review-prompt.XXXXXX)
-trap 'rm -f "$PROMPT_FILE"' EXIT
+STDERR_FILE=$(mktemp /tmp/codex-review-stderr.XXXXXX)
+trap 'rm -f "$PROMPT_FILE" "$STDERR_FILE"' EXIT
 printf '%s' "$PROMPT" > "$PROMPT_FILE"
-set +e
-OUTPUT=$(portable_timeout "$TIMEOUT" "$COMPANION" task --prompt-file "$PROMPT_FILE" ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} </dev/null)
-STATUS=$?
-set -e
+
+# Run the companion once. Captures stdout into OUTPUT (for VERDICT parsing) and
+# mirrors stderr to both the terminal (live progress phases) and STDERR_FILE
+# (so we can detect the "no resumable thread" error, which the companion writes
+# to stderr — not stdout). $1 selects resume vs fresh.
+run_review() {
+    local mode="$1"
+    local -a rargs=()
+    [[ "$mode" == "resume" ]] && rargs=(--resume-last)
+    : > "$STDERR_FILE"
+    set +e
+    OUTPUT=$(portable_timeout "$TIMEOUT" "$COMPANION" task --prompt-file "$PROMPT_FILE" \
+        ${rargs[@]+"${rargs[@]}"} ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} </dev/null \
+        2> >(tee "$STDERR_FILE" >&2))
+    STATUS=$?
+    set -e
+}
+
+# Round 2+ resumes the previous review thread; round 1 starts fresh. The
+# companion's --resume-last picks the newest task thread for this workspace
+# (it cannot target a specific thread id), so any interleaved codex call
+# between rounds would hijack the resume. Inside a VERDICT loop Claude only
+# edits files between rounds, so the newest thread is the prior review.
+if [[ "$RESUME" == "1" ]]; then
+    run_review resume
+else
+    run_review fresh
+fi
+
+# Graceful fallback: --resume with no prior thread (e.g. --resume passed on
+# round 1, or the thread was GC'd) makes the companion exit non-zero with
+# "No previous Codex task thread" on stderr. Don't hard-fail the review —
+# rebuild the full fresh prompt (with the context/intent the resume prompt
+# omitted) and retry fresh so the commit gate is not blocked by a missing
+# thread. Any other failure falls through to the error handling below.
+if [[ "$RESUME" == "1" && $STATUS -ne 0 ]] && grep -q "No previous Codex task thread" "$STDERR_FILE"; then
+    echo "[codex-review] no resumable thread found; falling back to a fresh review" >&2
+    PROMPT=$(build_fresh_prompt)
+    printf '%s' "$PROMPT" > "$PROMPT_FILE"
+    run_review fresh
+fi
 
 if [[ $STATUS -eq 124 ]]; then
     echo "[codex-review] timed out after ${TIMEOUT}s" >&2
