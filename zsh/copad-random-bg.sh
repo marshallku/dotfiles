@@ -6,20 +6,19 @@ CURRENT_FILE="$HOME/.cache/copad-bg-current"
 DEFAULT_INTERVAL=300
 COCTL="$HOME/.local/bin/coctl"
 
-g_elapsed=0
-
 copad_alive() {
     local id="${1:-$(instance_id)}"
     [[ -n "$id" ]] && kill -0 "$id" 2>/dev/null
 }
 
 socket_set_background() {
-    local path="$1"
-    $COCTL background set "$path" &>/dev/null
+    local path="$1" sock="${2:-$COPAD_SOCKET}"
+    $COCTL --socket "$sock" background set "$path" &>/dev/null
 }
 
 socket_clear_background() {
-    $COCTL background clear &>/dev/null
+    local sock="${1:-$COPAD_SOCKET}"
+    $COCTL --socket "$sock" background clear &>/dev/null
 }
 
 get_mode() {
@@ -46,7 +45,6 @@ instance_id() {
 }
 
 save_current() {
-    g_elapsed=0
     local id="$1" img="$2"
     echo "$img" > "${CURRENT_FILE}-${id}.txt"
 }
@@ -55,6 +53,37 @@ get_current() {
     local id="$1"
     local file="${CURRENT_FILE}-${id}.txt"
     [[ -f "$file" ]] && cat "$file"
+}
+
+# Epoch of the last background switch for an instance, derived from the
+# current-image file's mtime. save_current rewrites that file on every
+# apply, so external --next/--toggle invocations reset the daemon's
+# countdown here without sharing in-memory state across processes.
+last_switch() {
+    local id="$1"
+    local file="${CURRENT_FILE}-${id}.txt"
+    if [[ -f "$file" ]]; then
+        stat -c %Y "$file" 2>/dev/null || echo 0
+    else
+        echo 0
+    fi
+}
+
+# Print "<id>\t<socket>" for every live copad GUI instance, so toggle can
+# broadcast to all of them via `coctl --socket`.
+list_instances() {
+    [[ -z "${COPAD_SOCKET:-}" ]] && return 1
+
+    local dir="${COPAD_SOCKET%/*}"
+    local f base id
+    shopt -s nullglob
+    for f in "$dir"/gui-*.sock; do
+        base="${f##*/}"
+        id="${base#gui-}"
+        id="${id%.sock}"
+        copad_alive "$id" && printf '%s\t%s\n' "$id" "$f"
+    done
+    shopt -u nullglob
 }
 
 apply_by_mode() {
@@ -73,17 +102,29 @@ apply_by_mode() {
     fi
 }
 
+# Toggle the (global) background mode and apply it immediately to every
+# live copad instance. Without the broadcast, other instances' daemons
+# only pick up the new mode on their next interval tick (up to `interval`
+# seconds later).
 toggle_mode() {
-    local current
-    current=$(get_mode)
-
-    if [[ "$current" == "active" ]]; then
-        echo "deactive" > "$MODE_FILE"
-        socket_clear_background
+    local next
+    if [[ "$(get_mode)" == "active" ]]; then
+        next="deactive"
     else
-        echo "active" > "$MODE_FILE"
-        apply_by_mode
+        next="active"
     fi
+    echo "$next" > "$MODE_FILE"
+
+    local id sock img
+    while IFS=$'\t' read -r id sock; do
+        if [[ "$next" == "deactive" ]]; then
+            socket_clear_background "$sock"
+        else
+            img=$(select_random_image) || continue
+            socket_set_background "$img" "$sock"
+            save_current "$id" "$img"
+        fi
+    done < <(list_instances)
 }
 
 next_image() {
@@ -193,9 +234,12 @@ run_daemon() {
 
         copad_alive "$id" || exit 0
 
-        g_elapsed=$((g_elapsed + 10))
-        if (( g_elapsed >= interval )); then
-            g_elapsed=0
+        [[ "$(get_mode)" == "deactive" ]] && continue
+
+        local now last
+        now=$(date +%s)
+        last=$(last_switch "$id")
+        if (( now - last >= interval )); then
             apply_by_mode
         fi
     done
