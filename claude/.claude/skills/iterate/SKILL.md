@@ -1,6 +1,6 @@
 ---
 name: iterate
-description: 한 사이클 작업 워크플로우 — 코드 작업 → 유닛 테스트 → e2e 검증 → 빌드/린트/타입체크 → /ship 위임. /loop와 함께 쓰면 매 사이클마다 같은 게이트가 강제됨.
+description: 한 사이클 작업 워크플로우 — 코드 작업 → 유닛 테스트 → e2e 검증 → 빌드/린트/타입체크 → cross-review → save.sh 커밋. /loop와 함께 쓰면 매 사이클마다 같은 게이트가 강제됨.
 user-invocable: true
 allowed-tools: Bash,Read,Grep,Glob,Edit,Write,Agent,Skill,WebFetch
 effort: high
@@ -10,13 +10,13 @@ effort: high
 
 - **`/iterate <task>` (기본)** — 한 사이클을 표준 게이트로 돌리고 싶을 때. 일반적인 사용은 이걸로 충분.
 - **`/loop /iterate <task>` (반복형)** — 같은 워크플로우를 여러 사이클 반복해야 할 때만. 큰 작업을 사이클 단위로 쪼개서 자동 진행시키고 싶을 때 사용.
-- 단순 한 줄 수정·문서·rename은 굳이 이 스킬을 쓸 필요 없음. `/ship`만으로 충분.
+- 단순 한 줄 수정·문서·rename은 굳이 이 스킬을 쓸 필요 없음. 바로 `~/save.sh`로 충분.
 
 ## 절대 규칙
 
 1. 단계는 **순서대로** 진행한다. 앞 단계에서 명확히 실패했다면 뒤로 진행하지 않는다.
 2. 단계를 **스킵하려면 사유를 명시 보고**한다. ("e2e 인프라 없음 — 라이브러리 패키지라 스킵" 같은 식으로)
-3. 마지막 commit은 반드시 `/ship`을 통한다. `/ship`이 cross-review 게이트를 책임지므로 여기선 직접 `git commit`을 부르지 않는다.
+3. 마지막 commit은 반드시 `~/save.sh`를 통한다. 직접 `git commit`/`git push`를 부르지 않는다. (commit 전 cross-review 게이트는 Step 5에서 처리.)
 4. 한 사이클은 **한 가지 작업 단위**로 끝낸다. 도중에 별개 작업이 끼어들면 별 사이클로 분리한다.
 
 ## Step 0 — 작업 컨텍스트 확정
@@ -62,7 +62,7 @@ effort: high
 
 **(b) 프론트엔드 작업인가?**
 판단 근거: 변경이 React/Vue/Svelte 컴포넌트, CSS, 페이지 라우트를 건드렸다.
-→ `mcp__ai-browser__navigate`로 dev 서버에 접속해 시나리오 실행. 필요하면 `/verify`를 호출해서 시각 검증까지.
+→ tabd(헤드리스 브라우저)로 dev 서버에 접속해 시나리오 실행. UI 변경이면 스크린샷까지 떠서 레이아웃 깨짐·콘솔 에러를 직접 확인.
 
 **(c) CLI 도구인가?**
 → 실제 바이너리/스크립트를 만들거나 실행해서 입출력을 확인.
@@ -92,13 +92,14 @@ effort: high
 
 > **참고**: `post-typecheck.sh` hook이 매 Edit/Write 후 자동으로 `tsc --noEmit` / `cargo check` 등을 돌리므로 Step 4는 마지막 종합 점검 성격. 그래도 빌드/린트는 hook이 안 돌리니 여기서 직접 돌린다.
 
-## Step 5 — /ship 위임
+## Step 5 — cross-review → 커밋
 
-여기까지 통과했으면 `/ship`을 호출한다.
+여기까지 통과했으면 commit 전 마지막 게이트를 직접 처리한다.
 
-- `/ship`이 다시 한 번 테스트 → cross-review → commit → PR을 처리한다.
-- `/ship`의 cross-review 게이트에서 CRITICAL이 나오면 그 자리에서 Fix-First 적용 후 재시도. 같은 CRITICAL이 두 번 연속이면 사용자 보고.
-- PR까지 갈지 commit만 할지는 작업 성격에 따른다. 작업이 작은 단위면 commit-only로 충분.
+1. **cross-review** — `/cross-review`(또는 `codex-review.sh`)로 변경분을 codex에 크로스체크. CRITICAL이 나오면 그 자리에서 Fix-First 적용 후 재시도. 같은 CRITICAL이 두 번 연속이면 사용자 보고.
+2. **commit** — APPROVED면 `~/save.sh`로 커밋(+push). 직접 `git commit`/`git push`를 부르지 않는다. (auto-review 게이트가 켜져 있으면 `~/save.sh`는 fresh reviewed marker가 있어야 통과 — cross-review가 APPROVED 시 자동으로 marker를 찍는다.)
+
+PR이 필요하면 `~/save.sh` 후 `gh pr create`로 별도 처리. 작은 단위 작업은 commit-only로 충분.
 
 ## /loop 통합 가이드
 
@@ -120,7 +121,8 @@ effort: high
 - 유닛 테스트: 추가 N개 / 통과 (또는 스킵 사유)
 - e2e: <분기 결과> / 통과 (또는 스킵 사유)
 - 빌드/린트/타입체크: 통과
-- ship: <커밋 해시 또는 PR URL>
+- cross-review: APPROVED (또는 적용한 CRITICAL fix)
+- 커밋: <해시> (save.sh)
 ```
 
 스킵한 단계가 있으면 그 사유가 위 보고에 반드시 들어가야 한다.

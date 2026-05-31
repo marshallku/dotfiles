@@ -384,7 +384,7 @@ The full collaboration surface, mapped to where they belong in the workflow:
 | Plan validation before implementation | `/codex-plan` | foreground, read-only, **multi-round** | Same codex thread across rounds via `--continue`. Frames codex as adversarial planner, not implementer. |
 | Sub-task delegation | `/codex-delegate` | **background, write** | Codex actually edits files. Returns job id; check progress with `--status`/`--tail`/`--result`. |
 | Code review before commit | `/cross-review` | foreground, read-only, VERDICT loop | 3 rounds max, Fix-First triage. Hooks tied to exit code. |
-| Subagent wrapper | `@codex-reviewer` | — | For programmatic Agent() invocation inside other workflows like `/ship`. |
+| Subagent wrapper | `@codex-reviewer` | — | For programmatic Agent() invocation inside other workflows like `/iterate`. |
 | Direct script calls | `bash ~/.claude/scripts/codex-{ask,review,plan,delegate}.sh` | — | For scripting / CI / piping context via stdin. |
 
 All four user-facing skills (`/ask-codex`, `/codex-plan`, `/codex-delegate`, `/cross-review`) route through `~/.claude/scripts/codex-companion.sh`, which wraps the @openai/codex-plugin-cc app-server runtime at `~/dev/codex-plugin-cc`. This gives:
@@ -393,6 +393,16 @@ All four user-facing skills (`/ask-codex`, `/codex-plan`, `/codex-delegate`, `/c
 - **Persistent jobs** at `~/.claude/state/codex-companion/state/<workspace-slug>-<hash>/` (background tasks survive Claude session restarts)
 
 Codex also auto-loads `~/.codex/AGENTS.md`, which mirrors this user's coding profile — so any codex call already follows the same principles (Rule of Three, anti-patterns, review format with `VERDICT:` contract).
+
+### Async codex calls — auto-wake, do NOT poll
+
+Codex calls (`/codex-plan`, `/cross-review`, a heavy `/ask-codex`) are slow — a multi-round plan or review runs for minutes. The wrong pattern, observed repeatedly in past sessions, is to launch codex and then wait on it with the **Monitor** tool (poll-for-condition), which times out and forces a manual re-arm. Each re-arm burns a turn and the loop reads as "still waiting" when nothing is actually progressing. Don't do that.
+
+Canonical pattern: run the codex wrapper script as a **`run_in_background: true` Bash task**. A backgrounded Bash command is detached, keeps running across turns, and **re-invokes you automatically when it exits** — so codex completion wakes the session with zero polling. While it runs, do other useful work in the same session; you'll be notified on completion.
+
+- Long codex call, want to keep working → `run_in_background: true`, continue; you are re-invoked when it exits.
+- Long codex call, nothing else to do → run it foreground and block on it.
+- **Never** → a `Monitor` poll-loop + re-arm, or a hand-rolled "poll for completion marker" background script, for a *local* codex job. Reserve `Monitor`/`ScheduleWakeup` for external state the harness cannot observe (a remote CI run, a deploy), never for a background job the harness already tracks.
 
 ### Auto-review (three-layer enforcement)
 
@@ -504,10 +514,24 @@ User-invocable skills live at `~/dotfiles/claude/.claude/skills/<name>/SKILL.md`
 - `/codex-delegate` — delegate a sub-task to Codex (write-capable, background by default)
 - `/cross-review` — full cross-review loop with VERDICT gate (3 rounds max)
 - `/debug` — 5-phase structured debugging (3-strike + scope lock)
-- `/handoff` — write session context for the next Claude session
-- `/review` — self-review pre-PR (Fix-First pattern)
-- `/ship` — test → commit → PR workflow (uses `/cross-review` as gate)
-- `/verify` — frontend visual verification (browser screenshot + vision analysis)
+- `/iterate` — one work-cycle gate (implement → unit test → e2e → build/lint/typecheck → cross-review → `~/save.sh`); pair with `/loop` to enforce the gate every cycle
+
+(Other installed skills not in the codex set: `/debug`, `/catchup`, `/mentor`, `/tabd`, `/frontend-design`, `/dotfiles-drift`, `/probe-hooks`, `/find-skills`. See `~/dotfiles/claude/.claude/skills/`.)
+
+> Removed 2026-06-01: `/ship`, `/review`, `/verify`, `/handoff` — each was fully subsumed by automation. `/ship` → `~/save.sh` + `pre-commit-gate` (review) + autonomous-loop contract. `/review` (self-review) → `/cross-review` + the suppression rules folded into the Codex principles below. `/verify` → `/iterate` Step 3 e2e (tabd browser). `/handoff` → `auto-handoff.sh` Stop hook.
+
+### Autonomous loop contract (`/goal`, `/loop`)
+
+`/goal <text>` and `/loop` drive the session autonomously — a native session-scoped Stop hook re-feeds the goal until it is done. When you are driving any such loop, treat the per-work-unit gate below as **standing policy**. The user should NOT have to restate it in the goal text every time (they have been retyping it into nearly every `/goal` — that is the failure this contract fixes):
+
+> **plan (if non-trivial) → codex review of plan → implement → unit test → e2e test (if applicable) → codex cross-review → `~/save.sh`**
+
+1. One work-unit = one coherent change. Run the full gate **per unit**, not once at the very end.
+2. Skip a step only with a stated reason ("e2e skipped — library-internal change, unit tests suffice"). Never skip silently.
+3. The final commit always goes through `~/save.sh` (never raw `git commit`/`git push`).
+4. This gate is exactly what `/iterate` encodes. Prefer **`/loop /iterate <task>`** when you want it mechanically enforced each cycle rather than relying on memory inside a free-form `/goal`.
+5. Only pause for the user at planning checkpoints; otherwise run to completion.
+6. Long codex review/plan steps in the loop follow the async-codex rule above — background + auto-wake, never Monitor polling.
 
 ### The rule (strong, manual fallback)
 
@@ -536,7 +560,7 @@ Do not call it for trivia you are 80%+ confident about — noise is worse than s
 ### Principles for dealing with codex output
 
 1. **Codex is not ground truth**. It is another LLM with its own failure modes. Treat its output as a second opinion, never as a verdict you must obey.
-2. **Valid feedback only — Fix-First pattern**. Mechanical fixes get applied immediately; judgment calls go to the user as questions. The suppression rules in `/review` apply here too (style, naming, TODOs, "future improvement" → ignore).
+2. **Valid feedback only — Fix-First pattern**. Mechanical fixes get applied immediately; judgment calls go to the user as questions. Suppress this class of finding (do not report): style/formatting (prettier/eslint handles it), things CI already catches (lint, typecheck), subjective naming preference, "future improvement" suggestions, TODO/FIXME comments, missing test coverage (separate task), import ordering.
 3. **When you and codex disagree, surface both opinions to the user**. Do not silently pick one side. The disagreement itself is valuable signal.
 4. **Read-only by default; write-capable only via `/codex-delegate`**. `/ask-codex`, `/codex-plan`, and `/cross-review` all run codex in `read-only` sandbox so it can investigate but not edit. `/codex-delegate` is the one path that grants `workspace-write`, and the user must opt in to it explicitly. Code that codex writes via delegate should be reviewed by Claude (and ideally by `/cross-review`) before commit — same as any third-party patch.
 5. **Limit the loop**. `/cross-review` caps at 3 rounds. `/codex-plan` should also stop at ~3 rounds — beyond that the plan itself probably needs a rewrite, not more critique. If the same CRITICAL finding appears twice in a row, stop and ask the user — either codex is wrong or Claude cannot fix it cleanly.
@@ -544,14 +568,13 @@ Do not call it for trivia you are 80%+ confident about — noise is worse than s
 
 ### Integration with existing workflows
 
-- **`/ship`** — uses `/cross-review` as a gate before committing. Blocking CRITICAL = no ship.
+- **`/iterate`** — the one-cycle gate (implement → unit test → e2e → build/lint/typecheck → `/cross-review` → `~/save.sh`). This is where commit-time cross-review lives now that `/ship` is gone; commit always goes through `~/save.sh`, never raw git. See the autonomous-loop contract above.
 - **`/codex-plan` before non-trivial implementation** — pair it with the existing `ExitPlanMode` checkpoint. After Claude writes a plan and before going wide on edits, run `/codex-plan --plan-file <path>` to pressure-test it. Cheaper than discovering plan flaws via `/cross-review` after the code is written.
 - **`/codex-delegate` for clean-cut sub-tasks** — when a piece of work is well-scoped (clear input, clear acceptance) and would burn Claude's context, delegate it. Always verify the diff afterwards; never trust codex's "I ran the tests" claim without checking.
-- **`/review`** — Claude's self-review, complementary to `/cross-review`. Run self-review first, then cross-review for independent verification.
 - **`@code-reviewer`** — Claude-based worktree reviewer (existing). Use together with `@codex-reviewer` for two independent perspectives on the same diff when the stakes are high (CodeX-Verify research shows 2-3 independent agents with different concerns beat single-agent review by ~40 percentage points).
 - **`/debug`** — 5-phase structured debugging. Invoke when `/ask-codex` alone is not enough and you want a scoped debugging session (3-strike rule + scope lock prevents flailing).
-- **`/handoff`** — manually produce a handoff note at any point. The Stop hook also triggers `auto-handoff.sh` automatically; use this skill when you want a higher-quality, narrative handoff between major phases.
-- **`/verify`** — frontend visual verification via browser screenshot + vision model. Use after UI work before declaring done; complements (not replaces) typechecking / tests.
+- **Session handoff** — handled automatically by the `auto-handoff.sh` Stop hook (captures branch, recent commits, working-tree state to `~/.claude/handoffs/latest.md`). For a richer narrative handoff between major phases, just ask Claude to write one to that path.
+- **Frontend visual check** — fold into `/iterate` Step 3 e2e: drive the dev server with tabd, screenshot the changed UI, and inspect layout/console errors before declaring done.
 
 ---
 

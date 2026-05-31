@@ -55,16 +55,14 @@ claude --resume          # 이전 세션 자체를 이어서
 
 ## 코드 리뷰
 
-### 셀프 리뷰 (커밋 전)
+### 커밋 전 리뷰 (cross-review 통합)
 
-```
-/review
-```
+커밋 전 리뷰는 `/cross-review`(codex 외부 리뷰)로 일원화됨. 별도 셀프 리뷰 스킵 — `/iterate` Step 5가 cross-review를 게이트로 강제한다.
 
 - main 대비 diff를 CRITICAL → INFORMATIONAL 순으로 분석
 - SQL injection, race condition 등 보안 이슈 우선
-- 기계적 수정(AUTO-FIX)은 즉시 적용, 판단 필요한 건 질문으로 제시
-- 스타일, 린트, 네이밍 같은 잡음은 자동 억제
+- 기계적 수정(Fix-First)은 즉시 적용, 판단 필요한 건 질문으로 제시
+- 스타일·린트·네이밍·TODO·"추후 개선" 같은 잡음은 억제 (CLAUDE.md Codex 원칙 #2)
 
 ### 팀원에게 리뷰 맡기기
 
@@ -92,33 +90,28 @@ claude --resume          # 이전 세션 자체를 이어서
 
 ## 프론트엔드 검증
 
-```
-/verify http://localhost:3000/dashboard
-```
-
-브라우저 스크린샷을 찍고 비전으로 직접 분석:
+`/iterate` Step 3 e2e에 통합 — tabd(헤드리스 브라우저)로 dev 서버에 접속해 스크린샷을 뜨고 직접 분석:
 - 레이아웃 깨짐, 텍스트 겹침, 빈 영역 체크
 - 콘솔 에러 확인
-- 요청 시 반응형 검증 (375/768/1440px)
+- 필요 시 반응형 검증 (375/768/1440px)
 - 레퍼런스 이미지가 있으면 diff 비교
 
-**전제:** 브라우저에 browser-control 익스텐션 설치 + 브라우저 열려있어야 함.
+tabd는 SSH 친화적 단일 Rust 바이너리(daemon-shared chromium) — 별도 익스텐션/브라우저 불필요. `/tabd` 참조.
 
 ---
 
 ## 커밋 + PR
 
 ```
-/ship
+~/save.sh
 ```
 
-한 명령으로:
-1. 테스트 실행 (프로젝트 타입 자동 감지)
-2. 실패 시 분석 + 수정 시도
-3. conventional commit 메시지 생성 + 커밋
-4. PR 생성 (`gh pr create`)
+커밋+푸시를 atomic하게 처리. 전제 게이트가 자동:
+1. `pre-commit-gate` hook이 fresh cross-review marker를 확인 (없으면 차단 → 먼저 `/cross-review`)
+2. `commit-msg` hook이 AI 공동저자 트레일러 거부
+3. APPROVED 후 commit + push
 
-수동으로 하고 싶으면 각 단계를 직접 요청하면 됨.
+한 사이클을 통째로 돌리려면 `/iterate`(구현→테스트→e2e→빌드→cross-review→save.sh). PR이 필요하면 `~/save.sh` 후 `gh pr create`.
 
 ---
 
@@ -177,11 +170,7 @@ claude -p "TODO.md에 있는 작업들을 순서대로 구현해줘" \
 
 ### 수동 (상세 핸드오프가 필요할 때)
 
-```
-/handoff
-```
-
-자동 핸드오프보다 더 풍부한 맥락 저장:
+자동 핸드오프보다 풍부한 맥락이 필요하면 Claude에게 직접 요청 — `~/.claude/handoffs/latest.md`에 narrative 핸드오프를 쓰게 한다:
 - 완료/미완료 항목
 - 다음 단계
 - 주의사항
@@ -198,30 +187,28 @@ claude -p "TODO.md에 있는 작업들을 순서대로 구현해줘" \
 ```
 /debug 결제 API에서 409 에러 발생
 # ... 수정 완료 후
-/review
-/ship
+/cross-review
+~/save.sh
 ```
 
 ### "프론트엔드 피처 개발"
 
 ```
-# 코드 작성 (typecheck hook이 자동으로 에러 잡아줌)
-/verify http://localhost:3000/new-feature
-# 문제 있으면 수정 반복
-/review
-@security-reviewer
-/ship
+/iterate 새 대시보드 위젯 추가
+# 구현 → 유닛 → tabd e2e(스크린샷) → 빌드/린트 → cross-review → save.sh 자동
+@security-reviewer    # 보안 민감 시 추가
 ```
 
 ### "대규모 리팩토링"
 
 ```
-# 계획 수립
+# 계획 수립 (/codex-plan으로 pressure-test)
 # 코드 수정
 @code-reviewer              # 일반 리뷰
 @security-reviewer          # 보안 리뷰
 @doc-updater                # 문서 반영
-/ship
+/cross-review
+~/save.sh
 ```
 
 ### "야간에 맡기고 퇴근"
@@ -252,17 +239,20 @@ claude -p "이 프로젝트의 테스트 커버리지를 80%로 올려줘" \
 | auto-cross-review | Stop | 비자명한 변경 시 codex 리뷰 자동 지시 |
 | auto-handoff | Stop | 세션 상태 저장 |
 
-### Skills (7개, 수동 호출)
+### Skills (수동 호출)
 
 | Skill | 명령 | 용도 |
 |-------|------|------|
+| iterate | `/iterate <작업>` | 한 사이클 게이트 (구현→테스트→e2e→빌드→cross-review→save.sh) |
 | debug | `/debug <증상>` | 구조화 디버깅 |
-| review | `/review` | PR 사전 리뷰 (Claude 셀프) |
 | cross-review | `/cross-review` | Codex 외부 리뷰 루프 (VERDICT 게이트) |
+| codex-plan | `/codex-plan` | 구현 전 plan pressure-test (multi-round) |
 | ask-codex | `/ask-codex <질문>` | 작업 중 one-shot 자문 |
-| ship | `/ship` | 테스트 → cross-review → 커밋 → PR |
-| verify | `/verify <URL>` | 프론트엔드 시각 검증 |
-| handoff | `/handoff` | 수동 세션 인수인계 |
+| codex-delegate | `/codex-delegate` | 하위 작업 codex 위임 (write) |
+| catchup | `/catchup` | 대화 기록 → ~/docs 정리 |
+| tabd | `/tabd` | 헤드리스 브라우저 자동화 |
+
+> `/ship`·`/review`·`/verify`·`/handoff`는 2026-06-01 제거 (자동화가 흡수). 커밋=`~/save.sh`+pre-commit-gate, 셀프리뷰=`/cross-review`, 시각검증=`/iterate` e2e(tabd), 핸드오프=`auto-handoff.sh` Stop hook.
 
 ### Agents (4개, @로 호출)
 
