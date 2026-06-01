@@ -117,4 +117,13 @@ EOF
 )
 fi
 
-portable_timeout "$TIMEOUT" "$COMPANION" task $RESUME_FLAG ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} "$PROMPT" </dev/null
+# Run the pressure-test, capture exit (set -e safe via if), ping on completion.
+# The app-server path does not honor ~/.codex/config.toml notify, so a
+# backgrounded /codex-plan would otherwise finish silently.
+if portable_timeout "$TIMEOUT" "$COMPANION" task $RESUME_FLAG ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} "$PROMPT" </dev/null; then
+    PLAN_STATUS=0
+else
+    PLAN_STATUS=$?
+fi
+notify_codex_done "codex-plan pressure-test done (exit $PLAN_STATUS)" "$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")"
+exit $PLAN_STATUS

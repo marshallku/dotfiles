@@ -110,3 +110,31 @@ auto_review_would_block() {
 
     return 0
 }
+
+# Path to notify-codex.sh. Anchored to the deployed ~/.claude/hooks location
+# (same convention as ~/.codex/config.toml's absolute notify path); BASH_SOURCE
+# is unreliable when this lib is sourced, so don't derive from it.
+_NOTIFY_CODEX_SH="$HOME/.claude/hooks/notify-codex.sh"
+
+# notify_codex_done <summary> [cwd]
+# Fire a user-facing completion notification for a codex turn.
+#
+# Why this exists: the codex skills route through codex-companion.sh →
+# codex-plugin-cc *app-server*, which consumes turn-complete as an internal
+# JSON-RPC event and never invokes the `notify` program in ~/.codex/config.toml.
+# So notify-codex.sh never fires for skill-driven calls. Wrappers call this to
+# ping explicitly. Reuses notify-codex.sh formatting via a synthesized
+# agent-turn-complete payload, so the notify-codex-disabled marker still works.
+#
+# Best-effort and non-blocking: never fails the caller, backgrounds the notify.
+notify_codex_done() {
+    local summary="$1"
+    local cwd="${2:-$PWD}"
+    [[ -f "$_NOTIFY_CODEX_SH" ]] || return 0
+    command -v jq >/dev/null 2>&1 || return 0
+    local payload
+    payload=$(jq -n --arg cwd "$cwd" --arg tid "codex-companion" --arg msg "$summary" \
+        '{type:"agent-turn-complete", cwd:$cwd, "turn-id":$tid, "last-assistant-message":$msg}' 2>/dev/null) || return 0
+    bash "$_NOTIFY_CODEX_SH" "$payload" >/dev/null 2>&1 &
+    return 0
+}

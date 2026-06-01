@@ -375,6 +375,7 @@ if [[ -z "$DIFF" ]]; then
     if [[ "$MODE" != "files" ]]; then
         mark_repo_reviewed
     fi
+    notify_codex_done "VERDICT: APPROVED (no diff to review)" "$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")"
     exit 0
 fi
 
@@ -543,19 +544,26 @@ if [[ "$RESUME" == "1" && $STATUS -ne 0 ]] && grep -q "No previous Codex task th
     run_review fresh
 fi
 
+# Computed before any exit branch so every terminal path can ping (a
+# backgrounded review that times out must still notify, not finish silently).
+REVIEW_CWD=$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")
+
 if [[ $STATUS -eq 124 ]]; then
     echo "[codex-review] timed out after ${TIMEOUT}s" >&2
+    notify_codex_done "codex review TIMED OUT (${TIMEOUT}s)" "$REVIEW_CWD"
     exit 2
 fi
 
 if [[ $STATUS -eq 127 ]]; then
     echo "[codex-review] timeout binary missing — install GNU coreutils ('brew install coreutils' on macOS)" >&2
+    notify_codex_done "codex review ERROR (timeout binary missing)" "$REVIEW_CWD"
     exit 2
 fi
 
 if [[ $STATUS -ne 0 ]]; then
     echo "[codex-review] companion task failed with status $STATUS" >&2
     echo "$OUTPUT" >&2
+    notify_codex_done "codex review FAILED (status $STATUS)" "$REVIEW_CWD"
     exit 2
 fi
 
@@ -563,6 +571,10 @@ echo "$OUTPUT"
 
 # Parse the final verdict — check the last 20 lines so conversational preamble does not confuse us
 VERDICT_LINE=$(echo "$OUTPUT" | tail -n 20 | grep -E "^VERDICT: (APPROVED|REVISE)" | tail -n 1 || true)
+
+# Ping the user that the (possibly backgrounded) review finished. The app-server
+# path does not honor ~/.codex/config.toml notify, so the wrapper must do it.
+notify_codex_done "${VERDICT_LINE:-codex review done (no verdict)}" "$REVIEW_CWD"
 
 case "$VERDICT_LINE" in
     "VERDICT: APPROVED")
