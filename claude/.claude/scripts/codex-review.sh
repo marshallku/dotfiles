@@ -402,7 +402,7 @@ ${INTENT_AC}
 Out of scope (the diff must NOT touch any of these):
 ${INTENT_OOS}
 
-Author's assumptions (flag if any are violated by the diff):
+Author assumptions (flag if any are violated by the diff):
 ${INTENT_ASSUMP}
 
 E2E verification declared: ${INTENT_E2E}
