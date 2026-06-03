@@ -398,12 +398,14 @@ Codex also auto-loads `~/.codex/AGENTS.md`, which mirrors this user's coding pro
 
 Codex calls (`/codex-plan`, `/cross-review`, a heavy `/ask-codex`) are slow — a multi-round plan or review runs for minutes. The wrong pattern, observed repeatedly in past sessions, is to launch codex and then wait on it with the **Monitor** tool (poll-for-condition), which times out and forces a manual re-arm. Each re-arm burns a turn and the loop reads as "still waiting" when nothing is actually progressing. That polling — not foreground execution — was the actual friction. Don't do it.
 
-**Default: run the codex wrapper script foreground and block on it.** In the work-unit gate, a cross-review or plan is the step that decides whether you commit — you are waiting on its verdict regardless, so there is nothing to overlap. Foreground is simpler and correct; the wrapper has its own internal timeout (≈420s, under the Bash tool's 10-min ceiling), and `notify_codex_done` pings you on completion so you can step away during a long review.
+**Default: run the codex wrapper script foreground and block on it — ALWAYS pass an explicit `timeout`.** In the work-unit gate a cross-review or plan is the step that decides whether you commit; you wait on its verdict regardless, so there is nothing to overlap.
 
-Reach for `run_in_background: true` Bash **only** when you have genuine independent work to do while codex runs (rare in the gate — and never edit the same files codex is reviewing). A backgrounded Bash command is detached and **re-invokes you automatically when it exits**, so completion still wakes the session with zero polling.
+The one thing that makes foreground "look broken": the Bash tool's **default timeout is 120 s (2 min)**, but a real review/plan runs 3–8 min (the wrappers' own internal caps are 1200 s for review, 420 s for plan). With the default, the Bash call is killed at 2 min and you see a half-finished review that "just exited" — so **set `timeout: 600000`** (the 10-min Bash maximum) on every foreground codex call. That, not backgrounding, is the fix. `notify_codex_done` still pings you on completion so you can step away during the wait.
 
-- Codex call gating the next step (the usual case) → run it foreground and block.
-- Codex call with real parallel work alongside → `run_in_background: true`, continue; you are re-invoked when it exits.
+**Do NOT background a gating review/plan.** A `run_in_background` Bash call returns instantly, so with nothing else to do you end the turn — the session goes idle and the verdict arrives detached from the flow. That is exactly the "nothing executes, it just exits" symptom. Background is only for the rare case where you have genuine independent work to do alongside codex (and never edit the same files codex is reviewing); there a backgrounded Bash command re-invokes you automatically when it exits.
+
+- Codex call gating the next step (the usual case) → **foreground, `timeout: 600000`, block.**
+- Codex call with real parallel work alongside (rare) → `run_in_background: true`, continue; you are re-invoked when it exits.
 - **Never** → a `Monitor` poll-loop + re-arm, or a hand-rolled "poll for completion marker" background script, for a *local* codex job. Reserve `Monitor`/`ScheduleWakeup` for external state the harness cannot observe (a remote CI run, a deploy), never for a background job the harness already tracks.
 
 ### Auto-review (three-layer enforcement)

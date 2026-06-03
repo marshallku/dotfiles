@@ -587,7 +587,9 @@ case "$VERDICT_LINE" in
             mark_repo_reviewed
         fi
         # COPAD_HOOK_PUBLISH: claude.review_approved $(jq -n --arg s "$SESSION_ID" --arg m "$MODE" '{session:$s,mode:$m}')
-        command -v coctl >/dev/null && coctl event publish claude.review_approved --quiet "$(jq -n --arg s "$SESSION_ID" --arg m "$MODE" '{session:$s,mode:$m}')" &
+        # Redirect coctl's ack ({"queued":true}) away from stdout so it does not
+        # trail the VERDICT in the review output the caller reads.
+        command -v coctl >/dev/null && coctl event publish claude.review_approved --quiet "$(jq -n --arg s "$SESSION_ID" --arg m "$MODE" '{session:$s,mode:$m}')" >/dev/null 2>&1 &
         # COPAD_HOOK_PUBLISH_END
         exit 0
         ;;
