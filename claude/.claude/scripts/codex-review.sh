@@ -500,24 +500,43 @@ fi
 # failures surface as a confusing "Codex CLI is not installed" error.
 PROMPT_FILE=$(mktemp /tmp/codex-review-prompt.XXXXXX)
 STDERR_FILE=$(mktemp /tmp/codex-review-stderr.XXXXXX)
-trap 'rm -f "$PROMPT_FILE" "$STDERR_FILE"' EXIT
+STDOUT_FILE=$(mktemp /tmp/codex-review-stdout.XXXXXX)
+trap 'rm -f "$PROMPT_FILE" "$STDERR_FILE" "$STDOUT_FILE"' EXIT
 printf '%s' "$PROMPT" > "$PROMPT_FILE"
 
 # Run the companion once. Captures stdout into OUTPUT (for VERDICT parsing) and
 # mirrors stderr to both the terminal (live progress phases) and STDERR_FILE
 # (so we can detect the "no resumable thread" error, which the companion writes
 # to stderr — not stdout). $1 selects resume vs fresh.
+#
+# IMPORTANT — redirect stdout/stderr to FILES, never `2> >(tee ...)`.
+# The companion spawns a persistent app-server broker daemon that inherits the
+# command's fds. With a process-substitution pipe, that daemon keeps the pipe's
+# write end open after the foreground client exits, so `tee` never sees EOF and
+# the enclosing `$(...)` hangs forever — defeating the timeout (observed: reviews
+# stuck for 15+ hours). A plain file redirect cannot block: the daemon may keep
+# the file fd open, but nothing waits on it, and `portable_timeout` (no longer
+# wrapped in command substitution) can actually deliver SIGTERM at the cap.
+# Live progress is preserved by tailing the stderr file to the terminal.
 run_review() {
     local mode="$1"
     local -a rargs=()
     [[ "$mode" == "resume" ]] && rargs=(--resume-last)
     : > "$STDERR_FILE"
+    : > "$STDOUT_FILE"
+    tail -n +1 -f "$STDERR_FILE" >&2 &
+    local tail_pid=$!
     set +e
-    OUTPUT=$(portable_timeout "$TIMEOUT" "$COMPANION" task --prompt-file "$PROMPT_FILE" \
+    portable_timeout "$TIMEOUT" "$COMPANION" task --prompt-file "$PROMPT_FILE" \
         ${rargs[@]+"${rargs[@]}"} ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} </dev/null \
-        2> >(tee "$STDERR_FILE" >&2))
+        >"$STDOUT_FILE" 2>"$STDERR_FILE"
     STATUS=$?
+    # Stop the live tailer (kill/wait kept inside set +e: wait returns the
+    # tail's signal status, which would trip set -e).
+    kill "$tail_pid" 2>/dev/null
+    wait "$tail_pid" 2>/dev/null
     set -e
+    OUTPUT=$(cat "$STDOUT_FILE")
 }
 
 # Round 2+ resumes the previous review thread; round 1 starts fresh. The
