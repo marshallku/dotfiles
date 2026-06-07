@@ -506,6 +506,8 @@ save.sh injects Intent-Summary trailer + ~/docs ingest commit
 | `post-typecheck.sh` | PostToolUse | Edit/Write | Run `npx tsc --noEmit`/`cargo check`/`go vet ./...` after edits; surface errors as tool result |
 | `session-start.sh` | SessionStart | — | Load last handoff into systemPrompt; GC stale state files |
 | `remind-cross-review.sh` | UserPromptSubmit | — | Inject additionalContext reminding Claude to run codex-review before concluding |
+| `contract-inject.sh` | UserPromptSubmit | — | On `/goal`·`/loop` activation, inject the per-work-unit autonomous-loop contract as additionalContext so the user need not retype it (non-blocking). Opt-out: `contract-inject-disabled` |
+| `verification-gate.sh` | Stop | — | Block stop once/session when code changed but no test/e2e/run/deploy command was actually executed this session (scans executed Bash commands, not output text; excludes build/typecheck). Single-shot, so a genuinely-N/A change is handled by stating the reason once. Sibling to auto-cross-review (did *you* run it? vs. did a reviewer see it?). Opt-out: `verify-gate-disabled` |
 | `auto-cross-review.sh` | Stop | — | Block stop once/session, inject review mandate if dirty log ≥ N files and no reviewed marker |
 | `auto-handoff.sh` | Stop | — | Capture git status + branch + recent log to `~/.claude/handoffs/latest.md` for next session |
 

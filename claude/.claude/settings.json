@@ -114,6 +114,11 @@
             "type": "command",
             "command": "bash $HOME/.claude/hooks/remind-cross-review.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/hooks/contract-inject.sh",
+            "timeout": 5
           }
         ]
       }
@@ -121,6 +126,11 @@
     "Stop": [
       {
         "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/hooks/verification-gate.sh",
+            "timeout": 10
+          },
           {
             "type": "command",
             "command": "bash $HOME/.claude/hooks/auto-cross-review.sh",
