@@ -40,18 +40,25 @@ apply() {
     # Stable link drives hyprpaper boot + hyprlock (read at lock time).
     ln -sfn "$img" "$CURRENT_LINK"
 
-    # Live switch hyprpaper if its daemon is up in this session.
+    # Live switch hyprpaper if its daemon is up in this session. `listactive` is
+    # the portable probe (hyprpaper v0.8.x dropped `listloaded`); guarding on it
+    # also means we no-op cleanly outside a live session.
+    #
     # Set each active monitor explicitly: the empty-monitor (",path") form only
     # fills monitors with NO prior assignment, so it would not update the
     # per-monitor entries declared in hyprpaper.conf. Iterating guarantees every
     # output is refreshed (matches the "all monitors identical" intent).
-    if command -v hyprctl >/dev/null && hyprctl hyprpaper listloaded >/dev/null 2>&1; then
-        hyprctl hyprpaper preload "$img" >/dev/null
+    #
+    # preload/unload are best-effort: older hyprpaper requires preload before
+    # wallpaper, while v0.8.x rejects both and auto-loads on `wallpaper`. We
+    # ignore their result so the switch works on either generation.
+    if command -v hyprctl >/dev/null && hyprctl hyprpaper listactive >/dev/null 2>&1; then
         local mon
+        hyprctl hyprpaper preload "$img" >/dev/null 2>&1 || true
         while IFS= read -r mon; do
             [ -n "$mon" ] && hyprctl hyprpaper wallpaper "$mon,$img" >/dev/null
         done < <(hyprctl monitors -j | jq -r '.[].name')
-        hyprctl hyprpaper unload unused >/dev/null
+        hyprctl hyprpaper unload unused >/dev/null 2>&1 || true
     fi
     echo "wallpaper -> $img"
 }
