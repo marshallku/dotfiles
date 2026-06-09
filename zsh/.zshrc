@@ -288,6 +288,9 @@ function p {
   fi
 }
 
+# Hyprland wallpaper (hyprpaper + hyprlock); see scripts/wallpaper.sh
+alias wp="$HOME/.config/hypr/scripts/wallpaper.sh"
+
 # Claude Code freeze/unfreeze
 freeze() {
   local dir="${1:?Usage: freeze <directory>}"
