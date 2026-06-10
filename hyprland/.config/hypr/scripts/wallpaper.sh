@@ -40,25 +40,22 @@ apply() {
     # Stable link drives hyprpaper boot + hyprlock (read at lock time).
     ln -sfn "$img" "$CURRENT_LINK"
 
-    # Live switch hyprpaper if its daemon is up in this session. `listactive` is
-    # the portable probe (hyprpaper v0.8.x dropped `listloaded`); guarding on it
-    # also means we no-op cleanly outside a live session.
-    #
-    # Set each active monitor explicitly: the empty-monitor (",path") form only
-    # fills monitors with NO prior assignment, so it would not update the
-    # per-monitor entries declared in hyprpaper.conf. Iterating guarantees every
-    # output is refreshed (matches the "all monitors identical" intent).
-    #
-    # preload/unload are best-effort: older hyprpaper requires preload before
-    # wallpaper, while v0.8.x rejects both and auto-loads on `wallpaper`. We
-    # ignore their result so the switch works on either generation.
-    if command -v hyprctl >/dev/null && hyprctl hyprpaper listactive >/dev/null 2>&1; then
-        local mon
-        hyprctl hyprpaper preload "$img" >/dev/null 2>&1 || true
-        while IFS= read -r mon; do
-            [ -n "$mon" ] && hyprctl hyprpaper wallpaper "$mon,$img" >/dev/null
-        done < <(hyprctl monitors -j | jq -r '.[].name')
-        hyprctl hyprpaper unload unused >/dev/null 2>&1 || true
+    # Live switch by restarting the daemon. hyprpaper v0.8.x replaced its IPC
+    # (hyprwire) and rejects the legacy preload/wallpaper/unload/reload text
+    # commands — `wallpaper` is "accepted" but the image never loads, so the
+    # screen falls back to the compositor base color (looks black). Restarting
+    # makes hyprpaper reload .current from config exactly as it does at boot,
+    # which is the only path that reliably renders across versions.
+    if command -v hyprpaper >/dev/null && pgrep -x hyprpaper >/dev/null; then
+        pkill -x hyprpaper
+        local i
+        for i in $(seq 1 20); do pgrep -x hyprpaper >/dev/null || break; sleep 0.05; done
+        if command -v hyprctl >/dev/null && [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]; then
+            # Spawn as a Hyprland child so it inherits the session environment.
+            hyprctl dispatch exec hyprpaper >/dev/null 2>&1
+        else
+            setsid hyprpaper >/dev/null 2>&1 < /dev/null &
+        fi
     fi
     echo "wallpaper -> $img"
 }
