@@ -1,6 +1,6 @@
 ---
 name: debug
-description: 구조화 디버깅 (SSoT recall → 5-Phase → saga capture, 3-strike + scope lock)
+description: 구조화 디버깅. 사용자가 에러·버그·크래시·스택트레이스·테스트 실패를 보고하거나 "왜 안 되지", "이거 깨졌어", "예상과 다르게 동작해", "디버깅 도와줘" 같은 증상을 호소할 때 사용. SSoT(~/docs) recall → 5-Phase 근본원인 조사 → saga capture (3-strike + scope lock).
 user-invocable: true
 arguments: description
 argument-hint: <에러 설명 또는 증상>

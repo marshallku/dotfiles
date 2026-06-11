@@ -502,7 +502,9 @@ save.sh injects Intent-Summary trailer + ~/docs ingest commit
 | `protect-secrets.sh` | PreToolUse | Edit/Write | Deny writes to `.env`, `.secrets`, `credentials`, `*.pem`, `*.key`, `id_rsa*` |
 | `intent-capture.sh` | PreToolUse | Edit/Write | Capture user intent (SourceItem in `~/docs/sources/sessions/`) before non-trivial sessions accumulate drift |
 | `pre-commit-gate.sh` | PreToolUse | Bash | Block `save.sh`/`git commit`/`git push` until session has a fresh codex-review marker AND (hard-gate mode) acked intent file |
+| `plan-ssot-gate.sh` | PreToolUse | ExitPlanMode | Block presenting a plan until the session has consulted ~/docs (a `dn search`/`tag`/`related` query → `ssot-checked-<session>` marker). Per-session: one consult clears the gate for the session. No-op when `dn`/`~/docs` absent. Opt-out: `ssot-gate-disabled` |
 | `track-edit.sh` | PostToolUse | Edit/Write | Append edited file path to `~/.claude/state/dirty-<session>.log`; invalidate reviewed markers |
+| `ssot-check-mark.sh` | PostToolUse | Bash | Detect `dn search`/`tag`/`related` and touch `ssot-checked-<session>`; this is what clears `plan-ssot-gate.sh` |
 | `post-typecheck.sh` | PostToolUse | Edit/Write | Run `npx tsc --noEmit`/`cargo check`/`go vet ./...` after edits; surface errors as tool result |
 | `session-start.sh` | SessionStart | — | Load last handoff into systemPrompt; GC stale state files |
 | `remind-cross-review.sh` | UserPromptSubmit | — | Inject additionalContext reminding Claude to run codex-review before concluding |
