@@ -8,6 +8,7 @@ font_size = 11
 tint = 0.1
 opacity = 0.2
 tint_color = "#000000"
+rotate_interval = 300  # native rotation (replaces copad-random-bg.sh daemon)
 
 [socket]
 # path = "/tmp/custerm.sock"
@@ -21,10 +22,12 @@ position = 'left'
 #position = 'top'
 width = 200
 
+# ~/.local/bin spelled out — a desktop-entry-launched copad's PATH may
+# not include it (same gotcha as plugin exec resolution).
 [keybindings]
-"ctrl+shift+y" = "spawn:~/copad-random-bg.sh --toggle"
-"ctrl+shift+bracketright" = "spawn:~/copad-random-bg.sh --next"
-"ctrl+shift+d" = "spawn:~/copad-random-bg.sh --delete"
+"ctrl+shift+y" = "spawn:~/.local/bin/coctl background toggle"
+"ctrl+shift+bracketright" = "spawn:~/.local/bin/coctl background next"
+"ctrl+shift+d" = "spawn:~/.local/bin/coctl background delete-current"
 
 # ----------------------------------------------------------------------
 # Vision Flow 3 — click "Start" on a Todo → fresh worktree → claude
