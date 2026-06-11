@@ -240,6 +240,10 @@ alias nud='npm update --save/--save-dev'
 alias py='python3'
 alias pip='pip3'
 
+# Claude
+alias cc='claude --dangerously-skip-permissions'
+alias ccr='claude --dangerously-skip-permissions --resume'
+
 # PNPM
 alias pi='pnpm i'
 alias pid='pnpm i -D'

@@ -524,6 +524,8 @@ User-invocable skills live at `~/dotfiles/claude/.claude/skills/<name>/SKILL.md`
 - `/debug` — 5-phase structured debugging (3-strike + scope lock)
 - `/iterate` — one work-cycle gate (implement → unit test → e2e → build/lint/typecheck → cross-review → `~/save.sh`); pair with `/loop` to enforce the gate every cycle
 
+- `/audit` — 프로젝트 갭 감사: 코드/문서/로드맵 병렬 탐색(Explore fan-out) → 미완성 구현·문서-실제 불일치·품질 갭을 P0/P1/P2 우선순위 리스트로 보고 (read-only; 수정은 후속 작업으로)
+
 (Other installed skills not in the codex set: `/debug`, `/catchup`, `/mentor`, `/tabd`, `/frontend-design`, `/dotfiles-drift`, `/probe-hooks`, `/find-skills`. See `~/dotfiles/claude/.claude/skills/`.)
 
 > Removed 2026-06-01: `/ship`, `/review`, `/verify`, `/handoff` — each was fully subsumed by automation. `/ship` → `~/save.sh` + `pre-commit-gate` (review) + autonomous-loop contract. `/review` (self-review) → `/cross-review` + the suppression rules folded into the Codex principles below. `/verify` → `/iterate` Step 3 e2e (tabd browser). `/handoff` → `auto-handoff.sh` Stop hook.
