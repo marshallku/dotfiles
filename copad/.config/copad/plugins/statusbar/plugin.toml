@@ -1,0 +1,82 @@
+# Waybar-style status bar modules — manifest-only plugin (no service
+# binary). copadd resolves a module by plugin name and runs its `exec`
+# via `sh -c` with cwd = this dir and COPAD_SOCKET / COPAD_PLUGIN_DIR in
+# the env (copad-daemon/src/main.rs `run_plugin_shell`). stdout becomes
+# the label: a `{"text":..,"tooltip":..}` JSON splits text/hover, any
+# other output is shown verbatim. Empty stdout → empty label (the bar
+# does NOT collapse empty modules, so idle modules `exit 0` to stay
+# blank rather than printing a zero-state).
+#
+# PATH gotcha: the daemon (systemd user service / desktop-entry launch)
+# does not inherit ~/.local/bin, so scripts call coctl by absolute path
+# ($HOME/.local/bin/coctl), same as the keybindings in config.toml.
+
+[plugin]
+name = "statusbar"
+title = "Status Bar Modules"
+version = "0.1.0"
+description = "Personal waybar-style bash + coctl modules for the bottom bar: agent queue, workspace git, pilot jobs, system load, clock."
+
+# ── left: agent / dev context ────────────────────────────────────────
+[[modules]]
+name = "agents"
+exec = "bash scripts/agents.sh"
+interval = 3
+position = "left"
+order = 10
+
+[[modules]]
+name = "git"
+exec = "bash scripts/git-context.sh"
+interval = 5
+position = "left"
+order = 20
+
+# ── center: copad-native workflow state ──────────────────────────────
+[[modules]]
+name = "pilot"
+exec = "bash scripts/pilot.sh"
+interval = 5
+position = "center"
+order = 10
+
+# Calendar + llm are wired but disabled by default: calendar needs
+# COPAD_CALENDAR_CLIENT_ID/SECRET, and llm.usage reads 0 until the LLM
+# plugin has logged a call. Both would render a blank slot until then.
+# Uncomment once authenticated / in use.
+#
+# [[modules]]
+# name = "calendar"
+# exec = "$HOME/.local/bin/coctl calendar next 2>/dev/null || true"
+# interval = 60
+# position = "center"
+# order = 20
+#
+# [[modules]]
+# name = "llm"
+# exec = "bash scripts/llm-usage.sh"
+# interval = 30
+# position = "center"
+# order = 30
+
+# ── right: system / clock (waybar territory) ─────────────────────────
+[[modules]]
+name = "cpu"
+exec = "bash scripts/cpu-mem.sh"
+interval = 3
+position = "right"
+order = 10
+
+[[modules]]
+name = "disk"
+exec = "df -h /mnt/disk2 2>/dev/null | awk 'NR==2 {print \"󰋊 \" $5}'"
+interval = 60
+position = "right"
+order = 20
+
+[[modules]]
+name = "clock"
+exec = "date '+%H:%M'"
+interval = 30
+position = "right"
+order = 100
