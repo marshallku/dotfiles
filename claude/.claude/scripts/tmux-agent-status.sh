@@ -46,15 +46,18 @@ if [[ -d "$sessions_dir" ]]; then
     done
 fi
 
+# Padded chips matching the time chip in .tmux.conf. ⚑/● get a trailing
+# space: the glyphs render wider than one cell in some fonts and bleed into
+# the next character — the space absorbs that instead of the digit.
 out=""
 if (( attention > 0 )); then
-    out+="#[fg=#f38ba8,bold]⚑${attention}#[default] "
+    out+="#[bg=#f38ba8,fg=#1e1e2e,bold] ⚑ ${attention} #[default] "
 fi
 if (( total > 0 )); then
     if (( busy > 0 )); then
-        out+="#[fg=#fab387]●${busy}#[fg=#6c7086]/${total}#[default] "
+        out+="#[bg=#313244]#[fg=#fab387] ● #[fg=#cdd6f4]${busy}#[fg=#6c7086]/${total} #[default] "
     else
-        out+="#[fg=#6c7086]●0/${total}#[default] "
+        out+="#[bg=#313244,fg=#6c7086] ● 0/${total} #[default] "
     fi
 fi
 
