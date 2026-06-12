@@ -1,4 +1,4 @@
-# Waybar-style status bar modules — manifest-only plugin (no service
+# copad-native status bar modules — manifest-only plugin (no service
 # binary). copadd resolves a module by plugin name and runs its `exec`
 # via `sh -c` with cwd = this dir and COPAD_SOCKET / COPAD_PLUGIN_DIR in
 # the env (copad-daemon/src/main.rs `run_plugin_shell`). stdout becomes
@@ -7,6 +7,12 @@
 # does NOT collapse empty modules, so idle modules `exit 0` to stay
 # blank rather than printing a zero-state).
 #
+# DESIGN: this bar deliberately shows ONLY what copad's workflow runtime
+# knows and no other bar can — pilot agent jobs, todo backlog, presence.
+# Clock / CPU / disk / git / agent-counts were intentionally dropped:
+# waybar, tmux (incl. ~/.claude/scripts/tmux-agent-status.sh), and the
+# zsh prompt already cover those, so duplicating them here is noise.
+#
 # PATH gotcha: the daemon (systemd user service / desktop-entry launch)
 # does not inherit ~/.local/bin, so scripts call coctl by absolute path
 # ($HOME/.local/bin/coctl), same as the keybindings in config.toml.
@@ -14,25 +20,10 @@
 [plugin]
 name = "statusbar"
 title = "Status Bar Modules"
-version = "0.1.0"
-description = "Personal waybar-style bash + coctl modules for the bottom bar: agent queue, workspace git, pilot jobs, system load, clock."
+version = "0.2.0"
+description = "copad-native workflow modules for the bottom bar: pilot agent jobs, todo backlog, presence. Deliberately excludes clock/cpu/disk/git which waybar/tmux/zsh already show."
 
-# ── left: agent / dev context ────────────────────────────────────────
-[[modules]]
-name = "agents"
-exec = "bash scripts/agents.sh"
-interval = 3
-position = "left"
-order = 10
-
-[[modules]]
-name = "git"
-exec = "bash scripts/git-context.sh"
-interval = 5
-position = "left"
-order = 20
-
-# ── center: copad-native workflow state ──────────────────────────────
+# ── pilot: in-flight agent queue jobs (+ ⏸ when one awaits a gate) ────
 [[modules]]
 name = "pilot"
 exec = "bash scripts/pilot.sh"
@@ -40,43 +31,32 @@ interval = 5
 position = "center"
 order = 10
 
-# Calendar + llm are wired but disabled by default: calendar needs
-# COPAD_CALENDAR_CLIENT_ID/SECRET, and llm.usage reads 0 until the LLM
-# plugin has logged a call. Both would render a blank slot until then.
-# Uncomment once authenticated / in use.
+# ── todo: active (non-done) backlog count (+ ! when any blocked) ──────
+[[modules]]
+name = "todo"
+exec = "bash scripts/todo.sh"
+interval = 30
+position = "center"
+order = 20
+
+# ── presence: away indicator (external notification sinks armed) ─────
+[[modules]]
+name = "presence"
+exec = "bash scripts/presence.sh"
+interval = 15
+position = "right"
+order = 10
+
+# Auth-gated copad modules — wired but disabled until their plugin is
+# signed in (otherwise they render a blank slot). Uncomment when ready.
+#
+#   calendar : next event       (needs COPAD_CALENDAR_CLIENT_ID/SECRET)
+#   jira     : assigned tickets  (needs jira auth)
+#   slack    : unread/mentions   (needs slack auth)
 #
 # [[modules]]
 # name = "calendar"
 # exec = "$HOME/.local/bin/coctl calendar next 2>/dev/null || true"
 # interval = 60
 # position = "center"
-# order = 20
-#
-# [[modules]]
-# name = "llm"
-# exec = "bash scripts/llm-usage.sh"
-# interval = 30
-# position = "center"
 # order = 30
-
-# ── right: system / clock (waybar territory) ─────────────────────────
-[[modules]]
-name = "cpu"
-exec = "bash scripts/cpu-mem.sh"
-interval = 3
-position = "right"
-order = 10
-
-[[modules]]
-name = "disk"
-exec = "df -h /mnt/disk2 2>/dev/null | awk 'NR==2 {print \"󰋊 \" $5}'"
-interval = 60
-position = "right"
-order = 20
-
-[[modules]]
-name = "clock"
-exec = "date '+%H:%M'"
-interval = 30
-position = "right"
-order = 100
