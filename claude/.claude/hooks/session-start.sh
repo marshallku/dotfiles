@@ -35,9 +35,10 @@ cat >&2 << EOF
 [handoff] Previous session context loaded ($(portable_fmtdate "$HANDOFF_MTIME"))
 EOF
 
-# systemPrompt로 주입
+# additionalContext로 주입 (SessionStart는 hookEventName 필수)
 jq -nc --arg content "$CONTENT" '{
   "hookSpecificOutput": {
-    "systemPrompt": ("## Previous Session Context\n\nThe following handoff was saved from the previous session. Use this to understand what was being worked on. Do not repeat this information unless asked.\n\n" + $content)
+    "hookEventName": "SessionStart",
+    "additionalContext": ("## Previous Session Context\n\nThe following handoff was saved from the previous session. Use this to understand what was being worked on. Do not repeat this information unless asked.\n\n" + $content)
   }
 }'
