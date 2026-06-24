@@ -502,6 +502,7 @@ save.sh injects Intent-Summary trailer + ~/docs ingest commit
 | `protect-secrets.sh` | PreToolUse | Edit/Write | Deny writes to `.env`, `.secrets`, `credentials`, `*.pem`, `*.key`, `id_rsa*` |
 | `intent-capture.sh` | PreToolUse | Edit/Write | Capture user intent (SourceItem in `~/docs/sources/sessions/`) before non-trivial sessions accumulate drift |
 | `pre-commit-gate.sh` | PreToolUse | Bash | Block `save.sh`/`git commit`/`git push` until session has a fresh codex-review marker AND (hard-gate mode) acked intent file |
+| `block-raw-git.sh` | PreToolUse | Bash | UNCONDITIONALLY deny raw `git commit`/`git push` (incl. `-C`/composed forms); allows save.sh. Forces all commits through `~/save.sh`. Opt-out: `raw-git-block-disabled` |
 | `plan-ssot-gate.sh` | PreToolUse | ExitPlanMode | Block presenting a plan until the session has consulted ~/docs (a `dn search`/`tag`/`related` query → `ssot-checked-<session>` marker). Per-session: one consult clears the gate for the session. No-op when `dn`/`~/docs` absent. Opt-out: `ssot-gate-disabled` |
 | `track-edit.sh` | PostToolUse | Edit/Write | Append edited file path to `~/.claude/state/dirty-<session>.log`; invalidate reviewed markers |
 | `ssot-check-mark.sh` | PostToolUse | Bash | Detect `dn search`/`tag`/`related` and touch `ssot-checked-<session>`; this is what clears `plan-ssot-gate.sh` |

@@ -51,6 +51,11 @@
             "type": "command",
             "command": "bash $HOME/.claude/hooks/commit-policy-gate.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/hooks/block-raw-git.sh",
+            "timeout": 5
           }
         ]
       },
