@@ -42,15 +42,22 @@ field() {
   printf '%s\n' "$1" | sed -n "s/.*${2}[[:space:]]*//p" | head -n1 | sed 's/[[:space:]]*$//'
 }
 
-# HH:MM:SS.mmm -> drop ms, drop leading zero hour group (00:12:34 -> 12:34).
+# obs-cmd duration ("1h2m3s456ms", "2s566ms", "566ms") -> "M:SS" or "H:MM:SS".
 fmt_tc() {
-  local tc="${1%%.*}"
-  case "$tc" in
-    "")      echo "" ;;
-    00:*:*)  echo "${tc#00:}" ;;
-    0*:*:*)  echo "${tc#0}" ;;
-    *)       echo "$tc" ;;
-  esac
+  local raw="$1"
+  [ -z "$raw" ] && { echo ""; return; }
+  local clean
+  clean=$(printf '%s' "$raw" | sed -E 's/[0-9]+ms//')   # drop the milliseconds token
+  local h m s
+  h=$(printf '%s' "$clean" | grep -oE '[0-9]+h' | tr -dc 0-9)
+  m=$(printf '%s' "$clean" | grep -oE '[0-9]+m' | tr -dc 0-9)
+  s=$(printf '%s' "$clean" | grep -oE '[0-9]+s' | tr -dc 0-9)
+  h=${h:-0}; m=${m:-0}; s=${s:-0}
+  if [ "$h" -gt 0 ]; then
+    printf '%d:%02d:%02d' "$h" "$m" "$s"
+  else
+    printf '%d:%02d' "$m" "$s"
+  fi
 }
 
 rec_out=$(obs-cmd -w "$URL" recording status 2>/dev/null)
