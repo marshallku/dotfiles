@@ -13,6 +13,7 @@
   ],
   "modules-center": ["custom/uptime", "clock"],
   "modules-right": [
+    "custom/obs",
     "custom/adguardvpn",
     "pulseaudio",
     "custom/cpu",
@@ -121,6 +122,14 @@
     "return-type": "json",
     "interval": 60,
     "on-click": "~/.config/waybar/scripts/grafana_status.sh --open",
+    "tooltip": true,
+  },
+  "custom/obs": {
+    "exec": "~/.config/waybar/scripts/obs_status.sh",
+    "return-type": "json",
+    "interval": 1,
+    "on-click": "~/.config/waybar/scripts/obs_status.sh --toggle-record",
+    "on-click-right": "obs",
     "tooltip": true,
   },
   "battery": {
