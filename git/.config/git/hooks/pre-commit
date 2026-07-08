@@ -11,7 +11,11 @@ if [[ "$(git config --get commit.skipGlobalHook 2>/dev/null)" == "true" ]]; then
     exit 0
 fi
 
-mapfile -t staged < <(git diff --cached --name-only --diff-filter=ACMR)
+# bash 3.2 (macOS default) has no `mapfile`; read into the array manually.
+staged=()
+while IFS= read -r f; do
+    staged+=("$f")
+done < <(git diff --cached --name-only --diff-filter=ACMR)
 [[ ${#staged[@]} -eq 0 ]] && exit 0
 
 bad=()

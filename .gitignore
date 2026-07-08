@@ -1,1 +1,6 @@
 nvim/.config/nvim/lazy-lock.json
+
+# Codex runtime state must live in a real ~/.codex, never inside the stow package.
+# Only AGENTS.md is managed by dotfiles; everything else is machine-local state.
+claude/.codex/*
+!claude/.codex/AGENTS.md
