@@ -461,3 +461,7 @@ esac
 
 PATH="/opt/homebrew/opt/coreutils/libexec/gnubin:$PATH"
 
+
+### MANAGED BY RANCHER DESKTOP START (DO NOT EDIT)
+export PATH="/Users/marshallku/.rd/bin:$PATH"
+### MANAGED BY RANCHER DESKTOP END (DO NOT EDIT)
