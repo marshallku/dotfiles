@@ -3,6 +3,11 @@
   email = marshall@kakao.com
 
 [credential]
+  # Reset the helper chain first so the system-level osxkeychain (from Apple
+  # CommandLineTools gitconfig) is dropped. Over SSH the keychain can't be
+  # unlocked, so osxkeychain fails with "-25308" (errSecInteractionNotAllowed)
+  # before falling back. Using store only avoids that spurious error.
+  helper =
   helper = store
 
 [init]
