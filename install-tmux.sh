@@ -24,13 +24,15 @@ else
     git clone --depth 1 https://github.com/tmux-plugins/tpm "$TPM_DIR"
 fi
 
+# Source the config first so TPM exports TMUX_PLUGIN_MANAGER_PATH; without it
+# install_plugins aborts with "Tmux Plugin Manager not configured". start-server
+# guarantees a server exists even on a fresh machine with nothing attached.
+echo "→ sourcing ~/.tmux.conf"
+tmux start-server
+tmux source-file "$HOME/.tmux.conf" 2>/dev/null || true
+
 echo "→ installing plugins via TPM"
 "$TPM_DIR/bin/install_plugins" >/dev/null
-
-if tmux info >/dev/null 2>&1; then
-    echo "→ sourcing ~/.tmux.conf into running server"
-    tmux source-file "$HOME/.tmux.conf"
-fi
 
 if command -v systemctl >/dev/null 2>&1; then
     echo "→ enabling user-level tmux.service (continuum auto-start)"
