@@ -7,16 +7,37 @@
 #
 # monitors.local.conf is sourced from hyprland.conf and is intentionally
 # NOT tracked in dotfiles so each machine can keep its own layout.
-# Run `hyprctl monitors` to see available outputs and modes.
+#
+# TIP: match outputs by EDID description (desc:) rather than port name
+# (DP-1 / HDMI-A-1). The description is tied to the physical monitor, so the
+# config keeps working no matter which cable/port it is plugged into.
+# Run `hyprctl monitors` to see each output's name, modes and description.
 # ###########################################################################
+
+# Name your outputs by description so they survive a cable/port change:
+# $external = desc:<make model from `hyprctl monitors`>
+# $laptop   = desc:<laptop panel description>
 
 ################
 ### MONITORS ###
 ################
 
-# monitor=NAME,RESOLUTION@REFRESH,POSITION,SCALE
+# monitor=NAME_OR_DESC,RESOLUTION@REFRESH,POSITION,SCALE
 # See https://wiki.hypr.land/Configuring/Monitors/
+#
+# Example: external monitor on top, laptop centered below it
+# monitor=$external,3440x1440@99.99,0x0,1
+# monitor=$laptop,2240x1400@60,600x1440,1
+
+# Fallback so any unconfigured output still lights up.
 monitor=,preferred,auto,1
 
-# Workspace ↔ monitor binding (optional)
-# workspace = 1, monitor:DP-1, default:true
+##################
+### WORKSPACES ###
+##################
+
+# Optional: bind workspaces to a monitor. Binding to a monitor that is absent
+# makes Hyprland fall back to an available one, so the same rules work whether
+# the external monitor is connected or not.
+# workspace = 1, monitor:$external, default:true
+# workspace = 8, monitor:$laptop, default:true
