@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# notify — cross-platform desktop notification wrapper with backend failover.
+#
+# Usage:
+#   notify [-u low|normal|critical] [-t MILLISECONDS] [-a APPNAME] [-i ICON] TITLE [BODY]
+#
+# Accepts a subset of notify-send(1) flags so callers can be written once and
+# work on both platforms. Unknown flags are silently dropped so noisy
+# notify-send invocations don't error out.
+#
+# Backends are tried in order (first available wins) — this is the redundancy:
+#   Linux:  notify-send → dunstify
+#   macOS:  terminal-notifier → osascript
+# If no backend is available the command is a silent no-op (exit 0), so callers
+# such as shell hooks never fail just because a notifier isn't installed.
+
+set -u
+
+urgency="normal"
+timeout=""
+appname=""
+icon=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -u|--urgency)         urgency="${2:-normal}"; shift 2 2>/dev/null || shift ;;
+        -u=*|--urgency=*)     urgency="${1#*=}"; shift ;;
+        -t|--expire-time)     timeout="${2:-}"; shift 2 2>/dev/null || shift ;;
+        -t=*|--expire-time=*) timeout="${1#*=}"; shift ;;
+        -a|--app-name)        appname="${2:-}"; shift 2 2>/dev/null || shift ;;
+        -a=*|--app-name=*)    appname="${1#*=}"; shift ;;
+        -i|--icon)            icon="${2:-}"; shift 2 2>/dev/null || shift ;;
+        -i=*|--icon=*)        icon="${1#*=}"; shift ;;
+        -c|--category|-h|--hint)
+            shift 2 2>/dev/null || shift ;;
+        --) shift; break ;;
+        -*) shift ;;
+        *) break ;;
+    esac
+done
+
+title="${1:-}"
+body="${2:-}"
+
+if [[ -z "$title" ]]; then
+    echo "notify: missing TITLE" >&2
+    exit 2
+fi
+
+notify_linux() {
+    if command -v notify-send >/dev/null 2>&1; then
+        local args=(-u "$urgency")
+        [[ -n "$timeout" ]] && args+=(-t "$timeout")
+        [[ -n "$appname" ]] && args+=(-a "$appname")
+        [[ -n "$icon" ]]    && args+=(-i "$icon")
+        notify-send "${args[@]}" "$title" "$body" && return 0
+    fi
+    if command -v dunstify >/dev/null 2>&1; then
+        local args=(-u "$urgency")
+        [[ -n "$timeout" ]] && args+=(-t "$timeout")
+        [[ -n "$appname" ]] && args+=(-a "$appname")
+        [[ -n "$icon" ]]    && args+=(-i "$icon")
+        dunstify "${args[@]}" "$title" "$body" && return 0
+    fi
+    return 1
+}
+
+notify_macos() {
+    if command -v terminal-notifier >/dev/null 2>&1; then
+        local args=(-title "$title")
+        [[ -n "$body" ]]    && args+=(-message "$body")
+        [[ -n "$appname" ]] && args+=(-group "$appname")
+        [[ -n "$icon" && "$icon" == */* ]] && args+=(-appIcon "$icon")
+        case "$urgency" in
+            critical) args+=(-sound Basso) ;;
+            normal)   args+=(-sound Glass) ;;
+        esac
+        if [[ -n "$timeout" && "$timeout" =~ ^[0-9]+$ ]]; then
+            args+=(-timeout $(( (timeout + 999) / 1000 )))
+        fi
+        terminal-notifier "${args[@]}" >/dev/null && return 0
+    fi
+    if command -v osascript >/dev/null 2>&1; then
+        local esc_body esc_title sound=""
+        esc_body="$(printf '%s' "$body"  | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
+        esc_title="$(printf '%s' "$title" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
+        case "$urgency" in
+            critical) sound=' sound name "Basso"' ;;
+            normal)   sound=' sound name "Glass"' ;;
+        esac
+        osascript -e "display notification \"$esc_body\" with title \"$esc_title\"$sound" && return 0
+    fi
+    return 1
+}
+
+case "$(uname -s)" in
+    Linux)  notify_linux  || notify_macos ;;
+    Darwin) notify_macos  || notify_linux ;;
+    *)      notify_linux  || notify_macos ;;
+esac
+
+# Always succeed: a missing notifier must never break the calling hook.
+exit 0

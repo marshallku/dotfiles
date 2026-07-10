@@ -398,9 +398,11 @@ precmd() {
         else
           status_icon="✗ ($exit_code)"
         fi
-        xnotify -u normal -t 5000 \
-          "Command finished ${status_icon}" \
-          "${__cmd_name}\nTook ${elapsed}s"
+        if command -v notify >/dev/null 2>&1; then
+          notify -u normal -t 5000 \
+            "Command finished ${status_icon}" \
+            "${__cmd_name}\nTook ${elapsed}s"
+        fi
       fi
     fi
     unset __cmd_start_time

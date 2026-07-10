@@ -1,84 +1,19 @@
 #!/usr/bin/env bash
-# xnotify — cross-platform desktop notification wrapper.
+# xnotify — backward-compatible alias for `notify`.
 #
-# Usage:
-#   xnotify [-u low|normal|critical] [-t MILLISECONDS] [-a APPNAME] [-i ICON] TITLE [BODY]
-#
-# Accepts a subset of notify-send(1) flags so callers can be written once and
-# work on both platforms. Unknown flags are silently dropped on macOS so noisy
-# notify-send invocations don't error out.
-#
-# Backends (first available wins):
-#   Linux:  notify-send
-#   macOS:  terminal-notifier → osascript
+# The cross-platform notification logic now lives in `notify` (same directory).
+# This shim is kept so existing callers referencing `xnotify` keep working.
+# Prefer calling `notify` directly in new code.
 
 set -u
 
-urgency="normal"
-timeout=""
-appname=""
-icon=""
-
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        -u|--urgency)         urgency="${2:-normal}"; shift 2 ;;
-        -u=*|--urgency=*)     urgency="${1#*=}"; shift ;;
-        -t|--expire-time)     timeout="${2:-}"; shift 2 ;;
-        -t=*|--expire-time=*) timeout="${1#*=}"; shift ;;
-        -a|--app-name)        appname="${2:-}"; shift 2 ;;
-        -a=*|--app-name=*)    appname="${1#*=}"; shift ;;
-        -i|--icon)            icon="${2:-}"; shift 2 ;;
-        -i=*|--icon=*)        icon="${1#*=}"; shift ;;
-        -c|--category|-h|--hint)
-            shift 2 ;;
-        --) shift; break ;;
-        -*) shift ;;
-        *) break ;;
-    esac
-done
-
-title="${1:-}"
-body="${2:-}"
-
-if [[ -z "$title" ]]; then
-    echo "xnotify: missing TITLE" >&2
-    exit 2
+# Resolve `notify` next to this script first, then fall back to PATH.
+_here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -x "$_here/notify" ]]; then
+    exec "$_here/notify" "$@"
+elif command -v notify >/dev/null 2>&1; then
+    exec notify "$@"
 fi
 
-case "$(uname -s)" in
-    Linux)
-        if command -v notify-send >/dev/null 2>&1; then
-            args=(-u "$urgency")
-            [[ -n "$timeout" ]] && args+=(-t "$timeout")
-            [[ -n "$appname" ]] && args+=(-a "$appname")
-            [[ -n "$icon" ]]    && args+=(-i "$icon")
-            exec notify-send "${args[@]}" "$title" "$body"
-        fi
-        ;;
-    Darwin)
-        if command -v terminal-notifier >/dev/null 2>&1; then
-            args=(-title "$title")
-            [[ -n "$body" ]]    && args+=(-message "$body")
-            [[ -n "$appname" ]] && args+=(-group "$appname")
-            [[ -n "$icon" && "$icon" == */* ]] && args+=(-appIcon "$icon")
-            case "$urgency" in
-                critical) args+=(-sound Basso) ;;
-                normal)   args+=(-sound Glass) ;;
-            esac
-            if [[ -n "$timeout" && "$timeout" =~ ^[0-9]+$ ]]; then
-                args+=(-timeout $(( (timeout + 999) / 1000 )))
-            fi
-            exec terminal-notifier "${args[@]}" >/dev/null
-        elif command -v osascript >/dev/null 2>&1; then
-            esc() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
-            sound=""
-            case "$urgency" in
-                critical) sound=' sound name "Basso"' ;;
-                normal)   sound=' sound name "Glass"' ;;
-            esac
-            exec osascript -e "display notification \"$(esc "$body")\" with title \"$(esc "$title")\"$sound"
-        fi
-        ;;
-esac
-
+# No notifier available — no-op so callers (e.g. shell hooks) never fail.
 exit 0
