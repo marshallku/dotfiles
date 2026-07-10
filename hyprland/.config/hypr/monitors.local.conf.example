@@ -1,0 +1,22 @@
+# ###########################################################################
+# TEMPLATE for per-machine monitor + workspace config.
+#
+# Setup on a new machine:
+#   cp ~/.config/hypr/monitors.local.conf.example ~/.config/hypr/monitors.local.conf
+# then edit monitors.local.conf for this machine's outputs.
+#
+# monitors.local.conf is sourced from hyprland.conf and is intentionally
+# NOT tracked in dotfiles so each machine can keep its own layout.
+# Run `hyprctl monitors` to see available outputs and modes.
+# ###########################################################################
+
+################
+### MONITORS ###
+################
+
+# monitor=NAME,RESOLUTION@REFRESH,POSITION,SCALE
+# See https://wiki.hypr.land/Configuring/Monitors/
+monitor=,preferred,auto,1
+
+# Workspace ↔ monitor binding (optional)
+# workspace = 1, monitor:DP-1, default:true
