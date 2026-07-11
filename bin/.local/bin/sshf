@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SSH_CONFIG="${HOME}/.ssh/config"
+
+# ---- 의존성 체크 ----
+if ! command -v fzf >/dev/null 2>&1; then
+    echo "fzf가 필요합니다. (brew install fzf / pacman -S fzf)" >&2
+    exit 1
+fi
+
+# ---- tailscale 바이너리 찾기 ----
+find_tailscale_bin() {
+    if command -v tailscale >/dev/null 2>&1; then
+        command -v tailscale
+        return 0
+    fi
+
+    # macOS 앱 번들 (CLI 심볼릭 링크를 안 만든 경우 대비)
+    local mac_bin="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+    if [[ -x "$mac_bin" ]]; then
+        echo "$mac_bin"
+        return 0
+    fi
+
+    return 1
+}
+
+TAILSCALE_BIN="$(find_tailscale_bin || true)"
+
+# ---- SSH config 호스트 목록 ----
+get_ssh_hosts() {
+    [[ -f "$SSH_CONFIG" ]] || return 0
+    grep -E '^\s*Host\s+' "$SSH_CONFIG" \
+        | awk '{for(i=2;i<=NF;i++) print $i}' \
+        | grep -v '\*' || true
+}
+
+# ---- Tailscale 호스트 목록 ----
+get_tailscale_hosts() {
+    [[ -n "$TAILSCALE_BIN" ]] || return 0
+
+    # tailscaled가 꺼져있으면 "Tailscale is stopped." 같은 안내 문구를
+    # exit 1과 함께 stdout으로 찍는다. 이 경우 호스트 없음으로 취급한다.
+    local status
+    status="$("$TAILSCALE_BIN" status 2>/dev/null)" || return 0
+
+    printf '%s\n' "$status" \
+        | awk '$1 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ {print $2}' \
+        | grep -v '^offers$' || true
+}
+
+# ---- 목록 합치기 ----
+hosts="$(
+    {
+        get_ssh_hosts
+        get_tailscale_hosts
+    } | sort -u
+)"
+
+if [[ -z "$hosts" ]]; then
+    echo "접속 가능한 호스트가 없습니다. (~/.ssh/config 또는 tailscale 확인)" >&2
+    exit 1
+fi
+
+# ---- fzf로 선택 (ssh -G 프리뷰) ----
+selected="$(
+    echo "$hosts" | fzf \
+        --prompt='SSH > ' \
+        --height=50% \
+        --reverse \
+        --preview 'ssh -G {} 2>/dev/null | grep -E "^(hostname|port|user) "' \
+        --preview-window=right:40%
+)"
+
+[[ -n "$selected" ]] && exec ssh "$selected"
