@@ -441,6 +441,9 @@ export PATH=$PATH:/usr/local/go/bin
 # chromium
 export CHROME_EXECUTABLE=/usr/bin/chromium
 
+# default browser
+export BROWSER=firefox
+
 export PATH="$HOME/docs/scripts:$PATH"
 
 alias tmux="tmux -u"
