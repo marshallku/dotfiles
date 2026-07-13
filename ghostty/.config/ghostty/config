@@ -50,6 +50,11 @@
 
 config-file = ?~/.config/ghostty/local.conf
 
+# macOS sends Option+key as special Unicode chars (¡™£¢∞...) by default,
+# which breaks tmux's Alt-based bindings (e.g. M-1..M-9 window switch).
+# `true` makes both Option keys act as Alt/Meta instead.
+macos-option-as-alt = true
+
 font-size = 11.0
 
 background-opacity = 0.95

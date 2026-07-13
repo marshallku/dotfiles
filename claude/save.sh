@@ -3,6 +3,7 @@
 # Commit message prefix conventions (ENFORCED — see style check below):
 #   Verb-style:   Add, Remove, Move, Improve, Pass, Verify, Modify, Allow, Bump, Fix, Implement, Make, Update, Use
 #   Conventional: feat:, fix:, test:, chore:, doc:
+#   ~/docs ledger: ingest:, promote:, adr:, lint:, journal:, topic:, repo:
 # The subject line must start with one of the above. Mismatches are rejected.
 
 if [[ -z "$1" ]]; then
@@ -25,7 +26,7 @@ fi
 # require a space/content after, so single-word messages like "Add" fail too.
 subject=$(printf '%s' "$msg" | head -n1)
 verb_re='^(Add|Remove|Move|Improve|Pass|Verify|Modify|Allow|Bump|Fix|Implement|Make|Update|Use) .+'
-conv_re='^(feat|fix|test|chore|doc): .+'
+conv_re='^(feat|fix|test|chore|doc|ingest|promote|adr|lint|journal|topic|repo): .+'
 if ! printf '%s' "$subject" | grep -qE "$verb_re" \
     && ! printf '%s' "$subject" | grep -qE "$conv_re"; then
     {
@@ -38,6 +39,8 @@ if ! printf '%s' "$subject" | grep -qE "$verb_re" \
         echo "                         Allow, Bump, Fix, Implement, Make, Update, Use"
         echo "    Conventional: <type>: <subject>"
         echo "                  Types: feat, fix, test, chore, doc"
+        echo "    ~/docs ledger: <prefix>: <subject>"
+        echo "                  Prefixes: ingest, promote, adr, lint, journal, topic, repo"
     } >&2
     exit 1
 fi
