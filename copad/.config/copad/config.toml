@@ -25,7 +25,7 @@ width = 200
 # ~/.local/bin spelled out — a desktop-entry-launched copad's PATH may
 # not include it (same gotcha as plugin exec resolution).
 [keybindings]
-"ctrl+shift+y" = "spawn:~/.local/bin/coctl background toggle"
+"ctrl+shift+0" = "spawn:~/.local/bin/coctl background toggle"
 "ctrl+shift+bracketright" = "spawn:~/.local/bin/coctl background next"
 "ctrl+shift+d" = "spawn:~/.local/bin/coctl background delete-current"
 
