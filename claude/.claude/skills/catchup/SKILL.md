@@ -70,9 +70,37 @@ date +%Y-%m-%d > ~/docs/.last-catchup
 
 다음 /catchup의 시작점. 오늘 날짜를 저장하므로 다음 호출은 오늘부터 다시 시작 (overlap 의도).
 
+## 큐 모드 (비대화형 — life-assistant 야간 잡)
+
+야간 무인 실행(life-assistant `catchup-queue` 플러그인)에는 사람이 없어 "신규 topic 확인"을 받을 수 없다. 이때 프롬프트가 **큐 모드**를 지시한다. 큐 모드에서는:
+
+- daily/weekly 로그, **기존** topic 노트 Notes 섹션 append 는 평소처럼 자율 수행.
+- **신규 topic 노트를 직접 만들지 마라.** 대신 각 후보를 **스풀 파일** `~/docs/.catchup-queue/incoming/<TODAY>.json` 에 적재 (authoritative `~/docs/.catchup-queue/<TODAY>.json` 는 절대 직접 쓰지 마라 — life-assistant 가 뮤텍스 하에 병합):
+
+  ```json
+  { "date": "YYYY-MM-DD", "candidates": [ {
+      "id": "<짧은 슬러그, ':' 금지>",
+      "title": "<한 줄 제목>",
+      "category": "<automation 등 topics 하위 카테고리>",
+      "target_path": "topics/<cat>/<slug>.md",
+      "index_category": "## <INDEX.md 카테고리 헤더>",
+      "index_line": "- [<제목>](<cat>/<slug>.md) — <훅>",
+      "rationale": "<왜 새 주제인지 한두 줄>",
+      "file_content": "<frontmatter + 본문 완성본. 그대로 topics/에 쓰일 최종본>",
+      "status": "pending"
+  } ] }
+  ```
+
+- 스풀 파일이 이미 있으면 candidates 에 **append**. 한 스풀 안에서 같은 `target_path` 는 한 번만. (authoritative 큐와의 status 병합·중복 제거는 Go 가 처리하니, 이미 승인/반려된 항목인지까지 신경 쓸 필요 없다.)
+- `file_content` 는 `~/docs/CLAUDE.md` 컨벤션(frontmatter, Atomic Note, Related)을 지킨 **최종본** — 사람이 버튼 한 번 누르면 그대로 커밋된다.
+- `target_path` 는 반드시 `topics/` 하위 `.md`. (life-assistant 가 경로 순회를 거부)
+
+승인/반려/보류는 사람이 Discord 버튼으로 처리한다. `.catchup-queue/` 는 gitignore 대상(임시 상태).
+
 ## 규칙
 
 - **한국어 작성**. `~/docs/CLAUDE.md` 컨벤션 준수.
+- **대화형 시작 시 큐 픽업**: `~/docs/.catchup-queue/*.json` 에 `status: pending` 후보가 있으면 정리 전에 먼저 사용자에게 보여주고, 승인하면 `file_content` 를 `target_path` 에 쓰고 INDEX 에 `index_line` 추가 후 해당 후보 `status`→`approved` 로 갱신(키보드 폴백).
 - **`dn` 호출은 항상 `EDITOR=cat`** (안 그러면 nvim이 떠서 블로킹).
 - **Notes 섹션 항목 사이 `---` 줄**.
 - **topic note Related 섹션 양방향 유지** (A→B 추가 시 B→A도).
