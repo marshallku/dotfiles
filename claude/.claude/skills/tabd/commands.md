@@ -1,0 +1,1071 @@
+# Commands reference
+
+Per-action signatures, options, return shapes, and error strings. Cross-
+reference doc — for narrative scenarios see [cookbook.md](cookbook.md), for
+why-it-is-shaped-this-way see [architecture.md](architecture.md), for running
+the daemon see [operations.md](operations.md).
+
+## Contents
+
+- [Conventions](#conventions) — global flags, argv parsing, tab semantics
+- [Daemon control](#daemon-control) — `daemon start/stop/ping/health`
+- Actions (49 total, grouped):
+  - [Tabs](#tabs) (8) · [DOM](#dom) (4) · [Interaction](#interaction) (9)
+  - [Capture](#capture) (2) · [Emulation](#emulation) (3) · [Execution](#execution) (1) · [Wait](#wait) (5)
+  - [Cookies](#cookies) (3) · [Storage](#storage) (3) · [Monitor](#monitor) (5)
+  - [Dialogs](#dialogs-1) (1) · [Downloads](#downloads-1) (1) · [Secrets](#secrets) (4)
+
+---
+
+## Conventions
+
+### Global flags (every action accepts)
+
+| Flag | Effect |
+|---|---|
+| `--json` | Emit the daemon response payload as compact JSON instead of pretty-rendered text. Strings come back quoted, `null` as the literal `null`, objects/arrays serialized compactly. |
+| `--out FILE` | For actions returning base64 data (`screenshot`), decode the bytes and write the file. Suppresses stdout payload. |
+| `--tab N` | Target tab by 1-based index. Most actions default to the active tab if omitted; a few require it (see [Tab semantics](#tab-semantics)). |
+| `--base-dir DIR` | Override `$TABD_BASE_DIR` for the socket/pid path. Useful for isolated daemons in CI. |
+
+### argv parsing
+
+Mirrors the original TS CLI for tooling compatibility:
+
+- `--flag VALUE` and `--flag=VALUE` both accepted
+- `--no-flag` ⇒ `flag: false`
+- Bare `--flag` (followed by another `--token` or end of argv) ⇒ `flag: true`
+- A value that itself starts with `--` must use the `--flag=VALUE` form
+  (e.g. `--text=--weird-label`); `--flag --weird-label` reads as two bare flags
+- Positionals: action-specific (see each entry's signature)
+- Coercion: `true`/`false`/`null` → typed; integer literals → `i64`; decimal literals → `f64`; anything else → `string`
+- kebab-case flag names get camelCased before reaching the daemon:
+  `--pattern-type` ⇒ `patternType`, `--include-body` ⇒ `includeBody`,
+  `--max-headings` ⇒ `maxHeadings`, etc.
+
+### Tab semantics
+
+`--tab N` is 1-based and maps to `tabId` in the wire protocol.
+
+**Require `--tab` explicitly** (error: `"tabId is required"`):
+- `close-tab`, `activate-tab`
+
+**Default to active tab** if `--tab` omitted: every other tab-scoped action.
+
+**Tab-less** (operate on the daemon/browser globally, not a specific tab):
+`screenshot`, `eval`, `list-tabs`, `open-tab`, all `cookies-*`, all `storage-*`,
+all `secret-*`.
+
+### `--frame` (iframe targeting)
+
+`get-text`, `get-html`, `query` (incl. `--text`), `click` (both paths, incl.
+the implicit visibility wait), `type`, `wait-selector`, and `wait-text` accept
+`--frame FRAME_SELECTOR`: every selector/text lookup then scopes to that
+iframe's document instead of the main document.
+
+- **Same-origin frames only** (`contentDocument` access). A cross-origin or
+  OOPIF frame fails immediately with
+  `"frame is cross-origin or not a frame: …"` → `invalid_request` — it will
+  not become accessible by waiting, so waits fail fast on it.
+- A **missing** frame element fails fast with `Selector not found: FRAME`
+  (exit 5) — including inside waits, where the inner lookup polls but the
+  frame lookup doesn't. To wait for a frame to mount, `wait-selector` the
+  frame element itself first, then target into it.
+- Single level only — no nested `--frame` chaining.
+- Not available on coordinate/CDP-node based actions
+  (`hover`, `scroll`, `press-key`, `select-option`, `check`, `upload`).
+
+### Return shape
+
+All daemon responses come back as `{ id, success, data }`. The CLI unwraps:
+- on `success: true` → prints `data` (string raw, object/array via `--json`)
+- on `success: false` → prints `error: <message> [<errorCode>]` to stderr and
+  exits nonzero (see [Errors & exit codes](#errors--exit-codes)); with `--json`
+  the full failure envelope `{ id, success, error, errorCode }` is printed to
+  stdout instead
+
+In the action tables below, "Returns" is the `data` payload only.
+
+### Errors & exit codes
+
+Failures carry a stable machine-parseable `errorCode` so scripts and AI agents
+can branch without regex-matching the error prose. The exit code maps from it:
+
+| `errorCode` | Exit | Meaning / typical reaction |
+|---|---|---|
+| `selector_not_found` | 5 | Selector never matched **or never became visible** before the deadline → fix the selector, or wait/retry if content loads late |
+| `tab_not_found` | 5 | 1-based tab index out of range, or no tabs open → `list-tabs` and re-resolve |
+| `timeout` | 4 | `wait-url` / `wait-network-idle` / a CDP RPC hit its deadline → retry or raise `--timeout` |
+| `daemon_unreachable` | 3 | Socket unreachable, auto-spawn failed, or daemon draining → check `daemon health`, restart |
+| `cdp_not_ready` | 1 | Chromium is (re)starting → brief wait, then retry |
+| `eval_error` | 1 | JS threw inside `eval` or an injected expression → inspect the message |
+| `vault_error` | 1 | Secrets vault locked / `TABD_VAULT_KEY` unset / unknown secret id |
+| `invalid_request` | 1 | Unknown action, malformed JSON, missing/invalid params → fix the call |
+| `output_too_large` | 1 | Non-string `eval` result exceeded `--max-chars` → narrow the expression or pass `--max-chars 0` |
+| `internal` | 1 | Anything else |
+
+Exit `0` is success; exit `2` is reserved for client-side usage errors
+(`secret-put` source-flag validation). Scripts that only check "nonzero =
+failure" are unaffected by the 3/4/5 split.
+
+```bash
+tabd click '#login' --json || case $? in
+  5) echo "selector/tab gone — re-query the page" ;;
+  4) echo "still loading — retry" ;;
+  3) echo "daemon down — tabd daemon start" ;;
+esac
+```
+
+### `secret-put` is special
+
+It does **not** go through the generic DISPATCH table. The CLI reads the
+plaintext locally (from `--from-env` / `--from-file` / `--stdin`), then sends
+only the resolved value to the daemon — plaintext never appears on argv.
+
+---
+
+## Daemon control
+
+`tabd daemon` is a clap subcommand (separate from the action dispatcher).
+Standard `--help` works on these.
+
+### daemon start
+
+```bash
+tabd daemon start [--base-dir DIR]
+```
+
+Run the daemon in the foreground (blocks until SIGTERM, SIGINT, or
+`daemon.shutdown`). Auto-spawn happens detached, never via this command.
+
+Boots Chromium, opens the UDS at `$base_dir/daemon.sock`, writes
+`$base_dir/daemon.pid`. Default base_dir per [operations.md](operations.md).
+
+### daemon stop
+
+```bash
+tabd daemon stop [--base-dir DIR]
+```
+
+Triggers graceful drain (`accepting=false`, in-flight actions get
+`$TABD_DRAIN_TIMEOUT_MS` to finish, default 10000ms), then closes.
+Prints the shutdown response payload.
+
+### daemon ping
+
+```bash
+tabd daemon ping [--base-dir DIR]
+```
+
+**Returns**: `{ "pid": number, "ready": bool }`.
+
+### daemon health
+
+```bash
+tabd daemon health [--base-dir DIR]
+```
+
+**Returns**: see [operations.md § Watching the daemon](operations.md#watching-the-daemon).
+
+---
+
+## Tabs
+
+### navigate
+
+```bash
+tabd navigate <url> [--tab N]
+```
+
+| Positional | Type | Meaning |
+|---|---|---|
+| `url` | string | URL to navigate to |
+
+**Returns**: `{ "url": string }` — the requested URL after navigation completes.
+
+**Errors**: `"tabs.navigate: missing 'url' (string)"`.
+
+### open-tab
+
+```bash
+tabd open-tab <url>
+```
+
+**Returns**: `{ "tabId": number, "targetId": string, "url": string }`.
+
+The new tab becomes active. Use `list-tabs` to see all tabs with active flag.
+
+### close-tab
+
+```bash
+tabd close-tab --tab N
+```
+
+`--tab` is **required**. **Returns**: `null`.
+
+**Errors**: `"tabId is required"`, `"Tab not found: N"`.
+
+### list-tabs
+
+```bash
+tabd list-tabs
+```
+
+**Returns**:
+```json
+[
+  {"tabId": 1, "targetId": "ABCD...", "title": "Example", "url": "...", "active": true},
+  ...
+]
+```
+
+### activate-tab
+
+```bash
+tabd activate-tab --tab N
+```
+
+`--tab` is **required**. **Returns**: `null`.
+
+### back / forward / reload
+
+```bash
+tabd back [--tab N]
+tabd forward [--tab N]
+tabd reload [--tab N]
+```
+
+**Returns**: `null`.
+
+`back`/`forward` call `history.back()`/`history.forward()` in page; no error
+if there is nothing to go back to.
+
+---
+
+## DOM
+
+### get-html
+
+```bash
+tabd get-html [--selector SELECTOR] [--no-outer] [--no-clean] [--max-chars N] [--frame SEL] [--tab N]
+```
+
+| Option | Type | Default | Meaning |
+|---|---|---|---|
+| `--selector` | string | `body` | CSS selector to extract |
+| `--outer` | bool | `true` | Include outer HTML (use `--no-outer` for innerHTML) |
+| `--clean` | bool | `true` | Strip `<script>`, `<style>`, `<svg>`, comments, `data-*` attrs |
+| `--max-chars` | number | `500000` | Truncate beyond N chars with a visible `…[truncated: N of M chars…]` marker; `0` = unlimited |
+
+**Returns**: `string` — the HTML.
+
+**Errors**: `"Selector not found: SELECTOR"`.
+
+### get-text
+
+```bash
+tabd get-text [--selector SELECTOR] [--raw] [--max-chars N] [--frame SEL] [--tab N]
+```
+
+| Option | Type | Default | Meaning |
+|---|---|---|---|
+| `--selector` | string | `main, article, body` (first hit) | CSS selector |
+| `--raw` | bool | `false` | Return raw `textContent` instead of whitespace-normalized text |
+| `--max-chars` | number | `500000` | Truncate beyond N chars with a visible marker; `0` = unlimited |
+
+**Returns**: `string` — the text. Cleaned form strips repeated whitespace and
+empty lines.
+
+### query
+
+```bash
+tabd query <selector> [--text SUBSTR] [--limit N] [--visible-only] [--frame SEL] [--tab N]
+tabd query --text SUBSTR [--limit N] [--visible-only] [--frame SEL] [--tab N]   # selector optional with --text
+```
+
+| Option | Type | Default | Meaning |
+|---|---|---|---|
+| `--text` | string | (none) | Keep only elements whose `innerText` contains SUBSTR (case-insensitive; includes descendant text). Without a selector, scope is `*` and only the **deepest** matching elements are returned (ancestors of a match are dropped); an explicit selector disables the deepest-only filter. |
+| `--limit` | number | `20` | Max matched elements to return |
+| `--visible-only` | bool | `false` | Filter to elements with non-zero bounding rect and visible computed style |
+
+**Returns**:
+```json
+[
+  {
+    "index": 0,
+    "tag": "li",
+    "id": null,
+    "classes": ["row"],
+    "text": "...",
+    "attributes": {"data-role": "...", ...},
+    "rect": {"x": 10, "y": 100, "width": 200, "height": 24}
+  },
+  ...
+]
+```
+
+### summary
+
+```bash
+tabd summary [--selector SELECTOR] [--max-headings N] [--max-links N] [--max-text-length N] [--tab N]
+```
+
+LLM-friendly page summary. Strips noise (`nav`, `footer`, `script`, `style`,
+ARIA-hidden, cookie banners, ads), normalizes whitespace.
+
+| Option | Type | Default | Meaning |
+|---|---|---|---|
+| `--selector` | string | first hit of `main, article, [role=main], body` | Scope element |
+| `--max-headings` | number | `20` | |
+| `--max-links` | number | `20` | |
+| `--max-text-length` | number | `4000` | Truncates `text` field at this many chars |
+
+**Returns**:
+```json
+{
+  "url": "...",
+  "title": "...",
+  "selector": "body",
+  "headings": [{"level": "h1", "text": "..."}, ...],
+  "links": [{"text": "...", "href": "..."}, ...],
+  "forms": [{"index": 0, "fields": [{"name": "u", "type": "text", "id": null}, ...]}],
+  "text": "...cleaned page text..."
+}
+```
+
+---
+
+## Interaction
+
+All interaction actions auto-wait for the selector to become visible (default
+30000 ms; override with `--timeout`).
+
+### click
+
+```bash
+tabd click <selector> [--timeout MS] [--frame SEL] [--tab N]
+tabd click --text TEXT [--selector SCOPE] [--timeout MS] [--frame SEL] [--tab N]
+```
+
+With `--text`, finds and clicks the element whose visible label matches TEXT —
+the agent-friendly path when a CSS selector is unknown:
+
+- Candidate scope: `--selector` if given, else clickable elements
+  (`a, button, [role=button], input[type=button|submit], label, summary, [onclick]`)
+- Label = `innerText` → `value` (submit/button inputs) → `aria-label` (icon buttons)
+- Visible candidates only; case-insensitive contains; an exact (trimmed) match
+  wins over a contains match; the first match is clicked
+- Polls every 200ms until `--timeout` (default 30000ms)
+
+One of `<selector>` / `--text` is required.
+
+**Returns**: `{ "ok": true }`.
+
+**Errors**: `"selector SELECTOR not visible after N ms"`,
+`"no element with text \"TEXT\" found after N ms"` (both `selector_not_found`,
+exit 5), `"'selector' or 'text' is required"`.
+
+### upload
+
+```bash
+tabd upload <selector> <file> [--tab N]
+```
+
+Sets a local file on an `<input type=file>` via CDP `DOM.setFileInputFiles`
+(the DevTools-native path — works where synthetic DataTransfer events don't).
+
+- A relative `<file>` resolves against **your shell's cwd** (the CLI
+  canonicalizes before dispatch); a missing file exits `2` without touching
+  the daemon.
+- No visibility wait: hidden file inputs behind styled labels are fine.
+- One file per call.
+
+**Returns**: `{ "ok": true, "path": "/abs/path" }`.
+
+**Errors**: `"Selector not found: SELECTOR"` (exit 5), `"file not found: PATH"`.
+
+### type
+
+```bash
+tabd type <selector> <text> [--timeout MS] [--frame SEL] [--tab N]
+```
+
+Types `text` into an `<input>` / `<textarea>` / `contentEditable` element.
+Sets `.value` directly **and** dispatches `input` event — works on most
+controlled inputs (React/Vue). For sensitive values use [type-secret](#type-secret).
+
+### hover
+
+```bash
+tabd hover <selector> [--x OFFSET] [--y OFFSET] [--tab N]
+```
+
+| Option | Type | Default | Meaning |
+|---|---|---|---|
+| `--x` | number | rect center | X offset *within* the element |
+| `--y` | number | rect center | Y offset *within* the element |
+
+**Returns**: `null`. Dispatches a CDP `Input.dispatchMouseEvent` of type `mouseMoved` at the resolved coordinates.
+
+### mouse-move
+
+```bash
+tabd mouse-move --x N --y N [--tab N]
+```
+
+Move mouse to absolute viewport coordinates. Both `--x` and `--y` required.
+
+### scroll
+
+```bash
+tabd scroll [--selector SELECTOR] [--x PX] [--y PX] [--tab N]
+```
+
+Two modes:
+- with `--selector`: scrolls the element into view (`scrollIntoView({block: "center"})`)
+- without `--selector`: scrolls the viewport by `(x, y)` pixels (relative)
+
+**Returns**: `null`.
+
+### press-key
+
+```bash
+tabd press-key <key> [--selector SELECTOR] [--tab N]
+```
+
+If `--selector` is given, focuses that element first.
+
+**Recognized special key names** (case-sensitive, matched verbatim):
+`Enter`, `Tab`, `Escape`, `Backspace`, `Delete`,
+`ArrowLeft`, `ArrowUp`, `ArrowRight`, `ArrowDown`,
+`Home`, `End`, `PageUp`, `PageDown`, `Space`,
+`F1` … `F12`.
+
+Anything else: treated as a single character (lowercased for the `key` field;
+`text` event also fired so `<input>` sees it as typed).
+
+**Returns**: `null`.
+
+### select-option
+
+```bash
+tabd select-option <selector> {--value V | --label L | --index N} [--tab N]
+```
+
+Selects an `<option>` inside a `<select>`. Exactly one of `--value` / `--label` /
+`--index` should be set. Tried in that order if multiple.
+
+**Returns**: `null`.
+
+**Errors**: `"selectOption: not a SELECT"`, `"Requested option was not found"`.
+
+### check
+
+```bash
+tabd check <selector> [--no-checked] [--tab N]
+```
+
+Sets a checkbox or radio's `checked` state. Default: `true`. Use `--no-checked`
+to uncheck.
+
+**Returns**: `null`.
+
+---
+
+## Capture
+
+### screenshot
+
+```bash
+tabd screenshot [--out FILE]
+```
+
+Captures the **active tab** (no `--tab` option).
+
+**Returns**: `"data:image/png;base64,..."` data URL string. With `--out FILE`,
+the PNG bytes are decoded and written to the file; nothing is printed.
+
+**Errors**: `"Page.captureScreenshot timed out after 10s"`.
+
+### metrics
+
+```bash
+tabd metrics [--tab N]
+```
+
+**Returns**:
+```json
+{
+  "url": "...",
+  "title": "...",
+  "readyState": "complete",
+  "domNodes": 1234,
+  "resources": 42,
+  "navigation": {
+    "type": "navigate",
+    "domContentLoaded": 250,
+    "loadEventEnd": 800
+  }
+}
+```
+
+`navigation` may be `null` if `performance.getEntriesByType("navigation")` is
+empty (e.g. very fresh tab).
+
+---
+
+## Emulation
+
+### set-viewport
+
+```bash
+tabd set-viewport <width> <height> [--scale N] [--mobile] [--tab N]
+```
+
+Applies CDP `Emulation.setDeviceMetricsOverride` to the tab. Layout updates
+immediately (no reload); `screenshot` captures the emulated viewport.
+
+| Option | Type | Default | Meaning |
+|---|---|---|---|
+| `--scale` | number | `1` | deviceScaleFactor |
+| `--mobile` | bool | `false` | Mobile layout mode (meta-viewport handling, scrollbars). Note: on pages **without** a `<meta name=viewport>` tag, mobile mode lays out at the classic 980px viewport (like a real phone), so `innerWidth` won't equal the device width. |
+
+Persists for the tab until the daemon (or Chromium) restarts. To "reset", set
+the desired size again. For User-Agent override, see [set-user-agent](#set-user-agent).
+
+**Returns**: `{ "width": N, "height": N, "scale": N, "mobile": bool }`.
+
+**Errors**: `"missing 'width' (number)"`, `"invalid 'width'/'height' (must be >= 1)"`.
+
+### set-user-agent
+
+```bash
+tabd set-user-agent <userAgent> [--tab N]
+```
+
+Applies CDP `Network.setUserAgentOverride` to the tab — overrides both the
+JS-visible `navigator.userAgent` and the actual `User-Agent` HTTP header sent
+on subsequent requests (verified against a live echo endpoint). Chromium's
+`--headless=new` still reports `HeadlessChrome/<ver>` in its default UA on
+some builds, which some sites treat as a bot-detection signal; a common
+pattern is to read the current UA via `tabd eval navigator.userAgent` and
+replace `HeadlessChrome` with `Chrome` before navigating anywhere.
+
+Persists for the tab until the daemon (or Chromium) restarts.
+
+**Returns**: `{ "userAgent": string }` — the value that was applied.
+
+**Errors**: `"missing 'userAgent' (string)"`.
+
+### add-init-script
+
+```bash
+tabd add-init-script <source> [--tab N]
+```
+
+Applies CDP `Page.addScriptToEvaluateOnNewDocument` to the tab — runs
+`<source>` before every SUBSEQUENT navigation's own scripts execute (not
+retroactively on the current document). This is the only way to patch
+automation tells that a page can check before `tabd`'s own actions would
+otherwise get a chance to run an `eval`, most notably `navigator.webdriver`:
+Chromium sets `Navigator.prototype.webdriver = true` as soon as CDP attaches
+to a target, independent of the `--headless` flag or User-Agent, and many
+bot/fraud-detection systems check it. Typical use:
+
+```bash
+tabd add-init-script "Object.defineProperty(Navigator.prototype, 'webdriver', { get: () => false, configurable: true });"
+tabd navigate https://example.com
+tabd eval navigator.webdriver   # => false
+```
+
+Persists for the tab (applies to every future navigation) until the daemon
+(or Chromium) restarts.
+
+**Returns**: `{ "identifier": string }` — the CDP script identifier (unused
+by most callers; kept for parity with the underlying protocol response).
+
+**Errors**: `"missing 'source' (string)"`.
+
+---
+
+## Execution
+
+### eval
+
+```bash
+tabd eval <code> [--max-chars N]
+```
+
+Run JavaScript in the active tab's main world. The expression's value is
+returned via CDP `returnByValue: true, awaitPromise: true` — so an async
+function expression (`async () => …`) or a top-level `await` (single `await`
+expression — not statement-block-level) works directly.
+
+The result must be JSON-serializable. Returning `undefined` results in no
+`data` field (CLI prints empty).
+
+**Patterns**:
+```bash
+# Plain expression
+tabd eval '1 + 1'
+
+# Async fetch in browser context (cookies + CSRF + session auto-applied)
+tabd eval 'await fetch("/api/data").then(r => r.json())' --json
+
+# Wrap multi-statement code in an IIFE so the final value is returned
+tabd eval '(() => { const xs = [...document.querySelectorAll("li")]; return xs.length; })()'
+```
+
+**Returns**: the evaluated value (any JSON type).
+
+Output is clamped to `--max-chars` (default `500000`, `0` = unlimited): string
+results truncate with a visible marker; non-string results whose JSON exceeds
+the limit fail with `errorCode: "output_too_large"` instead of emitting
+corrupt truncated JSON — narrow the expression or raise/disable the clamp.
+
+**Errors**: `"Runtime.evaluate failed"` (wrapped with the JS exception text),
+`"eval result too large (N chars > M); …"`.
+
+---
+
+## Wait
+
+### wait-selector
+
+```bash
+tabd wait-selector <selector> [--timeout MS] [--frame SEL] [--tab N]
+```
+
+Polls until the selector resolves to a visible element. Default timeout 30000ms.
+
+**Returns**: `{ "found": true }`.
+
+**Errors**: `"selector SELECTOR not visible after N ms"`.
+
+### wait-url
+
+```bash
+tabd wait-url <pattern> [--pattern-type TYPE] [--timeout MS] [--tab N]
+```
+
+Polls the tab's current URL until it matches the pattern.
+
+| `--pattern-type` | Meaning |
+|---|---|
+| `exact` (default) | literal string equality |
+| `glob` | shell-style wildcards; `*` → `.*`, other regex metachars escaped, anchored `^…$` |
+| `regex` | JavaScript regex (raw) |
+
+Default timeout 30000ms.
+
+**Returns**: `{ "url": string }` — the URL at the moment of match.
+
+**Errors**: `"wait-url timed out after N ms (pattern=... type=...)"`,
+`"invalid regex pattern: ..."`, `"invalid glob → regex compile: ..."`,
+`"unsupported patternType 'X' (expected exact|glob|regex)"`.
+
+### wait-text
+
+```bash
+tabd wait-text <text> [--selector SCOPE] [--timeout MS] [--frame SEL] [--tab N]
+```
+
+Polls every 200ms until `text` appears in the scope's `innerText`
+(`document.body` when `--selector` is omitted). A missing scope element keeps
+polling — it may mount later — so an invalid selector is indistinguishable
+from slow content and also ends in `timeout` (exit 4). Default timeout
+30000ms.
+
+**Returns**: `{ "found": true }`.
+
+**Errors**: `"wait-text timed out after N ms (text=...)"`.
+
+### wait-download
+
+```bash
+tabd wait-download [--guid G] [--timeout MS]
+```
+
+Blocks until a captured download reaches `completed` (returns its entry) or
+`canceled` (errors). Without `--guid`, targets the most-recently-started
+download whatever its state — a tiny file already `completed` by the time you
+call resolves immediately. Requires [`download-dir`](#download-dir) first.
+
+**Returns**: the download entry (see [`downloads`](#downloads)), incl.
+`savedPath`.
+
+**Errors**: `"download was canceled: GUID"` (internal),
+`"no downloads recorded"` (invalid_request — nothing captured yet),
+`"wait-download timed out after N ms"` (timeout, exit 4).
+
+### wait-network-idle
+
+```bash
+tabd wait-network-idle [--idle-time MS] [--timeout MS] [--tab N]
+```
+
+| Option | Type | Default | Meaning |
+|---|---|---|---|
+| `--idle-time` | number | `500` | Network must be quiet for this many ms |
+| `--timeout` | number | `10000` | Total timeout |
+
+Counts in-flight CDP `Network.*` requests on the tab; when the count is zero
+for `--idle-time` consecutive ms, returns successfully.
+
+**Returns**: `null`.
+
+**Errors**: `"Timed out waiting for network idle (N pending requests)"`.
+
+---
+
+## Cookies
+
+### cookies-get
+
+```bash
+tabd cookies-get <url>
+```
+
+**Returns**: array of CDP cookie objects:
+```json
+[
+  {"name": "...", "value": "...", "domain": "...", "path": "/", "expires": ..., "size": ..., "httpOnly": false, "secure": true, "session": false, "sameSite": "Lax"},
+  ...
+]
+```
+
+### cookies-set
+
+```bash
+tabd cookies-set --url URL --name NAME --value VALUE \
+  [--domain D] [--path P] [--secure] [--http-only] \
+  [--same-site SAMESITE] [--expiration-date EPOCH_SECS]
+```
+
+| Option | Type | Default | Meaning |
+|---|---|---|---|
+| `--url` | string | **required** | URL for cookie scope; CDP infers domain/path if not given |
+| `--name` | string | **required** | Cookie name |
+| `--value` | string | **required** | Cookie value |
+| `--domain` | string | inferred from URL | |
+| `--path` | string | `/` | |
+| `--secure` | bool | from URL | use `--secure` / `--no-secure` |
+| `--http-only` | bool | `false` | |
+| `--same-site` | string | none | one of `Strict` / `Lax` / `None` |
+| `--expiration-date` | number | session | Unix epoch seconds |
+
+**Returns**: `null`.
+
+**Errors**: `"Network.setCookie timed out after 5s"`, `"CDP rejected the cookie: ..."`.
+
+### cookies-delete
+
+```bash
+tabd cookies-delete <name> --url URL
+```
+
+`--url` is required.
+
+**Returns**: `null`.
+
+---
+
+## Storage
+
+`localStorage` / `sessionStorage` for the **active tab's current origin**.
+
+### storage-get
+
+```bash
+tabd storage-get [--key KEY] [--type local|session] [--tab N]
+```
+
+| Option | Type | Default | Meaning |
+|---|---|---|---|
+| `--key` | string | — | Get one key only |
+| `--type` | string | `local` | `local` (default) or `session` |
+
+**Returns**:
+- with `--key`: `string | null` (the value, or null if missing)
+- without `--key`: `{ "k1": "v1", "k2": "v2", ... }`
+
+### storage-set
+
+```bash
+tabd storage-set --key KEY --value VALUE [--type local|session] [--tab N]
+```
+
+**Returns**: `null`.
+
+### storage-clear
+
+```bash
+tabd storage-clear [--type local|session] [--tab N]
+```
+
+**Returns**: `null`. Clears the entire storage for the current origin.
+
+---
+
+## Monitor
+
+The daemon keeps per-tab ring buffers for console (100), page errors (100),
+and network (500). These actions tail those buffers.
+
+### console-logs
+
+```bash
+tabd console-logs [--level LEVEL] [--limit N] [--tab N]
+```
+
+| Option | Type | Default | Meaning |
+|---|---|---|---|
+| `--level` | string | (all) | Filter by `log` / `warn` / `error` / `info` / `debug` |
+| `--limit` | number | `100` | Tail size |
+
+**Returns**:
+```json
+[
+  {"level": "log", "message": "...", "timestamp": 1701337200000, "stackTrace": "..."?},
+  ...
+]
+```
+
+### page-errors
+
+```bash
+tabd page-errors [--limit N] [--tab N]
+```
+
+**Returns**:
+```json
+[
+  {"url": "...", "lineNumber": 42, "columnNumber": 10, "text": "Uncaught TypeError: ...", "level": "error"},
+  ...
+]
+```
+
+Captures both `Runtime.exceptionThrown` and unhandled promise rejections.
+
+### network-logs
+
+```bash
+tabd network-logs [--method M] [--status S] [--url-pattern REGEX] \
+  [--url-contains SUBSTR] [--limit N] [--include-body] [--tab N]
+```
+
+| Option | Type | Meaning |
+|---|---|---|
+| `--method` | string | HTTP method, case-insensitive (`GET`, `POST`, …) |
+| `--status` | number\|string | Exact (`404`) or bucket (`2xx`, `4xx`, `5xx`) |
+| `--url-pattern` | regex string | Anchored regex against URL |
+| `--url-contains` | string | Substring match against URL |
+| `--limit` | number | Tail size (default 100) |
+| `--include-body` | bool | Include response body — **deferred** (reader task can't dispatch CDP RPC; see [architecture.md § Reader task is read-only](architecture.md#reader-task-is-read-only)). Returns metadata only regardless. |
+
+**Returns**:
+```json
+[
+  {
+    "method": "GET",
+    "url": "https://app/api/x",
+    "status": 200,
+    "type": "fetch",
+    "startTime": 1701337200000,
+    "endTime": 1701337200245,
+    "durationMs": 245,
+    "fromCache": false,
+    "failed": false,
+    "responseBodySize": 1234
+  },
+  ...
+]
+```
+
+Failed/cancelled requests have `failed: true` and a `failureText` field.
+
+### dialogs
+
+```bash
+tabd dialogs [--limit N] [--tab N]
+```
+
+Recent JS dialogs the daemon auto-handled on this tab (ring of 50, newest
+last). Audit trail for the auto-handling described under [Dialogs](#dialogs-1)
+— check it when a page behaved unexpectedly (e.g. an auto-accepted
+`beforeunload` discarded unsaved state).
+
+**Returns**:
+```json
+[
+  {"dialogType": "confirm", "message": "Are you sure?", "action": "dismiss", "timestamp": 1701337200000},
+  {"dialogType": "prompt", "message": "Name?", "action": "accept", "promptText": "tabd", "timestamp": 1701337201000}
+]
+```
+
+### downloads
+
+```bash
+tabd downloads [--limit N]
+```
+
+Browser-global list of captured downloads (newest last), independent of
+`--tab`. Requires [`download-dir`](#download-dir) to have enabled capture.
+
+**Returns**:
+```json
+[
+  {
+    "guid": "A1B2-…",
+    "url": "https://app/export.csv",
+    "suggestedFilename": "export.csv",
+    "state": "completed",
+    "totalBytes": 1234,
+    "receivedBytes": 1234,
+    "savedPath": "/your/dir/A1B2-…",
+    "startedAt": 1701337200000
+  }
+]
+```
+`state` ∈ `inProgress` | `completed` | `canceled`. In-progress entries are
+never evicted from the (capacity-100) history.
+
+---
+
+## Downloads
+
+Downloads are **dropped by default** — headless tabd has nowhere to put them.
+Call `download-dir` once to opt in; from then on every download is written to
+that directory and tracked. tabd **never deletes** the saved files (the agent
+owns them). Interception is in-memory: after a daemon or Chromium restart it
+must be re-enabled.
+
+### download-dir
+
+```bash
+tabd download-dir <dir>
+```
+
+Enables capture and routes downloads to `<dir>`. The path is resolved against
+**your shell's cwd** and must be an existing, writable directory (a
+missing/non-dir/non-writable path exits `2` without touching the daemon).
+Files are named by an opaque guid (`<dir>/<guid>`, collision-free via CDP
+`allowAndName`); the original name is the `suggestedFilename` in
+[`downloads`](#downloads) / [`wait-download`](#wait-download).
+
+**Returns**: `{ "dir": "/abs/dir" }`.
+
+**Errors**: `"not a directory: PATH"`, `"download dir is not writable: PATH"`.
+
+Typical flow:
+```bash
+tabd download-dir ./out
+tabd click --text 'Export CSV'
+saved=$(tabd wait-download --json | jq -r .savedPath)
+mv "$saved" ./out/report.csv     # rename guid → real name yourself
+```
+
+---
+
+## Dialogs
+
+JS dialogs (`alert` / `confirm` / `prompt` / `beforeunload`) are **auto-handled
+by the daemon the moment they open**. A pending dialog blocks the page's JS
+while the triggering action holds the daemon's global action lock, so a
+"respond to the open dialog" command is structurally impossible — the policy
+below is pre-configuration for future dialogs, not live rescue.
+
+Defaults: `alert`/`confirm`/`prompt` are **dismissed**; `beforeunload` is
+**always accepted** (a dismissed beforeunload silently blocks navigation,
+which is worse for automation than the unsaved-state loss — every handled
+dialog is recorded in [`dialogs`](#dialogs) so the tradeoff stays auditable).
+
+### dialog-policy
+
+```bash
+tabd dialog-policy <accept|dismiss> [--prompt-text TEXT]
+```
+
+| Option | Type | Default | Meaning |
+|---|---|---|---|
+| `action` (positional) | string | — | `accept` or `dismiss` future alert/confirm/prompt dialogs |
+| `--prompt-text` | string | (none) | Text typed into `prompt()` when accepting |
+
+Global (all tabs), in-memory — resets to `dismiss` on daemon restart.
+
+**Returns**: `{ "action": "...", "promptText": "..."|null }`.
+
+**Errors**: `"invalid 'action' (expected accept|dismiss, got '...')"`.
+
+---
+
+## Secrets
+
+All `secret-*` actions require `$TABD_VAULT_KEY` to be set in the daemon's
+environment. The vault file lives at `$XDG_CONFIG_HOME/tabd/secrets.enc`
+(override with `$TABD_VAULT_PATH`).
+
+### secret-put
+
+```bash
+tabd secret-put {--from-env VAR | --from-file PATH | --stdin} [--label TEXT]
+```
+
+| Option | Type | Meaning |
+|---|---|---|
+| `--from-env` | string | Read secret value from named environment variable |
+| `--from-file` | string | Read secret value from file at path |
+| `--stdin` | bool | Read secret value from stdin until EOF |
+| `--label` | string | Optional human-readable label stored alongside |
+
+Exactly one of `--from-env` / `--from-file` / `--stdin` must be set. The CLI
+reads the plaintext locally; the daemon receives only the resolved value.
+The trailing newline is stripped before storage.
+
+**Returns**:
+```json
+{"secretId": "a1b2c3...", "label": "github", "createdAt": 1701337200000, "preview": "****"}
+```
+
+**Errors**: `"secret-put: provide --from-env VAR, --from-file PATH, or --stdin"`,
+`"secret-put: choose exactly one ..."`, `"secret-put: env var VAR is not set"`,
+`"value is empty"`, `"TABD_VAULT_KEY env not set; secrets unavailable"`.
+
+### secret-list
+
+```bash
+tabd secret-list
+```
+
+**Returns**: array of `{ secretId, label, createdAt, preview: "****" }`. Never
+decrypts plaintext.
+
+### secret-delete
+
+```bash
+tabd secret-delete <secretId>
+```
+
+**Returns**: `null`.
+
+**Errors**: `"secret not found"`.
+
+### type-secret
+
+```bash
+tabd type-secret <selector> --secret-id ID [--no-clear] [--tab N]
+```
+
+Decrypts the named secret in-daemon and types it into the selector via the
+native value setter (works on controlled inputs that ignore plain `.value =`
+assignment).
+
+| Option | Type | Default | Meaning |
+|---|---|---|---|
+| `--secret-id` | string | **required** | Vault ID from `secret-put` |
+| `--clear` | bool | `true` | Clear field before typing (use `--no-clear` to append) |
+
+**Returns**: `null`. Plaintext never leaves the daemon process.
+
+**Errors**: `"secret not found"`, `"type-secret: element is not editable"`.
