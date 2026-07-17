@@ -4,11 +4,10 @@ font_family = "JetBrainsMono Nerd Font Mono"
 font_size = 11
 
 [background]
-#image = "/mnt/disk2/Wallpapers/02.jpg"
 tint = 0.1
 opacity = 0.2
 tint_color = "#000000"
-rotate_interval = 300  # native rotation (replaces copad-random-bg.sh daemon)
+rotate_interval = 300
 
 [socket]
 # path = "/tmp/custerm.sock"
@@ -19,7 +18,6 @@ name = "catppuccin-mocha"
 
 [tabs]
 position = 'left'
-#position = 'top'
 width = 200
 
 # ~/.local/bin spelled out — a desktop-entry-launched copad's PATH may
