@@ -116,6 +116,11 @@
             "type": "command",
             "command": "bash $HOME/.claude/hooks/contract-inject.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash $HOME/dev/copad/scripts/hooks/claude-agent-status.sh working",
+            "timeout": 5
           }
         ]
       }
@@ -142,6 +147,11 @@
             "type": "command",
             "command": "bash $HOME/.claude/hooks/notify-stop.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash $HOME/dev/copad/scripts/hooks/claude-agent-status.sh stopped",
+            "timeout": 5
           }
         ]
       }
@@ -152,6 +162,11 @@
           {
             "type": "command",
             "command": "bash $HOME/.claude/hooks/notify-notification.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash $HOME/dev/copad/scripts/hooks/claude-agent-status.sh notification",
             "timeout": 5
           }
         ]
@@ -195,7 +210,8 @@
     "lua-lsp@claude-plugins-official": true,
     "gopls-lsp@claude-plugins-official": true,
     "typescript-lsp@claude-plugins-official": true,
-    "clangd-lsp@claude-plugins-official": true
+    "clangd-lsp@claude-plugins-official": true,
+    "figma@claude-plugins-official": true
   },
   "alwaysThinkingEnabled": true,
   "effortLevel": "high",

@@ -1,0 +1,18 @@
+{
+    "name": "infra-ops-mcp",
+    "version": "0.1.0",
+    "private": true,
+    "description": "MCP to manage the operator's homelab from Claude Code: docker@prd01, Prometheus@mgmt01, host status, and ~/dev/manifest GitOps inspection (services/status/show), over ssh + local git",
+    "type": "module",
+    "bin": {
+        "infra-ops-mcp": "./server.mjs"
+    },
+    "scripts": {
+        "start": "node server.mjs",
+        "smoke": "node smoke.mjs"
+    },
+    "dependencies": {
+        "@modelcontextprotocol/sdk": "^1.12.0",
+        "zod": "^3.23.8"
+    }
+}

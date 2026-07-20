@@ -4,3 +4,13 @@ nvim/.config/nvim/lazy-lock.json
 # Only AGENTS.md is managed by dotfiles; everything else is machine-local state.
 claude/.codex/*
 !claude/.codex/AGENTS.md
+
+# MCP server dependencies — installed by install-claude.sh, not committed.
+claude/.claude/mcp/*/node_modules/
+
+# Never commit plaintext secrets (defensive — a real token + VAPID key were
+# found untracked here 2026-07-20; rotate them and keep secrets out of git).
+copad/.config/copad/web-bridge-secrets.env
+*secrets*.env
+*.secret
+*.secret.env
