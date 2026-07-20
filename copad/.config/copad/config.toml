@@ -194,3 +194,30 @@ condition = 'context.presence == "away"'
 event_kind = "claude.review_approved"
 [triggers.security]
 accept_external = true
+
+# ----------------------------------------------------------------------
+# Agent-status → desktop toast (agent-cockpit Slice 1). Wired to the
+# claude-agent-status.sh publisher in ~/.claude/settings.json
+# (UserPromptSubmit=working, Stop=stopped, Notification=notification).
+# Mirror of examples/triggers/claude-agent-status.toml. accept_external
+# = true is REQUIRED — these fire on socket-published External events.
+# The cockpit GUI panel reads claude.* directly; these add the toasts.
+# ----------------------------------------------------------------------
+
+[[triggers]]
+name = "claude-agent-stopped-toast"
+action = "notify.show"
+params = { title = "에이전트 완료", body = "{event.cwd}", level = "info" }
+[triggers.when]
+event_kind = "claude.session_stopped"
+[triggers.security]
+accept_external = true
+
+[[triggers]]
+name = "claude-agent-awaiting-toast"
+action = "notify.show"
+params = { title = "승인/입력 대기", body = "{event.message}", level = "warn" }
+[triggers.when]
+event_kind = "claude.awaiting_input"
+[triggers.security]
+accept_external = true
