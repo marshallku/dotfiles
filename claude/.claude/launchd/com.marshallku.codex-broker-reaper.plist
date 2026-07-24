@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Periodically reap idle codex app-server-broker orphans (see reap-codex-brokers.sh).
+  __HOME__ is substituted with the real $HOME by install-claude.sh at install time.
+  macOS only. Cross-platform coverage comes from session-start.sh, which fires the
+  same reaper on every Claude session start.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.marshallku.codex-broker-reaper</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>__HOME__/.claude/scripts/reap-codex-brokers.sh</string>
+    </array>
+
+    <key>StartInterval</key>
+    <integer>900</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>StandardOutPath</key>
+    <string>__HOME__/.claude/state/codex-broker-reaper.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/.claude/state/codex-broker-reaper.log</string>
+</dict>
+</plist>

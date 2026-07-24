@@ -62,4 +62,26 @@ if [ -f "$INFRA_MCP/package.json" ]; then
     fi
 fi
 
+# codex-broker-reaper: periodically reap idle codex app-server-broker orphans.
+# These broker+app-server pairs (~85-290MB each) are spawned detached, survive
+# the Claude session that created them, and have no idle timeout upstream — so
+# they accumulate until reboot. macOS launchd only; on Linux the reaper still
+# runs via the session-start.sh hook (just not on a fixed timer).
+if [ "$(uname -s)" = "Darwin" ]; then
+    REAPER_PLIST_SRC="$HOME/dotfiles/claude/.claude/launchd/com.marshallku.codex-broker-reaper.plist"
+    REAPER_PLIST_DST="$HOME/Library/LaunchAgents/com.marshallku.codex-broker-reaper.plist"
+    if [ -f "$REAPER_PLIST_SRC" ]; then
+        mkdir -p "$HOME/Library/LaunchAgents"
+        # Materialize $HOME into the plist (launchd does not expand ~ or env vars here).
+        sed "s|__HOME__|$HOME|g" "$REAPER_PLIST_SRC" > "$REAPER_PLIST_DST"
+        # Reload idempotently (bootout is harmless if not currently loaded).
+        launchctl bootout "gui/$(id -u)/com.marshallku.codex-broker-reaper" 2>/dev/null || true
+        if launchctl bootstrap "gui/$(id -u)" "$REAPER_PLIST_DST" 2>/dev/null; then
+            echo "✓ codex-broker-reaper launchd agent installed (every 15m)"
+        else
+            echo "! codex-broker-reaper launchd bootstrap failed — reaper still runs via session-start hook"
+        fi
+    fi
+fi
+
 echo "Done."

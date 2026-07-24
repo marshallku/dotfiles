@@ -12,6 +12,14 @@ if [ -d "$STATE_DIR" ]; then
     find "$STATE_DIR" -maxdepth 1 -type f \( -name "dirty-*.log" -o -name "stop-blocked-*" \) -mtime +1 -delete 2>/dev/null || true
 fi
 
+# 부수 작업: idle codex broker 고아 청소 (session이 죽어도 broker+app-server가
+# 워크스페이스당 ~140MB씩 재부팅 전까지 살아남아 누적됨). 완전 격리 + 백그라운드로
+# 실행해 SessionStart JSON 출력이나 시작 지연에 영향을 주지 않게 한다.
+REAPER="$HOME/.claude/scripts/reap-codex-brokers.sh"
+if [ -x "$REAPER" ]; then
+    ( "$REAPER" >/dev/null 2>&1 & ) || true
+fi
+
 HANDOFF_FILE="$HOME/.claude/handoffs/latest.md"
 
 # handoff 파일이 없으면 스킵
