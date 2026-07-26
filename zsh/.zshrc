@@ -456,8 +456,8 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
 
-# pnpm
-export PNPM_HOME="/home/marshall/.local/share/pnpm"
+# pnpm (PNPM_HOME is set per-OS in ~/.zshenv; fallback here if unset)
+: "${PNPM_HOME:=$HOME/.local/share/pnpm}"
 case ":$PATH:" in
   *":$PNPM_HOME/bin:"*) ;;
   *) export PATH="$PNPM_HOME/bin:$PATH" ;;
