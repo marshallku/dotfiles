@@ -48,6 +48,44 @@ portable_fmtdate() {
     date -d "@$epoch" +"$fmt" 2>/dev/null || date -r "$epoch" +"$fmt" 2>/dev/null || echo ""
 }
 
+# Predicate: is a reviewed-<repo_hash> marker currently trustworthy?
+# Returns 0 (valid) / 1 (invalid). Pure read — writes nothing.
+#
+# A marker is trustworthy only when ALL hold:
+#   - it exists
+#   - its mtime is within AUTO_REVIEW_MARKER_TTL_SECS (default 86400 = 24h) and
+#     not future-dated (a future mtime means clock skew or tampering → reject)
+#   - its ownership line matches the committing session, OR it is a bypass marker
+#
+# Marker body (first line):
+#   "session=<id>"  → codex-review.sh wrote it; honored only for that session
+#                     (closes cross-session reuse: session B cannot ride session
+#                      A's approval for the same repo).
+#   ""  (empty)     → manual `touch` bypass or a non-session-scoped review
+#                     (--uncommitted/--branch); honored for any session but only
+#                     within the TTL, so stale/legacy orphan markers self-expire.
+#   anything else   → unknown/legacy format; treated like empty (TTL-bounded).
+#
+# Args: marker_path, session_id
+reviewed_marker_valid() {
+    local marker="$1" session="${2:-}"
+    [ -f "$marker" ] || return 1
+    local ttl="${AUTO_REVIEW_MARKER_TTL_SECS:-86400}"
+    case "$ttl" in ''|*[!0-9]*) ttl=86400 ;; esac  # reject malformed → default (set -e safe)
+    local now mt age
+    now=$(date +%s)
+    mt=$(portable_mtime "$marker")
+    age=$(( now - mt ))
+    [ "$age" -gt "$ttl" ] && return 1   # expired
+    [ "$age" -lt 0 ] && return 1        # future-dated → reject
+    local first
+    first=$(head -n1 "$marker" 2>/dev/null || true)
+    case "$first" in
+        session=*) [ "${first#session=}" = "$session" ] && return 0 || return 1 ;;
+        *)         return 0 ;;  # empty or legacy → bypass, TTL-bounded
+    esac
+}
+
 # Predicate: would auto-cross-review.sh block this Stop event right now?
 # Returns 0 if it would block, 1 otherwise. Pure read-only — writes nothing.
 # Mirrors auto-cross-review.sh's gating; keep in sync.
@@ -91,7 +129,7 @@ auto_review_would_block() {
         if repo=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null); then
             local rh
             rh=$(repo_hash "$repo")
-            [[ -f "$state/reviewed-$rh" ]] && return 1
+            reviewed_marker_valid "$state/reviewed-$rh" "$session" && return 1
             local tracked untracked weighted
             tracked=$(git -C "$repo" diff HEAD 2>/dev/null | wc -l | tr -d ' ')
             untracked=$(git -C "$repo" ls-files --others --exclude-standard 2>/dev/null | wc -l | tr -d ' ')

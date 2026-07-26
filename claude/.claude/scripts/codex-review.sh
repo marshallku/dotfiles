@@ -173,7 +173,20 @@ mark_repo_reviewed() {
     repo_hash_v=$(repo_hash "$repo_root")
     local state_dir="$HOME/.claude/state"
     mkdir -p "$state_dir"
-    touch "$state_dir/reviewed-$repo_hash_v"
+    # Bind the marker to the reviewing session so a later session cannot ride
+    # this approval for the same repo (reviewed_marker_valid in _lib.sh enforces
+    # the match + a TTL). When SESSION_ID is empty (manual --uncommitted/--branch
+    # review) the marker is left empty: repo-scoped but still TTL-bounded.
+    #
+    # Publish atomically (same-dir temp + mv). A direct `> marker` write that is
+    # interrupted mid-write would leave a 0-byte marker, which validator treats
+    # as an any-session bypass — exactly the cross-session hole this closes.
+    local tmp
+    tmp=$(mktemp "$state_dir/.reviewed-${repo_hash_v}.XXXXXX") || return 0
+    if [ -n "${SESSION_ID:-}" ]; then
+        printf 'session=%s\n' "$SESSION_ID" > "$tmp"
+    fi
+    mv -f "$tmp" "$state_dir/reviewed-$repo_hash_v"
     rm -f "$state_dir/codex-delegate-pending-$repo_hash_v"
 }
 

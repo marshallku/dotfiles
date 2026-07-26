@@ -67,7 +67,7 @@ fi
 if [ -n "$CWD" ] && REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null); then
     # If this repo already has a fresh reviewed marker, skip (pre-commit-gate handled it)
     REPO_HASH=$(repo_hash "$REPO_ROOT")
-    if [ -f "$STATE_DIR/reviewed-$REPO_HASH" ]; then
+    if reviewed_marker_valid "$STATE_DIR/reviewed-$REPO_HASH" "$SESSION"; then
         log "skip: repo already reviewed this session ($REPO_ROOT)"
         echo '{}'
         exit 0

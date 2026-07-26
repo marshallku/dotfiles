@@ -189,8 +189,9 @@ if [ "$FILE_COUNT" -lt "$MIN_FILES" ] && [ ! -f "$DELEGATE_PENDING" ]; then
     exit 0
 fi
 
-# Fresh review marker → check intent gate before allowing
-if [ -f "$MARKER" ]; then
+# Fresh, session-owned, non-expired review marker → check intent gate before
+# allowing. reviewed_marker_valid rejects expired/legacy/cross-session markers.
+if reviewed_marker_valid "$MARKER" "$SESSION"; then
     # Intent gate is a no-op in soft-gate or globally-disabled mode. The
     # review marker alone is the gate, same as before this hook was extended.
     if [ "$INTENT_SOFT_GATE" = "1" ] || [ -f "$INTENT_DISABLED" ]; then

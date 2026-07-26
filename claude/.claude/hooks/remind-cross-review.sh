@@ -49,7 +49,7 @@ fi
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
 if [ -n "$CWD" ] && REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null); then
     REPO_HASH=$(repo_hash "$REPO_ROOT")
-    if [ -f "$STATE_DIR/reviewed-$REPO_HASH" ]; then
+    if reviewed_marker_valid "$STATE_DIR/reviewed-$REPO_HASH" "$SESSION"; then
         log "skip: repo already reviewed ($REPO_ROOT)"
         echo '{}'
         exit 0

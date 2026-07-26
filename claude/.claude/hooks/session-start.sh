@@ -6,10 +6,50 @@ set -euo pipefail
 
 . "$(dirname "$0")/_lib.sh"
 
-# 부수 작업: auto-cross-review state 파일 중 1일 이상 된 것 청소
+INPUT=$(cat 2>/dev/null || echo '{}')
+SOURCE=$(echo "$INPUT" | jq -r '.source // empty' 2>/dev/null || echo "")
+SESSION=$(echo "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || echo "")
+
+# 부수 작업: 1일 이상 된 ephemeral 세션 마커 청소.
+# reviewed-* 는 reviewed_marker_valid 의 TTL(기본 24h)로 이미 무효화되므로
+# 여기서 지워도 의미 변화 없음(디스크 정리). intent-active-* 와
+# codex-delegate-pending-* 는 하루 넘게 지속되는 세션의 live enforcement 상태일
+# 수 있어 나이 기준 삭제 대상에서 제외한다.
 STATE_DIR="$HOME/.claude/state"
 if [ -d "$STATE_DIR" ]; then
-    find "$STATE_DIR" -maxdepth 1 -type f \( -name "dirty-*.log" -o -name "stop-blocked-*" \) -mtime +1 -delete 2>/dev/null || true
+    find "$STATE_DIR" -maxdepth 1 -type f \( \
+        -name "dirty-*.log" -o -name "stop-blocked-*" -o -name "verify-blocked-*" \
+        -o -name "ssot-checked-*" -o -name "reviewed-*" -o -name "compact-reinject-*" \
+        \) -mtime +1 -delete 2>/dev/null || true
+fi
+
+# 부수 작업: hooks-debug.log 로테이션 (모든 훅이 append 하는 단일 로그라 무한 증가).
+# 5MB 초과 시 .1 로 한 세대만 회전. best-effort — 실패해도 세션 시작을 막지 않는다.
+LOG_FILE="$HOME/.claude/hooks-debug.log"
+if [ -f "$LOG_FILE" ]; then
+    LOG_SIZE=$(stat -c%s "$LOG_FILE" 2>/dev/null || stat -f%z "$LOG_FILE" 2>/dev/null || echo 0)
+    if [ "${LOG_SIZE:-0}" -gt 5242880 ]; then
+        mv -f "$LOG_FILE" "$LOG_FILE.1" 2>/dev/null || true
+    fi
+fi
+
+# compaction 직후(SessionStart source=compact) pre-compact.sh 가 남긴 재주입
+# 스냅샷이 있으면 그걸 우선 주입한다. 삭제하지 않고 GC에 맡겨 crash-safe 유지.
+REINJECT="$STATE_DIR/compact-reinject-${SESSION}.md"
+if [ "$SOURCE" = "compact" ] && [ -n "$SESSION" ] && [ -f "$REINJECT" ]; then
+    RE_MTIME=$(portable_mtime "$REINJECT")
+    RE_AGE=$(( $(date +%s) - RE_MTIME ))
+    if [ "$RE_AGE" -ge 0 ] && [ "$RE_AGE" -le 86400 ]; then
+        RCONTENT=$(cat "$REINJECT")
+        echo "[compact] Re-injected preserved context after compaction" >&2
+        jq -nc --arg content "$RCONTENT" '{
+          "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": $content
+          }
+        }'
+        exit 0
+    fi
 fi
 
 # 부수 작업: idle codex broker 고아 청소 (session이 죽어도 broker+app-server가
