@@ -1,0 +1,12 @@
+# Workspace registry consumed by copad-plugin-git's `git.worktree_add`
+# / `git.list_workspaces` / `git.status` actions. The Todo plugin's
+# `workspace` field on a Todo is matched against `name` here, so the
+# vision-flow-3 chain can resolve "Todo workspace=copad" → "git
+# repo at /home/marshall/dev/copad" → "create worktree under
+# /home/marshall/dev/copad-worktrees".
+
+[[workspace]]
+name = "copad"
+path = "/home/marshall/dev/copad"
+default_base = "master"
+worktree_root = "/home/marshall/dev/copad-worktrees"

@@ -1,13 +1,48 @@
+# ----------------------------------------------------------------------
+# Projects — workflow.run resolves workspace_path from these. Without an
+# entry (and without a focused terminal emitting cwd), workflow.run fails
+# with `no_workspace`. Register the repos you launch workflows against.
+# ----------------------------------------------------------------------
+[[projects]]
+name = "copad"
+path = "/home/marshall/dev/copad"
+description = "Cross-platform custom terminal emulator"
+aliases = ["term", "terminal"]
+git_remote = "marshallku/copad"
+
+[[projects]]
+name = "codex-plugin-cc"
+path = "/home/marshall/dev/codex-plugin-cc"
+description = "Codex companion app-server runtime"
+aliases = ["codex", "companion"]
+git_remote = "openai/codex-plugin-cc"
+
 [terminal]
 shell = "/bin/zsh"
-font_family = "Jetendard"
+font_family = "JetBrainsMono Nerd Font Mono"
 font_size = 11
 
 [background]
-tint = 0.1
-opacity = 0.2
+#image = "/mnt/disk2/Wallpapers/02.jpg"
+tint = 0
+opacity = 0.21
 tint_color = "#000000"
-rotate_interval = 300
+rotate_interval = 300  # native rotation (replaces copad-random-bg.sh daemon)
+
+# Ghostty-model window transparency. Only the background fades; text stays
+# opaque (unlike the old Hyprland `windowrule opacity`, which dimmed glyphs
+# too — that rule is removed for copad in hyprland.conf:368). Blur behind the
+# window comes free from Hyprland's decoration:blur.
+#
+# `background` = solid base color blended with the desktop at `opacity`.
+# opacity is the fraction of `background` that stays maintained over the
+# desktop, so #000 at 0.85 keeps a dark base under the text on any wallpaper.
+# Lower opacity for more see-through; raise it (or keep background dark) for
+# readability. Defaults to the theme background when unset.
+[window]
+opacity = 0.82
+background = "#000000"
+blur = false
 
 [socket]
 # path = "/tmp/custerm.sock"
@@ -18,14 +53,28 @@ name = "catppuccin-mocha"
 
 [tabs]
 position = 'left'
+#position = 'top'
 width = 200
+
+# Bottom status bar re-enabled for the pomodoro countdown. It was off
+# because pilot/todo/presence are sparse and event-shaped — they leave the
+# bar empty most of the day, and ambient stats already live in waybar /
+# tmux / the zsh prompt. The pomodoro timer is the opposite: a value that
+# changes every second and is useless as a notification, so it needs a
+# persistent surface. The sparse modules stay blank when idle (the bar does
+# not collapse them), so they cost a slot, not noise.
+[statusbar]
+enabled = true
 
 # ~/.local/bin spelled out — a desktop-entry-launched copad's PATH may
 # not include it (same gotcha as plugin exec resolution).
 [keybindings]
-"ctrl+shift+0" = "spawn:~/.local/bin/coctl background toggle"
+"ctrl+shift+y" = "spawn:~/.local/bin/coctl background toggle"
 "ctrl+shift+bracketright" = "spawn:~/.local/bin/coctl background next"
 "ctrl+shift+d" = "spawn:~/.local/bin/coctl background delete-current"
+# Pomodoro start/pause/resume in one chord. `m` because the built-ins take
+# p (command palette) and y (agent cockpit — itself already shadowed above).
+"ctrl+shift+m" = "spawn:~/.local/bin/coctl pomodoro toggle"
 
 # ----------------------------------------------------------------------
 # Vision Flow 3 — click "Start" on a Todo → fresh worktree → claude
@@ -60,6 +109,17 @@ action = "claude.start"
 params = { workspace_path = "{event.path}", prompt = "{event.prompt}" }
 [triggers.when]
 event_kind = "git.worktree_add.completed"
+
+# Starting a Todo also starts the focus timer, labelled with the todo
+# title. The pomodoro plugin has no knowledge of todo — this trigger IS
+# the coupling, so deleting this block fully decouples them again.
+# Mirror of plugins/pomodoro/triggers.example.toml.
+[[triggers]]
+name = "pomodoro-on-todo-start"
+action = "pomodoro.start"
+params = { label = "{event.title}" }
+[triggers.when]
+event_kind = "todo.start_requested"
 
 # ====================================================================
 # 📝 reaction → Todo capture (Discord + Slack)
@@ -192,32 +252,5 @@ params = { channel_id = "1507255807132176394", content = ":white_check_mark: cod
 condition = 'context.presence == "away"'
 [triggers.when]
 event_kind = "claude.review_approved"
-[triggers.security]
-accept_external = true
-
-# ----------------------------------------------------------------------
-# Agent-status → desktop toast (agent-cockpit Slice 1). Wired to the
-# claude-agent-status.sh publisher in ~/.claude/settings.json
-# (UserPromptSubmit=working, Stop=stopped, Notification=notification).
-# Mirror of examples/triggers/claude-agent-status.toml. accept_external
-# = true is REQUIRED — these fire on socket-published External events.
-# The cockpit GUI panel reads claude.* directly; these add the toasts.
-# ----------------------------------------------------------------------
-
-[[triggers]]
-name = "claude-agent-stopped-toast"
-action = "notify.show"
-params = { title = "에이전트 완료", body = "{event.cwd}", level = "info" }
-[triggers.when]
-event_kind = "claude.session_stopped"
-[triggers.security]
-accept_external = true
-
-[[triggers]]
-name = "claude-agent-awaiting-toast"
-action = "notify.show"
-params = { title = "승인/입력 대기", body = "{event.message}", level = "warn" }
-[triggers.when]
-event_kind = "claude.awaiting_input"
 [triggers.security]
 accept_external = true
