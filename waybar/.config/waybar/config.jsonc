@@ -15,6 +15,7 @@
   "modules-center": ["custom/uptime", "clock"],
   "modules-right": [
     "custom/obs",
+    "custom/tailscale",
     "custom/adguardvpn",
     "pulseaudio",
     "custom/cpu",
@@ -116,6 +117,16 @@
     "on-click": "~/.config/waybar/scripts/adguardvpn_toggle.sh",
     "on-click-right": "notify-send 'AdGuard VPN' 'Refreshing status…'; ~/.config/waybar/scripts/adguardvpn_status.sh --once && pkill -SIGRTMIN+10 waybar",
     "signal": 10,
+    "tooltip": true,
+  },
+  "custom/tailscale": {
+    "exec": "~/.config/waybar/scripts/tailscale_status.sh",
+    "return-type": "json",
+    "interval": 10,
+    "format": "{}",
+    "on-click": "~/.config/waybar/scripts/tailscale_toggle.sh",
+    "on-click-right": "kitty --hold -e tailscale status",
+    "signal": 11,
     "tooltip": true,
   },
   "custom/grafana": {

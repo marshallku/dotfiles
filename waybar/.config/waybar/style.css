@@ -60,6 +60,7 @@ window#waybar {
 #custom-ytmusic,
 #pulseaudio,
 #custom-adguardvpn,
+#custom-tailscale,
 #battery,
 #network {
     margin: 8px 0;
@@ -198,6 +199,28 @@ window#waybar {
 }
 
 #custom-adguardvpn:hover {
+    background: rgba(16, 16, 32, 0.7);
+    border-color: rgba(180, 160, 255, 0.15);
+    opacity: 1;
+}
+
+/* ============================================
+   TAILSCALE STATES
+   ============================================ */
+#custom-tailscale.connected {
+    color: #8bd5ca;
+}
+
+#custom-tailscale.exit-node {
+    color: #f5a97f;
+}
+
+#custom-tailscale.disconnected {
+    color: #b8b5d0;
+    opacity: 0.7;
+}
+
+#custom-tailscale:hover {
     background: rgba(16, 16, 32, 0.7);
     border-color: rgba(180, 160, 255, 0.15);
     opacity: 1;
