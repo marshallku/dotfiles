@@ -96,12 +96,11 @@ bash ~/.claude/scripts/codex-plan.sh --continue "What about the case where the q
 
 `--continue`는 같은 codex 세션을 이어가므로 **이전 라운드의 맥락을 전부 기억**한다. 매번 plan brief를 다시 보낼 필요 없음.
 
-⚠️ **`--continue`의 한계**: 우리 4개 wrapper (`/ask-codex`, `/codex-plan`, `/cross-review`, `/codex-delegate`)는 모두 내부적으로 `codex-companion task` 서브커맨드로 라우팅된다 → 모두 동일한 `jobClass: "task"`로 기록됨. companion CLI는 thread id별 resume을 노출하지 않고 `--resume-last`는 이 task class 중 가장 최근 것을 그냥 잡는다. 따라서 plan 라운드 사이에 다른 wrapper를 호출하면 `--continue`가 그 thread를 잡아버린다. 두 가지 회피책:
+plan thread는 repo별 key(`plan-<repo_hash>`)로 thread id가 저장되고 그 id로 resume하므로, **라운드 사이에 `/ask-codex`나 `/cross-review`를 끼워도 안전**하다 (예전 `--resume-last`가 가장 최근 thread를 잡아채던 문제는 없어졌다).
 
-1. **격리 (권장)**: plan 라운드 사이에 다른 codex wrapper를 호출하지 마라. 한 plan 세션을 끝낸 후 다른 codex 작업으로 넘어간다.
-2. **--reset + 본인이 paraphrase**: round 2 prompt에 round 1의 핵심 critique를 1-2줄로 요약해서 포함시키고 `--reset`. 토큰은 더 쓰지만 wrong-thread 위험 0.
+남은 제약은 **repo당 활성 plan 1개**다. 같은 repo에서 plan을 두 개 동시에 돌리면 나중 것이 key를 덮어쓴다. 병렬로 돌려야 하면 `CODEX_PLAN_THREAD_KEY=plan-featA` 처럼 key를 분리할 것.
 
-대부분의 plan은 1라운드면 충분하니 이 한계가 자주 문제되진 않음.
+저장된 thread가 사라진 경우(round 1을 안 돌렸거나 codex가 rollout을 GC) `--continue`는 실패하지 않고 경고와 함께 fresh 라운드로 자동 강등된다.
 
 ### 정리
 

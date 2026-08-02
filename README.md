@@ -32,5 +32,5 @@ sudo pacman -S qt5-quickcontrols2 qt5-graphicaleffects
 
 ```bash
 stow claude
-bash install-claude.sh   # bootstrap codex-plugin-cc runtime
+bash install-claude.sh   # check prerequisites (codex, jq, node) + register MCP
 ```

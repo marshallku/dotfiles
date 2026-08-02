@@ -10,13 +10,6 @@ description = "Cross-platform custom terminal emulator"
 aliases = ["term", "terminal"]
 git_remote = "marshallku/copad"
 
-[[projects]]
-name = "codex-plugin-cc"
-path = "/home/marshall/dev/codex-plugin-cc"
-description = "Codex companion app-server runtime"
-aliases = ["codex", "companion"]
-git_remote = "openai/codex-plugin-cc"
-
 [terminal]
 shell = "/bin/zsh"
 font_family = "JetBrainsMono Nerd Font Mono"

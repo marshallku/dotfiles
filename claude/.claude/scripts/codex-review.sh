@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # codex-review.sh — Cross-check review with a strict VERDICT output contract.
-# Routes through the codex-companion app-server runtime so progress phases
-# stream to the user (instead of silent capture). Read-only sandbox.
+# Routes through codex-exec.sh so progress streams to the user (instead of
+# silent capture). Read-only sandbox.
 #
 # Usage:
 #   codex-review.sh                              # HEAD vs main (or origin/main)
@@ -34,7 +34,7 @@
 # The skill / Stop hook flow will instruct Claude to write a short brief.
 #
 # Environment overrides:
-#   CODEX_REVIEW_MODEL   — override model passed to the companion (--model)
+#   CODEX_REVIEW_MODEL   — override model passed to codex (-m)
 #   CODEX_REVIEW_TIMEOUT — seconds before the review is aborted (default 1200)
 #
 # Exit codes:
@@ -148,9 +148,9 @@ if [[ -n "$INTENT_FILE" ]]; then
     INTENT_AVAILABLE=1
 fi
 
-COMPANION="$(dirname "$0")/codex-companion.sh"
-if [[ ! -x "$COMPANION" ]]; then
-    echo "[codex-review] companion wrapper missing: $COMPANION" >&2
+RUNNER="$(dirname "$0")/codex-exec.sh"
+if [[ ! -x "$RUNNER" ]]; then
+    echo "[codex-review] runner missing: $RUNNER" >&2
     exit 2
 fi
 
@@ -462,8 +462,8 @@ fi
 # ~/.codex/AGENTS.md "Code Review Principles" / "Review Output Contract".
 # Auto-loaded — don't restate. We only supply scope + context + diff.
 #
-# RESUME rounds (VERDICT-loop round 2+) reuse the prior review thread via the
-# companion's --resume-last. Codex already holds round 1's diff, its analysis,
+# RESUME rounds (VERDICT-loop round 2+) reuse the prior review thread by its
+# stored thread id. Codex already holds round 1's diff, its analysis,
 # and the task context/intent, so we DON'T resend CONTEXT_SECTION / INTENT_CHECK
 # (would just re-bill tokens codex already has). We send a short continuation
 # framing + the freshly-recomputed diff so codex reasons only about the fixes
@@ -504,81 +504,58 @@ else
     PROMPT=$(build_fresh_prompt)
 fi
 
-# Run review through the companion (app-server runtime) with a timeout.
-# Progress phases stream to stderr in real time; final assistant message
-# (containing the VERDICT line) is captured from stdout for parsing.
-# Use --prompt-file rather than passing the prompt as argv: a large diff
-# pushes the argv past the size that node's spawnSync can hand to its
-# `codex --version` / `codex app-server --help` probes, and the probe
-# failures surface as a confusing "Codex CLI is not installed" error.
+# Run the review through the runner with a timeout. Progress streams to the
+# terminal on stderr in real time; the runner's stdout is the final assistant
+# message only (containing the VERDICT line), captured for parsing.
+# The prompt always goes through a file: a large diff on argv would blow the
+# exec argument limit, and the runner feeds the file to codex via stdin.
 PROMPT_FILE=$(mktemp /tmp/codex-review-prompt.XXXXXX)
-STDERR_FILE=$(mktemp /tmp/codex-review-stderr.XXXXXX)
 STDOUT_FILE=$(mktemp /tmp/codex-review-stdout.XXXXXX)
-trap 'rm -f "$PROMPT_FILE" "$STDERR_FILE" "$STDOUT_FILE"' EXIT
+trap 'rm -f "$PROMPT_FILE" "$STDOUT_FILE"' EXIT
 printf '%s' "$PROMPT" > "$PROMPT_FILE"
 
-# Run the companion once. Captures stdout into OUTPUT (for VERDICT parsing) and
-# mirrors stderr to both the terminal (live progress phases) and STDERR_FILE
-# (so we can detect the "no resumable thread" error, which the companion writes
-# to stderr — not stdout). $1 selects resume vs fresh.
-#
-# IMPORTANT — redirect stdout/stderr to FILES, never `2> >(tee ...)`.
-# The companion spawns a persistent app-server broker daemon that inherits the
-# command's fds. With a process-substitution pipe, that daemon keeps the pipe's
-# write end open after the foreground client exits, so `tee` never sees EOF and
-# the enclosing `$(...)` hangs forever — defeating the timeout (observed: reviews
-# stuck for 15+ hours). A plain file redirect cannot block: the daemon may keep
-# the file fd open, but nothing waits on it, and `portable_timeout` (no longer
-# wrapped in command substitution) can actually deliver SIGTERM at the cap.
-# Live progress is preserved by tailing the stderr file to the terminal.
+# Review threads are keyed per repo (plus session when we have one), so a
+# /codex-plan or /ask-codex between VERDICT rounds cannot hijack the resume,
+# and two sessions reviewing the same repo keep separate threads.
+REVIEW_REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")
+THREAD_KEY="review-$(repo_hash "$REVIEW_REPO_ROOT")"
+[[ -n "$SESSION_ID" ]] && THREAD_KEY="${THREAD_KEY}-${SESSION_ID}"
+
 run_review() {
     local mode="$1"
-    local -a rargs=()
-    [[ "$mode" == "resume" ]] && rargs=(--resume-last)
-    : > "$STDERR_FILE"
+    local -a rargs=(--thread-key "$THREAD_KEY")
+    [[ "$mode" == "resume" ]] && rargs+=(--resume)
     : > "$STDOUT_FILE"
-    tail -n +1 -f "$STDERR_FILE" >&2 &
-    local tail_pid=$!
     set +e
-    portable_timeout "$TIMEOUT" "$COMPANION" task --prompt-file "$PROMPT_FILE" \
+    "$RUNNER" --prompt-file "$PROMPT_FILE" --timeout "$TIMEOUT" \
         ${rargs[@]+"${rargs[@]}"} ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} </dev/null \
-        >"$STDOUT_FILE" 2>"$STDERR_FILE"
+        >"$STDOUT_FILE"
     STATUS=$?
-    # Stop the live tailer (kill/wait kept inside set +e: wait returns the
-    # tail's signal status, which would trip set -e).
-    kill "$tail_pid" 2>/dev/null
-    wait "$tail_pid" 2>/dev/null
     set -e
     OUTPUT=$(cat "$STDOUT_FILE")
 }
 
-# Round 2+ resumes the previous review thread; round 1 starts fresh. The
-# companion's --resume-last picks the newest task thread for this workspace
-# (it cannot target a specific thread id), so any interleaved codex call
-# between rounds would hijack the resume. Inside a VERDICT loop Claude only
-# edits files between rounds, so the newest thread is the prior review.
+# Round 2+ resumes the previous review thread by id; round 1 starts fresh.
 if [[ "$RESUME" == "1" ]]; then
     run_review resume
 else
     run_review fresh
 fi
 
-# Graceful fallback: --resume with no prior thread (e.g. --resume passed on
-# round 1, or the thread was GC'd) makes the companion exit non-zero with
-# "No previous Codex task thread" on stderr. Don't hard-fail the review —
-# rebuild the full fresh prompt (with the context/intent the resume prompt
-# omitted) and retry fresh so the commit gate is not blocked by a missing
-# thread. Any other failure falls through to the error handling below.
-if [[ "$RESUME" == "1" && $STATUS -ne 0 ]] && grep -q "No previous Codex task thread" "$STDERR_FILE"; then
+# Graceful fallback: --resume with no usable thread (round 1 never ran, or the
+# rollout was GC'd) exits 3. Don't hard-fail the review — rebuild the full
+# fresh prompt (with the context/intent the resume prompt omitted) and retry
+# fresh so the commit gate is not blocked by a missing thread.
+if [[ "$RESUME" == "1" && $STATUS -eq 3 ]]; then
     echo "[codex-review] no resumable thread found; falling back to a fresh review" >&2
     PROMPT=$(build_fresh_prompt)
     printf '%s' "$PROMPT" > "$PROMPT_FILE"
     run_review fresh
 fi
 
-# Computed before any exit branch so every terminal path can ping (a
+# Resolved above (THREAD_KEY) — reused so every terminal path can ping (a
 # backgrounded review that times out must still notify, not finish silently).
-REVIEW_CWD=$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")
+REVIEW_CWD="$REVIEW_REPO_ROOT"
 
 if [[ $STATUS -eq 124 ]]; then
     echo "[codex-review] timed out after ${TIMEOUT}s" >&2
@@ -593,7 +570,7 @@ if [[ $STATUS -eq 127 ]]; then
 fi
 
 if [[ $STATUS -ne 0 ]]; then
-    echo "[codex-review] companion task failed with status $STATUS" >&2
+    echo "[codex-review] codex run failed with status $STATUS" >&2
     echo "$OUTPUT" >&2
     notify_codex_done "codex review FAILED (status $STATUS)" "$REVIEW_CWD"
     exit 2
@@ -604,9 +581,11 @@ echo "$OUTPUT"
 # Parse the final verdict — check the last 20 lines so conversational preamble does not confuse us
 VERDICT_LINE=$(echo "$OUTPUT" | tail -n 20 | grep -E "^VERDICT: (APPROVED|REVISE)" | tail -n 1 || true)
 
-# Ping the user that the (possibly backgrounded) review finished. The app-server
-# path does not honor ~/.codex/config.toml notify, so the wrapper must do it.
-notify_codex_done "${VERDICT_LINE:-codex review done (no verdict)}" "$REVIEW_CWD"
+# No manual ping here: a completed codex turn fires the `notify` program from
+# ~/.codex/config.toml with the final message (which carries the VERDICT line).
+# The app-server path swallowed that event; `codex exec` does not. The explicit
+# notify_codex_done calls that remain cover only the paths where no codex turn
+# completes — empty diff, timeout, spawn failure.
 
 case "$VERDICT_LINE" in
     "VERDICT: APPROVED")

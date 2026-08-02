@@ -113,7 +113,7 @@ AUTO-FIX 적용 후 **Round 1과 동일한 명령에 `--resume`만 추가해서*
 bash ~/.claude/scripts/codex-review.sh --session "$SESSION_ID" --intent-file "$INTENT_FILE" --resume
 ```
 
-주의: companion의 `--resume-last`는 워크스페이스의 **가장 최근 task thread**를 재사용하므로, 라운드 사이에 다른 codex 호출(`/ask-codex`, `/codex-plan` 등)을 끼우면 엉뚱한 thread를 잡는다. VERDICT 루프 중에는 codex를 추가로 부르지 말 것.
+review thread는 `review-<repo_hash>[-<session>]` key로 thread id가 저장되고 그 id로 resume하므로, 라운드 사이에 `/ask-codex`·`/codex-plan`을 끼워도 엉뚱한 thread를 잡지 않는다. 저장된 thread가 없거나 GC됐으면 fresh 리뷰로 자동 강등된다(게이트가 막히지 않음).
 
 **같은 CRITICAL 항목이 2 라운드 연속 재등장**하면:
 - Claude가 못 고치는 건이거나

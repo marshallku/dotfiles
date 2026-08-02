@@ -155,14 +155,17 @@ auto_review_would_block() {
 _NOTIFY_CODEX_SH="$HOME/.claude/hooks/notify-codex.sh"
 
 # notify_codex_done <summary> [cwd]
-# Fire a user-facing completion notification for a codex turn.
+# Fire a user-facing completion notification for a codex run that produced no
+# turn of its own.
 #
-# Why this exists: the codex skills route through codex-companion.sh →
-# codex-plugin-cc *app-server*, which consumes turn-complete as an internal
-# JSON-RPC event and never invokes the `notify` program in ~/.codex/config.toml.
-# So notify-codex.sh never fires for skill-driven calls. Wrappers call this to
-# ping explicitly. Reuses notify-codex.sh formatting via a synthesized
-# agent-turn-complete payload, so the notify-codex-disabled marker still works.
+# Scope: a completed `codex exec` turn already invokes the `notify` program in
+# ~/.codex/config.toml, so wrappers must NOT call this on the success path —
+# that would double-ping. It exists for the outcomes codex never reports:
+# pre-flight exits (nothing to review), timeouts, and spawn failures. (The old
+# app-server runtime swallowed turn-complete entirely, which is why every
+# wrapper used to call this unconditionally.)
+# Reuses notify-codex.sh formatting via a synthesized agent-turn-complete
+# payload, so the notify-codex-disabled marker still works.
 #
 # Best-effort and non-blocking: never fails the caller, backgrounds the notify.
 notify_codex_done() {
@@ -171,7 +174,7 @@ notify_codex_done() {
     [[ -f "$_NOTIFY_CODEX_SH" ]] || return 0
     command -v jq >/dev/null 2>&1 || return 0
     local payload
-    payload=$(jq -n --arg cwd "$cwd" --arg tid "codex-companion" --arg msg "$summary" \
+    payload=$(jq -n --arg cwd "$cwd" --arg tid "codex-wrapper" --arg msg "$summary" \
         '{type:"agent-turn-complete", cwd:$cwd, "turn-id":$tid, "last-assistant-message":$msg}' 2>/dev/null) || return 0
     bash "$_NOTIFY_CODEX_SH" "$payload" >/dev/null 2>&1 &
     return 0

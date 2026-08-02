@@ -12,29 +12,27 @@
 # Default behavior is fresh (--reset). Pass --continue explicitly to
 # resume the previous round.
 #
-# Caveat: --continue resumes the latest *companion task thread* in this
-# workspace. All four wrappers in this directory (codex-ask.sh,
-# codex-plan.sh, codex-review.sh, codex-delegate.sh) route through
-# `companion task`, which means every one of them creates a resumable
-# task job (jobClass: "task"). The companion's --resume-last picks the
-# newest one regardless of which wrapper produced it, so calling any
-# other wrapper between plan rounds will hijack --continue. The
-# companion CLI does not expose per-thread-id resume, so we cannot
-# isolate plan threads at this layer. Either avoid interleaving codex
-# calls between plan rounds, or use --reset and paraphrase the prior
-# round into the new prompt.
+# --continue resumes by explicit thread id (stored per repo under
+# ~/.claude/state/codex-threads/plan-<repo_hash>), so interleaving other
+# codex calls between rounds is safe — they cannot hijack the plan thread.
+# The remaining invariant is one active plan thread per repo: a second
+# concurrent plan in the same repo overwrites the key. Set
+# CODEX_PLAN_THREAD_KEY to run isolated plans side by side.
+#
+# If the stored thread is gone (never started, or codex GC'd the rollout),
+# --continue degrades to a fresh round with a warning rather than failing.
 #
 # Exit codes:
 #   0 = round completed
-#   2 = usage / missing input / companion error
+#   2 = usage / missing input / codex error
 
 set -euo pipefail
 
 . "$(dirname "$0")/../hooks/_lib.sh"
 
-COMPANION="$(dirname "$0")/codex-companion.sh"
-if [[ ! -x "$COMPANION" ]]; then
-    echo "[codex-plan] companion wrapper missing: $COMPANION" >&2
+RUNNER="$(dirname "$0")/codex-exec.sh"
+if [[ ! -x "$RUNNER" ]]; then
+    echo "[codex-plan] runner missing: $RUNNER" >&2
     exit 2
 fi
 
@@ -89,41 +87,65 @@ if [[ -n "${CODEX_PLAN_MODEL:-}" ]]; then
     MODEL_ARGS=(--model "$CODEX_PLAN_MODEL")
 fi
 
-RESUME_FLAG="--fresh"
-[[ "$MODE" == "continue" ]] && RESUME_FLAG="--resume-last"
+# Plan threads are keyed per repo so /ask-codex or /cross-review between
+# rounds cannot steal the resume (the old --resume-last failure mode).
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")
+THREAD_KEY="${CODEX_PLAN_THREAD_KEY:-plan-$(repo_hash "$REPO_ROOT")}"
 
 # Frame codex as an adversarial planner — challenge, don't rubber-stamp.
-# Read-only sandbox is enforced by the companion `task` (no --write flag).
+# Read-only sandbox is the runner's default (no --write flag).
 # AGENTS.md "Code Review Principles" + "What NOT to do" already cover the
 # attitude; we just point codex at the plan and the angles to check.
-if [[ "$RESUME_FLAG" == "--fresh" ]]; then
-    PROMPT=$(cat <<EOF
+build_fresh_prompt() {
+    cat <<EOF
 Pressure-test this plan before implementation per AGENTS.md. Find what would break it: hidden assumptions, missed edge cases / failure modes, simpler alternatives skipped, scope gaps vs the ask, concrete risks (data loss, race, rollback, perf, security). If genuinely sound, say so briefly and stop. Read the codebase as needed; do not edit files or propose to implement.
 
 --- PLAN UNDER REVIEW ---
 ${INPUT_TEXT}
 --- END PLAN ---
 EOF
-)
-else
-    # Continuation turn — keep it short, codex already has the thread context.
-    PROMPT=$(cat <<EOF
+}
+
+# Continuation turn — keep it short, codex already has the thread context.
+build_continue_prompt() {
+    cat <<EOF
 Follow-up on the plan we are pressure-testing in this thread.
 
 ${INPUT_TEXT}
 
 Stay in pressure-tester mode. Read files as needed. No file edits.
 EOF
-)
-fi
+}
 
-# Run the pressure-test, capture exit (set -e safe via if), ping on completion.
-# The app-server path does not honor ~/.codex/config.toml notify, so a
-# backgrounded /codex-plan would otherwise finish silently.
-if portable_timeout "$TIMEOUT" "$COMPANION" task $RESUME_FLAG ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} "$PROMPT" </dev/null; then
-    PLAN_STATUS=0
-else
+run_plan() {
+    local mode="$1"
+    local -a rargs=(--thread-key "$THREAD_KEY")
+    local prompt
+    if [[ "$mode" == "continue" ]]; then
+        rargs+=(--resume)
+        prompt=$(build_continue_prompt)
+    else
+        prompt=$(build_fresh_prompt)
+    fi
+    set +e
+    "$RUNNER" --timeout "$TIMEOUT" ${rargs[@]+"${rargs[@]}"} \
+        ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} --prompt "$prompt" </dev/null
     PLAN_STATUS=$?
+    set -e
+}
+
+run_plan "$MODE"
+
+# Exit 3 = the stored thread is gone (never started, or GC'd). Degrade to a
+# fresh round instead of failing — the caller wants a critique either way.
+if [[ "$MODE" == "continue" && $PLAN_STATUS -eq 3 ]]; then
+    echo "[codex-plan] no resumable plan thread; starting a fresh round" >&2
+    run_plan reset
 fi
-notify_codex_done "codex-plan pressure-test done (exit $PLAN_STATUS)" "$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")"
+# A completed turn already pings the user: `codex exec` invokes the `notify`
+# program from ~/.codex/config.toml (the app-server path did not, which is why
+# this used to be manual). Only ping for outcomes codex never reports itself.
+if [[ $PLAN_STATUS -ne 0 ]]; then
+    notify_codex_done "codex-plan FAILED (exit $PLAN_STATUS)" "$REPO_ROOT"
+fi
 exit $PLAN_STATUS

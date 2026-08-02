@@ -387,10 +387,13 @@ The full collaboration surface, mapped to where they belong in the workflow:
 | Subagent wrapper | `@codex-reviewer` | — | For programmatic Agent() invocation inside other workflows like `/iterate`. |
 | Direct script calls | `bash ~/.claude/scripts/codex-{ask,review,plan,delegate}.sh` | — | For scripting / CI / piping context via stdin. |
 
-All four user-facing skills (`/ask-codex`, `/codex-plan`, `/codex-delegate`, `/cross-review`) route through `~/.claude/scripts/codex-companion.sh`, which wraps the @openai/codex-plugin-cc app-server runtime at `~/dev/codex-plugin-cc`. This gives:
-- **Streaming progress** to stderr (`[codex] Running command: …`, `[codex] Assistant message captured: …`) so codex is not a black box
-- **Broker reuse** — one app-server process is shared across calls in the same workspace, so subsequent calls start instantly and share thread state
-- **Persistent jobs** at `~/.claude/state/codex-companion/state/<workspace-slug>-<hash>/` (background tasks survive Claude session restarts)
+All four user-facing skills (`/ask-codex`, `/codex-plan`, `/codex-delegate`, `/cross-review`) route through `~/.claude/scripts/codex-exec.sh`, a thin runner over `codex exec --json`. Its contract: **stdout = the final assistant message only** (safe to parse for `VERDICT:`), **stderr = rendered progress** (`🧵 thread` / `🟢 turn started` / `▶ command` / `✓ exit N` / `💬 message` / `🔵 turn completed`), so codex is not a black box. Exit codes: `0` ok · `2` error · `3` resume unavailable · `124` timeout.
+
+- **Thread resume is by explicit id.** `--thread-key KEY` persists the thread id under `~/.claude/state/codex-threads/<key>`; `--resume` continues exactly that thread. Keys are `plan-<repo_hash>` and `review-<repo_hash>[-<session>]`, so an `/ask-codex` between VERDICT rounds can no longer hijack a resume — the failure mode of the old workspace-wide `--resume-last`. A missing or GC'd thread exits `3` and the wrapper degrades to a fresh round instead of failing.
+- **Delegate jobs are plain files** at `~/.claude/state/codex-jobs/<repo-hash>/<id>.{meta,log,out,prompt}`. A background job is its own process group (`setsid`), so `--cancel` takes down codex and its tool commands together; liveness is verified against the recorded process start time, so a recycled pid can't fake a running job.
+- **Notifications are native again.** `codex exec` invokes the `notify` program from `~/.codex/config.toml`, so a finished turn pings the user by itself. Wrappers call `notify_codex_done` only for outcomes codex never reports (empty diff, timeout, spawn failure) — adding it to a success path double-pings.
+
+> Migrated 2026-08-02 from the @openai/codex-plugin-cc app-server runtime (`~/dev/codex-plugin-cc` + `codex-companion.sh`). It was never installed as a Claude Code plugin (only its `codex-companion.mjs` was used, as a node CLI), its background job manager had 11 uses total — all on setup day — and its broker daemon had no idle timeout, leaking an 85–290 MB process pair per workspace until reboot. That leak was the sole reason `reap-codex-brokers.sh` + a launchd timer existed; both are gone.
 
 Codex also auto-loads `~/.codex/AGENTS.md`, which mirrors this user's coding profile — so any codex call already follows the same principles (Rule of Three, anti-patterns, review format with `VERDICT:` contract).
 

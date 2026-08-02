@@ -66,7 +66,7 @@ Constraints: ...
 Acceptance: ..."
 ```
 
-Output: `Codex Task started in the background as task-XXXXX-YYYYY.`
+Output: stdout으로 job id 한 줄(`job-YYYYmmddTHHMMSS-PID`), stderr로 follow 힌트. 즉 `JOB=$(bash ~/.claude/scripts/codex-delegate.sh "...")` 로 바로 받을 수 있다.
 
 job id를 메모해둔다 (또는 `--status`로 다시 찾을 수 있음).
 
@@ -77,34 +77,30 @@ job id를 메모해둔다 (또는 `--status`로 다시 찾을 수 있음).
 bash ~/.claude/scripts/codex-delegate.sh --status
 
 # 특정 잡 상태
-bash ~/.claude/scripts/codex-delegate.sh --status task-XXXXX-YYYYY
+bash ~/.claude/scripts/codex-delegate.sh --status job-YYYYmmddTHHMMSS-PID
 
 # 로그 실시간 follow
-bash ~/.claude/scripts/codex-delegate.sh --tail task-XXXXX-YYYYY
+bash ~/.claude/scripts/codex-delegate.sh --tail job-YYYYmmddTHHMMSS-PID
 ```
 
-`--tail`은 ISO 타임스탬프를 걷어내고 사람이 읽기 좋게 prefix를 붙여 흐름을 보여준다:
+job 로그에는 `codex-exec.sh`가 렌더한 진행 라인이 그대로 쌓이므로 `--tail`은 단순 follow다:
 
-- `🟢 turn started` — turn 시작
-- `🔵 turn completed` — turn 정상 종료
-- `🟠 turn <status>` — turn이 비정상 종료 (failed, cancelled 등 — companion이 emit하는 status를 그대로 표시)
-- `💬 ...` — codex가 중간에 한 말 (intermediate message + 최종 답변)
-- `🧠 ...` — codex의 reasoning summary trace
-- `▶ <command>` — codex가 실행한 명령 (zsh -lc 래퍼는 제거)
-- `  ✓ (exit N)` — 명령 결과
-- `❌ <error>` — codex runtime error
-- `[final marker — codex done]` — 정상 종료 (마지막 turn 상태가 completed일 때)
-- `[final marker — codex <status>]` — 비정상 종료 (failed/cancelled 등 마지막 turn 상태 그대로)
-- `[final marker — codex errored]` — Codex error 라인이 먼저 잡혀서 종료한 경우
+- `🧵 thread <id>` — codex thread id
+- `🟢 turn started` / `🔵 turn completed (N in / M out)` — turn 시작·정상 종료(+토큰)
+- `💬 ...` — codex가 한 말 (중간 메시지 + 최종 답변)
+- `🧠 ...` — reasoning summary trace
+- `▶ <command>` — codex가 실행한 명령 (`zsh -lc` 래퍼는 제거)
+- `  ✓ exit N` — 명령 결과
+- `❌ ...` — turn 실패 / runtime error
 
-작업 5분 이상 걸리면 `--tail`로 보면서 다른 일 진행. raw 로그 (디버깅용) 가 필요하면 `CODEX_DELEGATE_TAIL_RAW=1 bash ... --tail JOB`.
+`--tail`은 `tail -F`라 job이 끝나도 자동 종료되지 않는다. 끝났는지는 `--status`(running / completed / failed(exit N) / interrupted)로 확인하고, 최종 답변만 볼 거면 `--result`를 쓸 것. 작업이 5분 이상 걸리면 `--tail`로 보면서 다른 일 진행.
 
 ### Step 4: 결과 회수
 
 작업 완료 후:
 
 ```bash
-bash ~/.claude/scripts/codex-delegate.sh --result task-XXXXX-YYYYY
+bash ~/.claude/scripts/codex-delegate.sh --result job-YYYYmmddTHHMMSS-PID
 ```
 
 → codex의 최종 summary (touched files, what changed, what didn't, follow-ups).
@@ -128,7 +124,7 @@ bash ~/.claude/scripts/codex-delegate.sh --foreground "..."
 bash ~/.claude/scripts/codex-delegate.sh --readonly "왜 이 테스트가 flaky한지 조사하고 가설 3개 제시"
 
 # 작업 취소
-bash ~/.claude/scripts/codex-delegate.sh --cancel task-XXXXX-YYYYY
+bash ~/.claude/scripts/codex-delegate.sh --cancel job-YYYYmmddTHHMMSS-PID
 
 # 모델/effort 조정 (env)
 CODEX_DELEGATE_EFFORT=high bash ~/.claude/scripts/codex-delegate.sh "..."
@@ -140,7 +136,7 @@ CODEX_DELEGATE_MODEL=spark bash ~/.claude/scripts/codex-delegate.sh "..."  # 빠
 ```
 ## Codex Delegation
 
-Job: task-XXXXX-YYYYY (12s, completed)
+Job: job-YYYYmmddTHHMMSS-PID (12s, completed)
 Sandbox: workspace-write
 
 ### Codex's summary
@@ -172,5 +168,6 @@ Sandbox: workspace-write
 ## 주의
 
 - 위임 prompt는 **한 번** 잘 쓴다. codex와 다회 대화는 plan용 (`/codex-plan`)이지 위임용이 아님 — 위임 작업은 자기-완결적이어야 한다.
-- `--tail`은 잡이 완료되면 `[final marker — codex done]` 출력 후 자동 종료. 잡 끝나기 전에 빠지고 싶으면 Ctrl-C — 잡 자체에는 영향 없음.
-- background job 결과는 `~/.claude/state/codex-companion/state/<workspace>/jobs/`에 영구 저장됨. 재부팅 후에도 `--result <job-id>`로 회수 가능.
+- `--tail`은 `tail -F`라 자동 종료되지 않는다. Ctrl-C로 빠져도 잡 자체에는 영향 없음 (잡은 별도 process group에서 돈다).
+- background job은 `~/.claude/state/codex-jobs/<repo-hash>/<job-id>.{meta,log,out,prompt}` 파일로 남는다. 재부팅 후에도 `--result <job-id>`로 회수 가능 (단 실행 중이던 잡은 `interrupted`로 표시됨).
+- `--cancel`은 job의 process group 전체에 SIGTERM을 보낸다 — codex와 codex가 띄운 도구 명령까지 같이 정리된다.

@@ -1,29 +1,29 @@
 #!/usr/bin/env bash
 # codex-ask.sh — Ask Codex for a quick opinion on a design question.
-# Routes through the codex-companion app-server runtime so the user sees
-# streaming progress phases (starting / investigating / finalizing) instead
+# Routes through codex-exec.sh so the user sees the progress stream instead
 # of a black box. Read-only sandbox — codex cannot modify files.
+#
+# One-shot by design: no thread key, so an /ask-codex in the middle of a
+# plan or review loop can never disturb those threads.
 #
 # Usage:
 #   codex-ask.sh "Should I use X or Y?"
 #   cat src/auth.ts | codex-ask.sh "Is this middleware order correct?"
 #
 # Environment overrides:
-#   CODEX_ASK_MODEL   — override model passed to the companion (--model)
+#   CODEX_ASK_MODEL   — override model passed to codex (-m)
 #   CODEX_ASK_TIMEOUT — seconds before the call is aborted (default 180)
 
 set -euo pipefail
-
-. "$(dirname "$0")/../hooks/_lib.sh"
 
 if [[ $# -lt 1 ]]; then
     echo "Usage: $0 <question>" >&2
     exit 2
 fi
 
-COMPANION="$(dirname "$0")/codex-companion.sh"
-if [[ ! -x "$COMPANION" ]]; then
-    echo "[codex-ask] companion wrapper missing: $COMPANION" >&2
+RUNNER="$(dirname "$0")/codex-exec.sh"
+if [[ ! -x "$RUNNER" ]]; then
+    echo "[codex-ask] runner missing: $RUNNER" >&2
     exit 2
 fi
 
@@ -39,6 +39,9 @@ MODEL_ARGS=()
 if [[ -n "${CODEX_ASK_MODEL:-}" ]]; then
     MODEL_ARGS=(--model "$CODEX_ASK_MODEL")
 fi
+
+# stdin was already drained above (or was a tty); hand the runner /dev/null so
+# codex never blocks waiting for more input.
 
 # Consultation-mode rules (concrete recommendation + 1 tradeoff, no hedging,
 # ~150-word cap) live in ~/.codex/AGENTS.md and auto-load. Don't restate.
@@ -58,6 +61,4 @@ else
 Question: ${QUESTION}"
 fi
 
-# stdin must be /dev/null — companion `task` falls back to reading piped stdin
-# as the prompt otherwise.
-portable_timeout "$TIMEOUT" "$COMPANION" task ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} "$PROMPT" </dev/null
+exec "$RUNNER" --timeout "$TIMEOUT" ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} --prompt "$PROMPT" </dev/null

@@ -1,21 +1,21 @@
 #!/bin/bash
-# Bootstrap the codex-plugin-cc runtime that ~/.claude/scripts/codex-*.sh wraps.
+# Check prerequisites for the ~/.claude tooling and register the infra-ops MCP.
 # Run after `stow claude`. Idempotent.
 
 set -e
 
-CODEX_PLUGIN_DIR="${CODEX_COMPANION_ROOT:-$HOME/dev/codex-plugin-cc}"
-STATE_DIR="$HOME/.claude/state/codex-companion"
-
+# The codex-*.sh wrappers drive the codex CLI directly (codex exec), so codex
+# and jq are the only hard requirements for them. Node is still needed for the
+# infra-ops MCP server further down.
 if ! command -v node >/dev/null 2>&1; then
-    echo "✗ node not found — install Node.js 18.18+ first"
+    echo "✗ node not found — install Node.js 18.18+ first (needed by the infra-ops MCP)"
     exit 1
 fi
 
 NODE_MAJOR=$(node -p "process.versions.node.split('.')[0]")
 NODE_MINOR=$(node -p "process.versions.node.split('.')[1]")
 if [ "$NODE_MAJOR" -lt 18 ] || { [ "$NODE_MAJOR" -eq 18 ] && [ "$NODE_MINOR" -lt 18 ]; }; then
-    echo "✗ node $(node -v) is too old — codex-plugin-cc needs >=18.18"
+    echo "✗ node $(node -v) is too old — need >=18.18"
     exit 1
 fi
 echo "✓ node $(node -v)"
@@ -26,16 +26,11 @@ if ! command -v codex >/dev/null 2>&1; then
 fi
 echo "✓ codex $(codex --version 2>/dev/null | head -1)"
 
-if [ -d "$CODEX_PLUGIN_DIR/.git" ]; then
-    echo "✓ codex-plugin-cc already at $CODEX_PLUGIN_DIR"
-else
-    mkdir -p "$(dirname "$CODEX_PLUGIN_DIR")"
-    git clone --depth 1 https://github.com/openai/codex-plugin-cc.git "$CODEX_PLUGIN_DIR"
-    echo "✓ cloned codex-plugin-cc → $CODEX_PLUGIN_DIR"
+if ! command -v jq >/dev/null 2>&1; then
+    echo "✗ jq not found — the codex wrappers parse codex's JSONL event stream with it"
+    exit 1
 fi
-
-mkdir -p "$STATE_DIR"
-echo "✓ state dir $STATE_DIR"
+echo "✓ jq $(jq --version 2>/dev/null)"
 
 if command -v codex >/dev/null 2>&1 && [ ! -f "$HOME/.codex/auth.json" ]; then
     echo "! codex not authenticated — run: codex login"
@@ -62,25 +57,15 @@ if [ -f "$INFRA_MCP/package.json" ]; then
     fi
 fi
 
-# codex-broker-reaper: periodically reap idle codex app-server-broker orphans.
-# These broker+app-server pairs (~85-290MB each) are spawned detached, survive
-# the Claude session that created them, and have no idle timeout upstream — so
-# they accumulate until reboot. macOS launchd only; on Linux the reaper still
-# runs via the session-start.sh hook (just not on a fixed timer).
+# Retire the codex-broker-reaper launchd agent if a previous install left one.
+# It reaped app-server brokers spawned by the old codex-plugin-cc runtime;
+# `codex exec` spawns no daemon, so there is nothing left to reap.
 if [ "$(uname -s)" = "Darwin" ]; then
-    REAPER_PLIST_SRC="$HOME/dotfiles/claude/.claude/launchd/com.marshallku.codex-broker-reaper.plist"
     REAPER_PLIST_DST="$HOME/Library/LaunchAgents/com.marshallku.codex-broker-reaper.plist"
-    if [ -f "$REAPER_PLIST_SRC" ]; then
-        mkdir -p "$HOME/Library/LaunchAgents"
-        # Materialize $HOME into the plist (launchd does not expand ~ or env vars here).
-        sed "s|__HOME__|$HOME|g" "$REAPER_PLIST_SRC" > "$REAPER_PLIST_DST"
-        # Reload idempotently (bootout is harmless if not currently loaded).
+    if [ -f "$REAPER_PLIST_DST" ]; then
         launchctl bootout "gui/$(id -u)/com.marshallku.codex-broker-reaper" 2>/dev/null || true
-        if launchctl bootstrap "gui/$(id -u)" "$REAPER_PLIST_DST" 2>/dev/null; then
-            echo "✓ codex-broker-reaper launchd agent installed (every 15m)"
-        else
-            echo "! codex-broker-reaper launchd bootstrap failed — reaper still runs via session-start hook"
-        fi
+        rm -f "$REAPER_PLIST_DST"
+        echo "✓ removed obsolete codex-broker-reaper launchd agent"
     fi
 fi
 
