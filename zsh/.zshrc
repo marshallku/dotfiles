@@ -38,14 +38,16 @@ dday() {
 dday '2024-03-02' 'I met the love of my life'
 dday '2026-08-22' 'Our marriage'
 
-# Homebrew (must come before oh-my-zsh to take precedence over /usr/bin)
+# Homebrew (must come before anything that resolves tools, to take precedence
+# over /usr/bin)
 [[ "$(uname)" == "Darwin" ]] && eval "$(/opt/homebrew/bin/brew shellenv)"
 # ── Powerlevel10k instant prompt (must stay near the top) ──────────────────
 if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
   source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
 fi
 
-ZSH="$HOME/.oh-my-zsh"   # still the on-disk home of p10k + zsh-autosuggestions
+# Plugins are plain git clones here; install-zsh.sh bootstraps them.
+ZSH_PLUGINS="$HOME/.zsh"
 
 # ── History (was: omz lib/history.zsh) ─────────────────────────────────────
 HISTFILE="$HOME/.zsh_history"
@@ -276,40 +278,13 @@ function git_main_branch() {
   return 1
 }
 
-# ── Plugins (sourced directly; no oh-my-zsh loader) ────────────────────────
-source $ZSH/custom/themes/powerlevel10k/powerlevel10k.zsh-theme
+# ── Plugins (plain git clones, sourced directly) ───────────────────────────
+source $ZSH_PLUGINS/powerlevel10k/powerlevel10k.zsh-theme
 ZSH_AUTOSUGGEST_MANUAL_REBIND=1
-source $ZSH/custom/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh
+source $ZSH_PLUGINS/zsh-autosuggestions/zsh-autosuggestions.zsh
 
 
-# User configuration
-
-# export MANPATH="/usr/local/man:$MANPATH"
-
-# You may need to manually set your language environment
-# export LANG=en_US.UTF-8
-
-# Preferred editor for local and remote sessions
-# if [[ -n $SSH_CONNECTION ]]; then
-#   export EDITOR='vim'
-# else
-#   export EDITOR='nvim'
-# fi
-
-# Compilation flags
-# export ARCHFLAGS="-arch $(uname -m)"
-
-# Set personal aliases, overriding those provided by Oh My Zsh libs,
-# plugins, and themes. Aliases can be placed here, though Oh My Zsh
-# users are encouraged to define aliases within a top-level file in
-# the $ZSH_CUSTOM folder, with .zsh extension. Examples:
-# - $ZSH_CUSTOM/aliases.zsh
-# - $ZSH_CUSTOM/macos.zsh
-# For a full list of active aliases, run `alias`.
-#
-# Example aliases
-# alias zshconfig="mate ~/.zshrc"
-# alias ohmyzsh="mate ~/.oh-my-zsh"
+# ── User configuration ─────────────────────────────────────────────────────
 
 # Preferred editor for local and remote sessions
 if [[ -n $SSH_CONNECTION ]]; then
