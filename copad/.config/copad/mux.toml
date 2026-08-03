@@ -1,0 +1,15 @@
+# copad-mux configuration — see copad-mux/mux.example.toml for the full list.
+
+# Show the tab's focused-pane process next to its index:  1:claude  2:nvim
+tab_labels = "both"
+
+# Only the weekly rate-limit windows in the status bar (drop Claude's 5h window).
+usage_windows = ["claude-wk", "codex-wk"]
+
+# Paged usage readout, split BY METRIC (usage on one page, reset on the other):
+#   page 1 → claude + codex weekly usage   (claude wk 4% · codex wk 1%)
+#   page 2 → claude + codex reset time      (claude wk ⟳ 5d19h · codex wk ⟳ 6d21h)
+# Auto-flips between the two pages every 10s (or scroll/click the readout to page).
+usage_page_unit = "metric"
+usage_reset = "relative"
+usage_rotate_secs = 10

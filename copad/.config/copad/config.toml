@@ -12,12 +12,17 @@ git_remote = "marshallku/copad"
 
 [terminal]
 shell = "/bin/zsh"
-font_family = "JetBrainsMono Nerd Font Mono"
+font_family = "Jetendard"
 font_size = 11
 
 [background]
 #image = "/mnt/disk2/Wallpapers/02.jpg"
-tint = 0
+# NOTE: keep this a float (0.0, not 0). macOS reads config via TOMLKit,
+# whose strict decoder rejects an integer literal for this Double field
+# and then discards the ENTIRE config (falling back to a non-Nerd font,
+# which breaks all glyph icons). Linux/serde tolerates int→float; macOS
+# does not. See copad-macos Config.swift BackgroundSection.tint.
+tint = 0.0
 opacity = 0.21
 tint_color = "#000000"
 rotate_interval = 300  # native rotation (replaces copad-random-bg.sh daemon)
