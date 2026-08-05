@@ -3,7 +3,7 @@ name: new-app
 description: 홈랩 앱 공장 정문 — 앱 이름/타입/도메인을 받아 manifest repo의 kubernetes/apps/<name>/values.yaml을 만들고 save.sh로 커밋하면 ArgoCD ApplicationSet이 자동 배포하고 cloudflare-tunnel-ingress-controller가 도메인+DNS를 붙인다. "새 앱 배포 환경 만들어/공장에 앱 하나 찍어줘/이 앱 홈랩에 올려줘" 류 요청에 사용.
 user-invocable: true
 arguments: name
-argument-hint: <name> [--type nextjs|web-api|api] [--domain <host>] [--api-domain <host>] [--image <prefix>] [--private] [--infisical <projectSlug>]
+argument-hint: <name> [--type nextjs|web-api|api] [--domain <host>] [--api-domain <host>] [--image <prefix>] [--private] [--infisical <projectSlug>] [--db]
 allowed-tools: Bash,Read,Grep,Glob,Edit,Write
 effort: high
 ---
@@ -35,6 +35,7 @@ effort: high
 - `--image` — 이미지 **태그 없는 접두**(예: `ghcr.io/marshallku/<name>`). 템플릿이 `-web:latest`/`-api:latest`를 붙인다 → **태그를 포함하지 말 것**(`...:v1`을 주면 `...:v1-web:latest`로 깨짐). 특정 태그/개별 이미지가 필요하면 접두 대신 각 surface의 `image:`를 직접 완성해 쓴다. 기본값 `ghcr.io/marshallku/<name>`.
 - `--private` — GHCR 프라이빗 이미지면 지정 (네임스페이스에 `ghcr-secret` 필요).
 - `--infisical <projectSlug>` — Infisical 시크릿을 쓸 때 (예: `<name>-prd`).
+- `--db` — 홈랩 공유 Postgres에 앱 전용 DB+role을 파고 `DATABASE_URL`을 주입한다(Step 2.5). 실질적으로 `--infisical`을 전제(URL을 저장할 곳). api/서버가 있는 type에서 의미 있음.
 
 ## Step 1 — values.yaml 생성
 
@@ -131,6 +132,32 @@ kubectl create namespace <name> --dry-run=client -o yaml | kubectl apply -f -
 
 public 이미지 + 시크릿 없음이면 이 단계는 건너뛴다 (사유 1줄 보고).
 
+## Step 2.5 — DB 프로비저닝 (`--db`)
+
+**선행조건 — `--infisical <projectSlug>` 필수.** `provision-db.sh`가 내는 비밀번호는
+**단 1회만 출력**되므로, 저장할 Infisical 프로젝트가 먼저 정해져 있어야 한다. `--db`인데
+`--infisical`이 없으면 **provision을 돌리기 전에 중단**하고 사용자에게 projectSlug를
+확인한다(그래야 자격증명 유실을 막는다).
+
+**비밀번호가 Claude 트랜스크립트를 통과하지 않게, provisioning은 사용자가 직접 실행한다.**
+Infisical CLI가 없고 URL에는 비밀번호가 들어 있으므로, Claude가 `provision-db.sh`의
+출력을 캡처하거나 값을 사용자에게 전달하면 안 된다. 대신 사용자에게 **직접 실행**을 안내한다:
+
+1. 사용자가 **Claude Code 밖의 별도 터미널**에서 실행한다(‼️ Claude Code의 `!` 프리픽스로
+   돌리면 출력이 세션 트랜스크립트에 들어가 비밀번호가 노출되므로 쓰지 말 것):
+   `~/dev/manifest/scripts/provision-db.sh <name>`
+   → stdout 한 줄이 나온다: `DATABASE_URL=postgres://...`
+2. 사용자가 `postgres://...` 값(`DATABASE_URL=` 접두 **제외**)을 앱의 Infisical 프로젝트
+   대시보드에서 `DATABASE_URL` 키의 값으로 붙여넣는다. 접두째 넣으면 `DATABASE_URL=DATABASE_URL=...`가 되니 주의.
+3. 넣었으면 사용자가 "완료"라고 알려준다. (되돌리려면 별도 터미널에서 `~/dev/manifest/scripts/provision-db.sh <name> --drop`)
+
+`provision-db.sh`는 admin 자격증명을 `.env POSTGRES_*`/`$DB_ADMIN_URL`에서 읽고(argv
+노출 없음), 소유권 마커로 기존 DB(sssup/playzy 등)를 절대 건드리지 않는다.
+
+Claude 쪽 작업(비밀 값은 만지지 않음): values.yaml에서 DB를 소비하는 surface(보통 `api`)의
+`secretEnv`에 `DATABASE_URL`을 추가하고, 최상위에 `database: { enabled: true }`를 둔다.
+InfisicalSecret가 `DATABASE_URL`을 네임스페이스 시크릿으로 동기화하면 파드가 소비한다.
+
 ## Step 3 — 커밋 (반드시 save.sh)
 
 `~/dev/manifest`에서. **`~/save.sh`는 `git add -A`라 워킹트리의 모든 변경을 커밋한다** — 먼저 프리플라이트로 이번 앱(`kubernetes/apps/<name>/`) 외 변경이 없는지 확인하고, 있으면 중단해 무관한 변경이 배포 커밋에 섞이지 않게 한다:
@@ -169,5 +196,6 @@ kubectl -n cloudflare-tunnel logs -l app.kubernetes.io/name=cloudflare-tunnel-in
 
 ## 아직 안 되는 것 (TODO)
 
-- **DB 프로비저닝**: `database.enabled: true`로 홈랩 Postgres에 앱별 DB/role을 파고 `DATABASE_URL`을 주입하는 자동화는 별도 헬퍼 완성 후 이 스킬에 `--db` 플래그로 추가 예정.
+- **pgBouncer 커넥션 풀링**: 지금 `--db`가 내는 `DATABASE_URL`은 db01에 직접 붙는다(maji와 동일). DB 쓰는 앱이 늘면 db01 앞단에 pgBouncer(transaction pooling)를 세우고 URL 호스트를 pgBouncer로 바꾸는 스케일링 단계 예정.
+- **Infisical 자동 주입**: `provision-db.sh`가 URL을 stdout으로만 내므로 지금은 사람이 Infisical에 넣는다. Infisical CLI 연동 자동화는 추후.
 - **앱 repo 스캐폴딩**: Dockerfile + deploy 워크플로 생성기는 추후.
