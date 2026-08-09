@@ -53,6 +53,12 @@ fi
 
 # Refuse to commit cross-review / codex-plan brief files left in the
 # working tree. They belong in /tmp.
+#
+# Scope: untracked (--others) + modified-tracked (--modified) only.
+# NOT --cached: that lists every tracked file, so a single legitimately
+# committed brief.md (e.g. ~/docs missions/<id>/brief.md) would block every
+# future commit in that repo forever. The guard targets strays in the working
+# tree, which are by definition untracked or freshly modified.
 toplevel=$(git rev-parse --show-toplevel 2>/dev/null)
 if [[ -z "$toplevel" ]]; then
     echo "Error: not inside a git repository" >&2
@@ -66,7 +72,7 @@ while IFS= read -r f; do
             bad_brief="${bad_brief}${bad_brief:+, }$f"
             ;;
     esac
-done < <(cd "$toplevel" && git ls-files --others --exclude-standard --modified --cached 2>/dev/null)
+done < <(cd "$toplevel" && git ls-files --others --exclude-standard --modified 2>/dev/null)
 
 if [[ -n "$bad_brief" ]]; then
     echo "Error: brief / codex-brief files in working tree: $bad_brief" >&2
