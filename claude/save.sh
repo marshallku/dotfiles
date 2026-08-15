@@ -68,6 +68,10 @@ fi
 bad_brief=""
 while IFS= read -r f; do
     case "$f" in
+        missions/*|*/missions/*)
+            # Intentional mission brief files live under missions/ and are meant
+            # to be committed — exempt them from the transient-brief guard below.
+            ;;
         BRIEF*.md|*/BRIEF*.md|brief.md|*/brief.md|codex-brief*|*/codex-brief*|cross-review-brief*|*/cross-review-brief*)
             bad_brief="${bad_brief}${bad_brief:+, }$f"
             ;;

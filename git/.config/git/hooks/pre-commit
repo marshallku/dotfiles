@@ -21,6 +21,10 @@ done < <(git diff --cached --name-only --diff-filter=ACMR)
 bad=()
 for f in "${staged[@]}"; do
     case "$f" in
+        missions/*|*/missions/*)
+            # Intentional mission brief files under missions/ are meant to be
+            # committed — exempt from the transient-brief guard.
+            ;;
         BRIEF*.md|*/BRIEF*.md|brief.md|*/brief.md|codex-brief*|*/codex-brief*|cross-review-brief*|*/cross-review-brief*)
             bad+=("$f")
             ;;
