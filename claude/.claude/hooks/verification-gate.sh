@@ -58,7 +58,8 @@ MIN_FILES="${AUTO_REVIEW_MIN_FILES:-2}"
 EXTRA_RUNNERS="${VERIFY_EXTRA_RUNNERS:-}"
 
 log() {
-    echo "[$(date +%H:%M:%S)] verification-gate: $*" >> "$LOG_FILE"
+    # Delegates to _lib.sh so every hook shares one date-stamped format.
+    hook_log verification-gate "$@"
 }
 
 # Opt-outs

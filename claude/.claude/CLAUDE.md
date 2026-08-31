@@ -451,50 +451,26 @@ When either hook fires, you will receive a message instructing you to run `bash 
 Opt-out (global): `touch ~/.claude/state/auto-review-disabled`
 Tune thresholds: set `AUTO_REVIEW_MIN_FILES` / `AUTO_REVIEW_MIN_LINES` env vars.
 
-### Intent capture (workflow gate — fires upstream of review)
+### Intent capture — DISABLED 2026-06-30, kept for reference
 
-**Why this exists.** Cross-review at commit time can't recover what intent-extraction missed at edit time. The mechanism: LLMs optimize for plausible next-token completion + RLHF rewards helpfulness over precise execution, so on a casual prompt they fill ambiguity with majority-pattern defaults and drift starts in the *first response*. The fix is to capture *user intent* before any non-trivial edit and persist it as a SourceItem so future review can compare *code-vs-intent* (a narrow comparison task) instead of *code-vs-prompt* (the same failure mode the writer had).
+The `intent-capture.sh` PreToolUse hook is **not registered** in settings.json.
+It fired 7,713 times in its last week for ~2 intent files (≈58% of all hook log
+noise) and produced zero acks after 2026-05-29, so it was unregistered rather
+than tuned. The script, `intent-finalize.sh`, and `pre-commit-gate.sh`'s intent
+branch all still exist; `AUTO_INTENT_SOFT_GATE` defaults to `1`, so the
+pre-commit intent branch is inert.
 
-**Where intent lives.** `~/docs/sources/sessions/<repo-slug>/<YYYY-MM-DD>-session-<short-id>.md` following the SourceItem standard (see `~/docs/CLAUDE.md:41` for envelope). Immutable per `~/docs` rules — revisions create a new file with `supersedes:` pointing at the prior. The ack state lives separately in `~/.claude/state/intent-acks/<basename>.ack` so the SourceItem itself stays raw-immutable.
+What it did: before the first non-trivial edit, write a SourceItem to
+`~/docs/sources/sessions/<repo-slug>/<date>-session-<id>.md` carrying
+`goal` / `acceptance_criteria` / `out_of_scope` / `assumptions` / `verification.e2e`,
+get the user to ack it, then let `codex-review.sh --intent-file` review the diff
+as *code-vs-intent* instead of *code-vs-prompt*.
 
-**Schema (v1) — fields the intent file is validated on:**
-- `acceptance_criteria` ≥1 — observable success signals (theater wedge: forces verifiable claims, not introspection)
-- `out_of_scope` ≥1 — explicit non-goals (counters "do more than asked" sycophancy bias)
-- `assumptions` ≥1 — unstated assumptions surfaced (so codex review can flag if any get violated)
-- `goal`, `summary`, `commit_summary` — non-empty, single line each
-- `verification.e2e` ∈ {required, not_applicable, deferred} — declares e2e applicability; if `deferred`, `verification.reason` required
-- Plus SourceItem fields: `source_type: sessions`, `canonical_url: claude://session/<id>`, `content_hash` (sha256 of immutable payload excluding `## Notes`), `dedupe_key`, `tags` (3-axis: stack/domain/activity), `repo: owner/repo`
+**To revive:** re-register the `Edit|Write` PreToolUse block, set
+`AUTO_INTENT_SOFT_GATE=0`, and fix the fire-rate problem first — it blocked on
+every edit, not once per session. `/cross-review` currently falls back to
+inline-brief mode, which covers most of the value.
 
-**Hooks involved:**
-
-1. **`intent-capture.sh` (PreToolUse Edit|Write)** — On first non-trivial edit (≥`AUTO_INTENT_MIN_FILES` files or ≥`AUTO_INTENT_MIN_LINES` weighted diff lines, defaults inherit from `AUTO_REVIEW_*`), blocks the edit and instructs Claude to write the intent file + ask user for ack + run `intent-finalize.sh`. Allows on:
-   - `AUTO_INTENT_SOFT_GATE=1` (dogfood default — warn-only)
-   - `intent-capture-disabled` global marker
-   - intent file already exists, ack marker exists, and ack is newer than intent file
-2. **`intent-finalize.sh`** (helper, Claude invokes) — Validates schema; computes `content_hash` over the immutable payload (frontmatter excluding hash fields + body before `## Notes`); computes `dedupe_key = sha256(canonical_url + content_hash)`; writes ack marker; registers `intent-active-<session>-<repo>.path` so the hook fast-paths subsequent edits.
-3. **`pre-commit-gate.sh` extension** — In hard-gate mode, also blocks `save.sh`/`git commit`/`git push` when the active intent marker is missing, ack is stale (intent modified after ack), or `verification.e2e: required` but no test/e2e evidence in transcript.
-4. **`codex-review.sh --intent-file <path>`** — Reframes review from "is this good code?" to "does this diff match this intent?" by injecting goal/acceptance_criteria/out_of_scope/assumptions as a `TASK INTENT` section. Codex returns CRITICAL findings classified `[INTENT-MISMATCH]` or `[CODE-DEFECT]`.
-5. **`save.sh` extension** — On successful commit/push, appends `Intent-Summary:` + `Intent-Ref:` trailers to the commit body (commit_summary from the intent file) and runs `git -C ~/docs commit` with `ingest: session intent <slug>` to persist the SourceItem in the private SSoT.
-
-**Bypass / tuning env vars:**
-- `AUTO_INTENT_SOFT_GATE=1` (default during initial rollout) — warn-only, no block
-- `AUTO_INTENT_SOFT_GATE=0` — hard block on missing intent
-- `AUTO_INTENT_MIN_FILES` / `AUTO_INTENT_MIN_LINES` — gate thresholds (inherit from `AUTO_REVIEW_*` if unset)
-- `touch ~/.claude/state/intent-capture-disabled` — session-wide opt-out (intent gate only; review gate still fires)
-- `touch ~/.claude/state/auto-review-disabled` — disables both review and intent gates
-
-**The flow (when not bypassed):**
-```
-user prompt → first Edit/Write
-  ↓ intent-capture.sh blocks
-Claude writes intent file (template provided in block message)
-  ↓ Claude surfaces goal+AC+OOS to user, asks for ack
-user replies "proceed" (or modifications)
-  ↓ Claude runs intent-finalize.sh (validates schema, sets ack)
-edits proceed normally, codex-review.sh --intent-file at end
-  ↓ VERDICT classification routes [INTENT-MISMATCH] vs [CODE-DEFECT]
-save.sh injects Intent-Summary trailer + ~/docs ingest commit
-```
 
 ### Complete hook registry
 
@@ -509,13 +485,41 @@ save.sh injects Intent-Summary trailer + ~/docs ingest commit
 | `plan-ssot-gate.sh` | PreToolUse | ExitPlanMode | Block presenting a plan until the session has consulted ~/docs (a `dn search`/`tag`/`related` query → `ssot-checked-<session>` marker). Per-session: one consult clears the gate for the session. No-op when `dn`/`~/docs` absent. Opt-out: `ssot-gate-disabled` |
 | `track-edit.sh` | PostToolUse | Edit/Write | Append edited file path to `~/.claude/state/dirty-<session>.log`; invalidate reviewed markers |
 | `ssot-check-mark.sh` | PostToolUse | Bash | Detect `dn search`/`tag`/`related` and touch `ssot-checked-<session>`; this is what clears `plan-ssot-gate.sh` |
-| `post-typecheck.sh` | PostToolUse | Edit/Write | Run `npx tsc --noEmit`/`cargo check`/`go vet ./...` after edits; surface errors as tool result |
-| `session-start.sh` | SessionStart | — | Load last handoff into systemPrompt; GC stale state files |
+| `post-typecheck.sh` | PostToolUse | Edit/Write | **The computational sensor.** Runs the project's `tsc --noEmit` / `cargo check` / `go vet ./...` once per edit and feeds errors back as `additionalContext`. Requires a *local* `tsc` (walks up for workspace hoisting) — bare `npx tsc` resolves to an unrelated binary and silently reports clean. Logs every outcome (pass/fail/skip/timeout/checker_error) to the event ledger. **Was silently dead 2026-04-21 → 2026-08-31**: `set -e` + an unguarded pipefail pipeline killed it on the error path only. Runs without `set -e` now — do not re-add it. Opt-out: `post-typecheck-disabled` |
+| `session-start.sh` | SessionStart | — | Load last handoff into systemPrompt; GC stale state files (incl. `intent-active-*` older than 7d); rotate `hooks-debug.log` + the two JSONL ledgers |
 | `remind-cross-review.sh` | UserPromptSubmit | — | Inject additionalContext reminding Claude to run codex-review before concluding |
 | `contract-inject.sh` | UserPromptSubmit | — | On `/goal`·`/loop` activation, inject the per-work-unit autonomous-loop contract as additionalContext so the user need not retype it (non-blocking). Opt-out: `contract-inject-disabled` |
 | `verification-gate.sh` | Stop | — | Block stop once/session when code changed but no test/e2e/run/deploy command was actually executed this session (scans executed Bash commands, not output text; excludes build/typecheck). Single-shot, so a genuinely-N/A change is handled by stating the reason once. Sibling to auto-cross-review (did *you* run it? vs. did a reviewer see it?). Opt-out: `verify-gate-disabled` |
 | `auto-cross-review.sh` | Stop | — | Block stop once/session, inject review mandate if dirty log ≥ N files and no reviewed marker |
 | `auto-handoff.sh` | Stop | — | Capture git status + branch + recent log to `~/.claude/handoffs/latest.md` for next session |
+| `harness-report.sh --tripwire` | SessionStart | — | Trip wires over the two ledgers: codex spend >2x the 6-day mean, a sensor erroring/timing out, or a component that used to emit events going silent for 7d. Silent unless something trips. Opt-out: `tripwire-disabled` |
+
+### Observability — the two ledgers
+
+Everything the harness does is recorded in three places. This layer exists
+because `post-typecheck.sh` was dead for four months and nothing noticed: the
+harness could enforce a gate but could not answer "is a component that used to
+work still working?".
+
+| Sink | Written by | Shape |
+|---|---|---|
+| `~/.claude/hooks-debug.log` | `hook_log <component> <msg>` in `_lib.sh` | `[YYYY-MM-DD HH:MM:SS] component: message` |
+| `~/.claude/state/hook-events.jsonl` | `hook_event <component> <event> [k=v…]` | one JSON object per line: `ts` (UTC), `component`, `event`, plus arbitrary fields |
+| `~/.claude/state/codex-usage.jsonl` | `record_usage` in `codex-exec.sh` | per-run token spend: `day`, `thread_key`, `model`, `status`, `input_tokens`, `output_tokens`, `total_tokens` |
+
+Rules:
+- **Never hand-roll another `log()`.** Nine hooks each defined their own with a
+  `%H:%M:%S` stamp and no date, so no query could span days and rotation threw
+  the history away. Source `_lib.sh` and call `hook_log`.
+- **A new hook logs on every exit path**, especially the skip paths. A hook that
+  only logs when it acts is indistinguishable from a hook that is not running.
+- **`hook_log` / `hook_event` never fail the caller** — they always return 0, so
+  a `set -e` hook cannot die from its own instrumentation.
+
+Read them with `bash ~/.claude/scripts/harness-report.sh` (scorecard: sensor
+pass/fail/skip counts, codex spend per day, gate-block frequency). The same
+script runs as `--tripwire` on SessionStart and stays silent unless something
+tripped.
 
 ### Installed skills (slash commands)
 
@@ -526,7 +530,7 @@ User-invocable skills live at `~/dotfiles/claude/.claude/skills/<name>/SKILL.md`
 - `/codex-delegate` — delegate a sub-task to Codex (write-capable, background by default)
 - `/cross-review` — full cross-review loop with VERDICT gate (3 rounds max)
 - `/debug` — 5-phase structured debugging (3-strike + scope lock)
-- `/iterate` — one work-cycle gate (implement → unit test → e2e → build/lint/typecheck → cross-review → `~/save.sh`); pair with `/loop` to enforce the gate every cycle
+- `/iterate` — one work-cycle gate (implement → unit test → e2e → build/lint/typecheck → cross-review → `~/save.sh`); pair with `/loop` to enforce the gate every cycle. **Status: invoked 0 times since it was written.** `contract-inject.sh` now injects the same gate automatically on every `/goal`·`/loop`, so the skill is a manual duplicate of an automated path. Kept because the explicit form is still the clearest way to force the gate on a single ad-hoc task — retire it if that stays theoretical.
 
 - `/audit` — 프로젝트 갭 감사: 코드/문서/로드맵 병렬 탐색(Explore fan-out) → 미완성 구현·문서-실제 불일치·품질 갭을 P0/P1/P2 우선순위 리스트로 보고 (read-only; 수정은 후속 작업으로)
 

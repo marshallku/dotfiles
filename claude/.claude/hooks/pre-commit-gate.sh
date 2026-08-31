@@ -43,7 +43,8 @@ INTENT_DISABLED="$STATE_DIR/intent-capture-disabled"
 INTENT_SOFT_GATE="${AUTO_INTENT_SOFT_GATE:-1}"
 
 log() {
-    echo "[$(date +%H:%M:%S)] pre-commit-gate: $*" >> "$LOG_FILE"
+    # Delegates to _lib.sh so every hook shares one date-stamped format.
+    hook_log pre-commit-gate "$@"
 }
 
 # Verify the active intent file for this session+repo is in a shippable state.

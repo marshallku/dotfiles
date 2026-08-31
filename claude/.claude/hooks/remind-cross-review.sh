@@ -16,7 +16,8 @@ set -euo pipefail
 
 LOG_FILE="$HOME/.claude/hooks-debug.log"
 log() {
-    echo "[$(date +%H:%M:%S)] remind-cross-review: $*" >> "$LOG_FILE"
+    # Delegates to _lib.sh so every hook shares one date-stamped format.
+    hook_log remind-cross-review "$@"
 }
 
 INPUT=$(cat)

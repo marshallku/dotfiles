@@ -16,6 +16,8 @@
 
 set -euo pipefail
 
+. "$(dirname "$0")/_lib.sh"
+
 INPUT=$(cat)
 SESSION=$(echo "$INPUT" | jq -r '.session_id // "default"')
 
@@ -25,7 +27,8 @@ MARKER="$STATE_DIR/ssot-checked-${SESSION}"
 LOG_FILE="$HOME/.claude/hooks-debug.log"
 
 log() {
-    echo "[$(date +%H:%M:%S)] plan-ssot-gate: $*" >> "$LOG_FILE"
+    # Delegates to _lib.sh so every hook shares one date-stamped format.
+    hook_log plan-ssot-gate "$@"
 }
 
 # Session-wide opt-out

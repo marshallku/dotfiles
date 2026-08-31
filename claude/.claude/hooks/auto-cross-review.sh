@@ -34,7 +34,8 @@ MIN_FILES="${AUTO_REVIEW_MIN_FILES:-2}"
 MIN_LINES="${AUTO_REVIEW_MIN_LINES:-40}"
 
 log() {
-    echo "[$(date +%H:%M:%S)] auto-cross-review: $*" >> "$LOG_FILE"
+    # Delegates to _lib.sh so every hook shares one date-stamped format.
+    hook_log auto-cross-review "$@"
 }
 
 # Global opt-out

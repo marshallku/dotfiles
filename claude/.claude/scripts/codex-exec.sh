@@ -188,6 +188,61 @@ portable_timeout "$TIMEOUT" codex "${ARGS[@]}" < "$PROMPT_FILE" 2>"$ERR_FILE" \
 STATUS=${PIPESTATUS[0]}
 set -e
 
+# --- Cost ledger --------------------------------------------------------------
+# codex reports per-turn token usage in the `turn.completed` event, which until
+# now was rendered to stderr and thrown away. Persist it so cost per task is
+# answerable at all — the harness had no cost telemetry of any kind, which also
+# meant no trip wire could exist. Read from EVENTS_FILE rather than tapping the
+# render pipeline, so a quiet run (--quiet) is still accounted for.
+#
+# Runs before the failure/timeout exits, so a run that burned 40k tokens and
+# then failed is still accounted for — but only to the extent codex reported it:
+# usage comes from `turn.completed`, so a run killed before any turn completed
+# leaves no row. That is the best source available; it is not a full accounting
+# of a hard timeout mid-turn.
+# Best-effort throughout — never let accounting fail a codex run.
+record_usage() {
+    command -v jq >/dev/null 2>&1 || return 0
+    local ledger="${CODEX_USAGE_LEDGER:-$HOME/.claude/state/codex-usage.jsonl}"
+    local repo="" in_tok=0 out_tok=0 cached=0 turns=0
+    repo=$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$PWD")
+
+    # Sum across turns: a resumed multi-turn run emits one turn.completed each.
+    local sums
+    sums=$(jq -s -r '
+        [ .[] | select(.type == "turn.completed") ] as $t
+        | [ ($t | length),
+            ([$t[].usage.input_tokens // 0]         | add // 0),
+            ([$t[].usage.output_tokens // 0]        | add // 0),
+            ([$t[].usage.cached_input_tokens // 0]  | add // 0) ]
+        | @tsv
+    ' "$EVENTS_FILE" 2>/dev/null) || return 0
+    [ -z "$sums" ] && return 0
+    IFS=$'\t' read -r turns in_tok out_tok cached <<< "$sums" || return 0
+    [ "${turns:-0}" -eq 0 ] && return 0
+
+    mkdir -p "$(dirname "$ledger")" 2>/dev/null || true
+    jq -c -n \
+        --arg ts       "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+        --arg day      "$(date '+%Y-%m-%d')" \
+        --arg thread   "${THREAD_KEY:-}" \
+        --arg model    "${MODEL:-default}" \
+        --arg sandbox  "$SANDBOX" \
+        --arg repo     "$repo" \
+        --argjson status  "${STATUS:-0}" \
+        --argjson turns   "${turns:-0}" \
+        --argjson input   "${in_tok:-0}" \
+        --argjson output  "${out_tok:-0}" \
+        --argjson cached  "${cached:-0}" \
+        '{ts:$ts, day:$day, thread_key:$thread, model:$model, sandbox:$sandbox,
+          repo:$repo, status:$status, turns:$turns,
+          input_tokens:$input, output_tokens:$output, cached_input_tokens:$cached,
+          total_tokens:($input + $output)}' \
+        >> "$ledger" 2>/dev/null || true
+    return 0
+}
+record_usage || true
+
 if [[ $STATUS -eq 124 ]]; then
     echo "[codex-exec] timed out after ${TIMEOUT}s" >&2
     exit 124

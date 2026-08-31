@@ -18,6 +18,8 @@
 
 set -euo pipefail
 
+. "$(dirname "$0")/_lib.sh"
+
 INPUT=$(cat)
 CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 
@@ -27,7 +29,8 @@ LOG_FILE="$HOME/.claude/hooks-debug.log"
 DISABLED="$HOME/.claude/state/raw-git-block-disabled"
 
 log() {
-    echo "[$(date +%H:%M:%S)] block-raw-git: $*" >> "$LOG_FILE"
+    # Delegates to _lib.sh so every hook shares one date-stamped format.
+    hook_log block-raw-git "$@"
 }
 
 # Global / one-time opt-out marker.

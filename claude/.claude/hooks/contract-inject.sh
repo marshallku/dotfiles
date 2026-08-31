@@ -16,9 +16,12 @@
 
 set -euo pipefail
 
+. "$(dirname "$0")/_lib.sh"
+
 LOG_FILE="$HOME/.claude/hooks-debug.log"
 log() {
-    echo "[$(date +%H:%M:%S)] contract-inject: $*" >> "$LOG_FILE"
+    # Delegates to _lib.sh so every hook shares one date-stamped format.
+    hook_log contract-inject "$@"
 }
 
 INPUT=$(cat)

@@ -100,6 +100,11 @@
             "type": "command",
             "command": "bash $HOME/.claude/hooks/surface-open-loops.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/scripts/harness-report.sh --tripwire",
+            "timeout": 10
           }
         ]
       }
@@ -228,5 +233,6 @@
   "alwaysThinkingEnabled": true,
   "effortLevel": "high",
   "tui": "fullscreen",
-  "skipDangerousModePermissionPrompt": true
+  "skipDangerousModePermissionPrompt": true,
+  "agentPushNotifEnabled": true
 }

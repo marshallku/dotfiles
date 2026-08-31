@@ -19,6 +19,8 @@
 
 set -euo pipefail
 
+. "$(dirname "$0")/_lib.sh"
+
 LOG="$HOME/.claude/hooks-debug.log"
 INPUT=$(cat)
 CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
@@ -36,7 +38,8 @@ emit() {  # $1=category $2=permissionDecision $3=message-prefix
         '{permissionDecision:$dec, message:("[careful] " + $pre + " " + $cat + ": " + $cmd)}'
 }
 logv() {  # $1=verdict $2=category
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] careful verdict: $1 ($2): $(echo "$CMD" | head -c 60)" >> "$LOG"
+    hook_log careful-with-judge "verdict: $1 ($2): $(echo "$CMD" | head -c 60)"
+    hook_event careful-with-judge verdict decision="$1" rule="$2"
 }
 
 # ── 재귀 rm 처리 (상태기계: rm 자신의 operand만 분류) ─────────────────────────

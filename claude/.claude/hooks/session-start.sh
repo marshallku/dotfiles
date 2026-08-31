@@ -12,16 +12,33 @@ SESSION=$(echo "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || echo "")
 
 # 부수 작업: 1일 이상 된 ephemeral 세션 마커 청소.
 # reviewed-* 는 reviewed_marker_valid 의 TTL(기본 24h)로 이미 무효화되므로
-# 여기서 지워도 의미 변화 없음(디스크 정리). intent-active-* 와
-# codex-delegate-pending-* 는 하루 넘게 지속되는 세션의 live enforcement 상태일
-# 수 있어 나이 기준 삭제 대상에서 제외한다.
+# 여기서 지워도 의미 변화 없음(디스크 정리). codex-delegate-pending-* 는 하루
+# 넘게 지속되는 세션의 live enforcement 상태일 수 있어 제외한다.
 STATE_DIR="$HOME/.claude/state"
 if [ -d "$STATE_DIR" ]; then
     find "$STATE_DIR" -maxdepth 1 -type f \( \
         -name "dirty-*.log" -o -name "stop-blocked-*" -o -name "verify-blocked-*" \
         -o -name "ssot-checked-*" -o -name "reviewed-*" -o -name "compact-reinject-*" \
         \) -mtime +1 -delete 2>/dev/null || true
+
+    # intent-active-* 는 원래 live enforcement 상태라 나이 기준 삭제에서
+    # 빼 두었는데, intent-capture 훅이 2026-06-30 에 비활성화되면서 아무도
+    # 새로 만들지 않고 아무도 읽지 않는 잔해가 되었다 (2026-08-31 기준 49개,
+    # 최신 것이 6월). 하루가 아니라 7일 창을 쓰는 이유는 훅을 다시 켰을 때
+    # 장기 세션의 진짜 마커를 지우지 않기 위해서다.
+    find "$STATE_DIR" -maxdepth 1 -type f -name "intent-active-*" \
+        -mtime +7 -delete 2>/dev/null || true
 fi
+
+# 부수 작업: 관측 원장 로테이션. hooks-debug.log 와 같은 이유로 무한 증가하고,
+# 이쪽은 append-only JSONL 이라 더 빨리 큰다. 한 세대만 보관.
+for LEDGER in "$STATE_DIR/hook-events.jsonl" "$STATE_DIR/codex-usage.jsonl"; do
+    [ -f "$LEDGER" ] || continue
+    LSIZE=$(stat -c%s "$LEDGER" 2>/dev/null || stat -f%z "$LEDGER" 2>/dev/null || echo 0)
+    if [ "${LSIZE:-0}" -gt "${HARNESS_LEDGER_MAX_BYTES:-10485760}" ]; then
+        mv -f "$LEDGER" "$LEDGER.1" 2>/dev/null || true
+    fi
+done
 
 # 부수 작업: hooks-debug.log 로테이션 (모든 훅이 append 하는 단일 로그라 무한 증가).
 # 5MB 초과 시 .1 로 한 세대만 회전. best-effort — 실패해도 세션 시작을 막지 않는다.

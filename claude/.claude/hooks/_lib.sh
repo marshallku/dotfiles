@@ -179,3 +179,56 @@ notify_codex_done() {
     bash "$_NOTIFY_CODEX_SH" "$payload" >/dev/null 2>&1 &
     return 0
 }
+
+# --- Observability ------------------------------------------------------------
+# One timestamp format and one machine-readable event stream for the whole
+# harness. Both are best-effort and always return 0 — every hook runs under
+# `set -e`, so a logging failure must never take down the hook it is observing.
+#
+#   hook_log   <component> <message...>      human line -> hooks-debug.log
+#   hook_event <component> <event> [k=v ...] JSONL record -> hook-events.jsonl
+#
+# Why: hooks-debug.log was written by 9 hand-rolled log() functions that all
+# stamped `%H:%M:%S` with no date, so no query could span days and the log
+# rotated its own history away at 5MB. Trend analysis (which sensor fires most,
+# which gate blocks most, is a regression starting) was structurally impossible.
+# New hooks use these; do not hand-roll another log().
+HOOK_LOG_FILE="${HOOK_LOG_FILE:-$HOME/.claude/hooks-debug.log}"
+HOOK_EVENT_LOG="${HOOK_EVENT_LOG:-$HOME/.claude/state/hook-events.jsonl}"
+
+hook_log() {
+    local component="${1:-unknown}"; shift || true
+    printf '[%s] %s: %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$component" "$*" \
+        >> "$HOOK_LOG_FILE" 2>/dev/null || true
+    return 0
+}
+
+# Structured sibling of hook_log. Extra fields are passed as key=value; keys
+# must be [A-Za-z0-9_] (anything else is dropped rather than risking a jq syntax
+# error that would lose the whole record). Values are passed via --arg, so they
+# are never interpreted as jq.
+hook_event() {
+    command -v jq >/dev/null 2>&1 || return 0
+    local component="${1:-unknown}" event="${2:-unknown}"
+    shift 2 2>/dev/null || true
+
+    local jq_args=(-c -n
+        --arg ts "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+        --arg component "$component"
+        --arg event "$event")
+    local filter='{ts:$ts, component:$component, event:$event}'
+
+    local kv key val
+    for kv in "$@"; do
+        [ "$kv" = "${kv#*=}" ] && continue          # no '=' → not a k=v pair
+        key="${kv%%=*}"
+        val="${kv#*=}"
+        case "$key" in ''|*[!a-zA-Z0-9_]*) continue ;; esac
+        jq_args+=(--arg "f_$key" "$val")
+        filter="$filter + {\"$key\": \$f_$key}"
+    done
+
+    mkdir -p "$(dirname "$HOOK_EVENT_LOG")" 2>/dev/null || true
+    jq "${jq_args[@]}" "$filter" >> "$HOOK_EVENT_LOG" 2>/dev/null || true
+    return 0
+}

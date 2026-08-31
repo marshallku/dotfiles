@@ -12,6 +12,8 @@
 
 set -euo pipefail
 
+. "$(dirname "$0")/_lib.sh"
+
 INPUT=$(cat)
 CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 
@@ -21,7 +23,8 @@ LOG_FILE="$HOME/.claude/hooks-debug.log"
 DISABLED="$HOME/.claude/state/commit-policy-disabled"
 
 log() {
-    echo "[$(date +%H:%M:%S)] commit-policy-gate: $*" >> "$LOG_FILE"
+    # Delegates to _lib.sh so every hook shares one date-stamped format.
+    hook_log commit-policy-gate "$@"
 }
 
 # Global opt-out marker — touch the file, run one commit, remove it.

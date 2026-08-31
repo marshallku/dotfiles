@@ -41,7 +41,8 @@ MIN_LINES="${AUTO_INTENT_MIN_LINES:-${AUTO_REVIEW_MIN_LINES:-40}}"
 SOFT_GATE="${AUTO_INTENT_SOFT_GATE:-1}"
 
 log() {
-    echo "[$(date +%H:%M:%S)] intent-capture: $*" >> "$LOG_FILE"
+    # Delegates to _lib.sh so every hook shares one date-stamped format.
+    hook_log intent-capture "$@"
 }
 
 # Global opt-out
