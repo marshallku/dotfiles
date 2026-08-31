@@ -20,7 +20,7 @@ dday() {
 	fi
 	today=$EPOCHSECONDS
 	diff_seconds=$((target - today))
-	diff_days=$((diff_seconds / 86400))
+	diff_days=$((diff_seconds / 86400 + 1))
 
 	set_format='\033[1;31m'
 	reset_format='\033[0m'

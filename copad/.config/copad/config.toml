@@ -12,7 +12,7 @@ git_remote = "marshallku/copad"
 
 [terminal]
 shell = "/bin/zsh"
-font_family = "Jetenbrains Nerd Mono"
+font_family = "Jetendard"
 font_size = 11
 
 [background]
