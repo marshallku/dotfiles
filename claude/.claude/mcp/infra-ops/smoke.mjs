@@ -1,5 +1,5 @@
 // Unit tests for the security-critical helpers (no network). Run: npm run smoke
-import { shq, ident, hostTarget, tail } from "./lib.mjs";
+import { shq, ident, freeArg, hostTarget, tail } from "./lib.mjs";
 import assert from "node:assert/strict";
 
 let pass = 0;
@@ -39,9 +39,16 @@ t("ident rejects shell metachars, spaces, and option-injection", () => {
 });
 
 t("hostTarget enforces the allowlist", () => {
-    assert.equal(hostTarget("prd01"), "prd01");
-    assert.equal(hostTarget("mgmt01"), "marshall@192.168.219.109");
-    ["evil", "prd01; rm", "", undefined].forEach((h) => assert.ok(throws(() => hostTarget(h)), `should reject host ${JSON.stringify(h)}`));
+    assert.equal(hostTarget("k3s01"), "marshall@192.168.219.193");
+    assert.equal(hostTarget("app01"), "marshall@192.168.219.194");
+    // Retired 2026-09 by the pve02 consolidation — must no longer resolve.
+    ["prd01", "mgmt01", "dev01"].forEach((h) => assert.ok(throws(() => hostTarget(h)), `retired host should be gone: ${h}`));
+    ["evil", "app01; rm", "", undefined].forEach((h) => assert.ok(throws(() => hostTarget(h)), `should reject host ${JSON.stringify(h)}`));
+});
+
+t("freeArg allows selectors but blocks option-injection", () => {
+    ["app=blog", "app.kubernetes.io/name=argocd,tier=web"].forEach((v) => assert.equal(freeArg(v, "x"), v));
+    ["-o=json", "--all", "", undefined, 7].forEach((v) => assert.ok(throws(() => freeArg(v, "x")), `should reject ${String(v)}`));
 });
 
 t("tail bounds to 1–2000 integers", () => {

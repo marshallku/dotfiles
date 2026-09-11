@@ -37,7 +37,7 @@ if command -v codex >/dev/null 2>&1 && [ ! -f "$HOME/.codex/auth.json" ]; then
 fi
 
 # infra-ops MCP: install deps + register (idempotent). Lets Claude Code manage
-# the homelab (docker@prd01, k3s+Prometheus@mgmt01) over ssh. See its server.mjs.
+# the homelab (docker@app01, k3s+Prometheus@k3s01) over ssh. See its server.mjs.
 INFRA_MCP="$HOME/dotfiles/claude/.claude/mcp/infra-ops"
 if [ -f "$INFRA_MCP/package.json" ]; then
     if (cd "$INFRA_MCP" && npm install --no-audit --no-fund >/dev/null 2>&1); then
