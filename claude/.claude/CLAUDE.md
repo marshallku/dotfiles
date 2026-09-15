@@ -413,7 +413,7 @@ The one thing that makes foreground "look broken": the Bash tool's **default tim
 
 ### Auto-review (three-layer enforcement)
 
-Three hooks work together to eliminate the "I forgot to get a review" failure mode, with the last one being the strong gate for projects that use `~/dev/save.sh` (which commits + pushes atomically):
+Three hooks work together to eliminate the "I forgot to get a review" failure mode, with the last one being the strong gate for projects that use `~/save.sh` (which commits the staged index + pushes atomically — you stage with `git add <paths>` first; save.sh deliberately does not run `git add -A`):
 
 **Hard gate — `pre-commit-gate.sh` (PreToolUse Bash)**
 Blocks any Bash command matching `save.sh`, `git commit`, or `git push` when the current repo has pending edits and no fresh `reviewed-<repo-hash>` marker. The block message tells you to write an intent brief, run `codex-review.sh`, and then re-run the original command. On APPROVED, `codex-review.sh` automatically touches the marker so the re-run passes. On any subsequent Edit/Write in the same repo, `track-edit.sh` invalidates the marker so you must re-review.
@@ -546,7 +546,7 @@ User-invocable skills live at `~/dotfiles/claude/.claude/skills/<name>/SKILL.md`
 
 1. One work-unit = one coherent change. Run the full gate **per unit**, not once at the very end.
 2. Skip a step only with a stated reason ("e2e skipped — library-internal change, unit tests suffice"). Never skip silently.
-3. The final commit always goes through `~/save.sh` (never raw `git commit`/`git push`).
+3. The final commit always goes through `~/save.sh` (never raw `git commit`/`git push`). Stage deliberately first — `git add <paths>` for exactly the files this work-unit touched; save.sh commits the index only, so unrelated working-tree files no longer get swept in.
 4. This gate is exactly what `/iterate` encodes. Prefer **`/loop /iterate <task>`** when you want it mechanically enforced each cycle rather than relying on memory inside a free-form `/goal`.
 5. Only pause for the user at planning checkpoints; otherwise run to completion.
 6. Long codex review/plan steps in the loop follow the async-codex rule above — background + auto-wake, never Monitor polling.

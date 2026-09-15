@@ -137,8 +137,30 @@ if [[ -n "$intent_file" ]]; then
     fi
 fi
 
-git add -A && git commit -m "$final_msg" && git push -u origin "$branch"
+# save.sh commits the INDEX only — it deliberately does not stage anything.
+# `git add -A` used to run here, which quietly swept unrelated working-tree
+# files (scratch edits, .bak files, half-finished work) into commits. Staging
+# is the caller's decision; this script's job is the commit message policy and
+# the atomic commit+push.
+if git diff --cached --quiet; then
+    {
+        echo "Error: nothing staged — save.sh commits the index only."
+        echo "       Stage what belongs in this commit first:"
+        echo "         git add <paths>      # or: git add -A  (if you really mean everything)"
+    } >&2
+    exit 1
+fi
+
+git commit -m "$final_msg" && git push -u origin "$branch"
 git_rc=$?
+
+# Staging is now explicit, so leftovers are easy to miss. Say what was left out.
+if [[ $git_rc -eq 0 ]]; then
+    leftover=$(cd "$toplevel" && git status --porcelain --untracked-files=normal 2>/dev/null | grep -c .)
+    if [[ ${leftover:-0} -gt 0 ]]; then
+        echo "[save.sh] note: $leftover path(s) still uncommitted in the working tree" >&2
+    fi
+fi
 
 # After a successful main push, persist the intent file into ~/docs so the
 # SourceItem layer reflects this session's captured intent. ~/docs is private

@@ -97,7 +97,7 @@ effort: high
 여기까지 통과했으면 commit 전 마지막 게이트를 직접 처리한다.
 
 1. **cross-review** — `/cross-review`(또는 `codex-review.sh`)로 변경분을 codex에 크로스체크. CRITICAL이 나오면 그 자리에서 Fix-First 적용 후 재시도. 같은 CRITICAL이 두 번 연속이면 사용자 보고.
-2. **commit** — APPROVED면 `~/save.sh`로 커밋(+push). 직접 `git commit`/`git push`를 부르지 않는다. (auto-review 게이트가 켜져 있으면 `~/save.sh`는 fresh reviewed marker가 있어야 통과 — cross-review가 APPROVED 시 자동으로 marker를 찍는다.)
+2. **commit** — APPROVED면 이번 사이클에서 건드린 경로를 `git add <paths>`로 스테이징한 뒤 `~/save.sh`로 커밋(+push). `~/save.sh`는 인덱스만 커밋하므로, 스테이징하지 않은 스크래치 파일은 자동으로 빠진다. 직접 `git commit`/`git push`를 부르지 않는다. (auto-review 게이트가 켜져 있으면 `~/save.sh`는 fresh reviewed marker가 있어야 통과 — cross-review가 APPROVED 시 자동으로 marker를 찍는다.)
 
 PR이 필요하면 `~/save.sh` 후 `gh pr create`로 별도 처리. 작은 단위 작업은 commit-only로 충분.
 

@@ -160,16 +160,18 @@ InfisicalSecret가 `DATABASE_URL`을 네임스페이스 시크릿으로 동기�
 
 ## Step 3 — 커밋 (반드시 save.sh)
 
-`~/dev/manifest`에서. **`~/save.sh`는 `git add -A`라 워킹트리의 모든 변경을 커밋한다** — 먼저 프리플라이트로 이번 앱(`kubernetes/apps/<name>/`) 외 변경이 없는지 확인하고, 있으면 중단해 무관한 변경이 배포 커밋에 섞이지 않게 한다:
+`~/dev/manifest`에서. **`~/save.sh`는 스테이징된 인덱스만 커밋한다**(`git add -A`를 하지 않는다) — 이번 앱 경로만 명시적으로 add 해서 무관한 변경이 배포 커밋에 섞이지 않게 한다:
 ```sh
 cd ~/dev/manifest
-# apps/<name>/ 이외의 dirty 경로가 있으면 중단
-if git status --porcelain | grep -v "kubernetes/apps/<name>/" | grep -q .; then
-  echo "무관한 변경 존재 — 정리(commit/stash)하고 다시 시도"; git status --short; exit 1
+git add kubernetes/apps/<name>/
+# add는 인덱스에 더하기만 한다 — 앱 경로 밖의 것이 이미 staged면 그대로 커밋에 섞인다
+# --no-renames: rename을 add/delete로 펼쳐 다른 앱에서 옮겨온 삭제 경로도 잡는다
+if git diff --cached --name-only --no-renames | grep -v "^kubernetes/apps/<name>/" | grep -q .; then
+  echo "앱 경로 밖 staged 변경 존재 — unstage 하고 다시 시도"; git diff --cached --name-only --no-renames; exit 1
 fi
 ~/save.sh "Add <name> app to the factory (kubernetes/apps/<name>)"
 ```
-원격이 앞서 있어 push가 rejected되면: `git reset --soft HEAD~1 && git stash -u && git pull --rebase && git stash pop` 후 `~/save.sh` 재실행. 직접 `git commit`/`git push` 금지.
+원격이 앞서 있어 push가 rejected되면: `git reset --soft HEAD~1 && git stash -u && git pull --rebase && git stash pop` 후 **`git add kubernetes/apps/<name>/`를 다시 하고** `~/save.sh` 재실행 (`git stash pop`은 `--index` 없이는 인덱스를 복원하지 않아 그냥 재실행하면 "nothing staged"로 떨어진다). 직접 `git commit`/`git push` 금지.
 
 ## Step 4 — 라이브 검증 (실제로 뜨는지 본다)
 

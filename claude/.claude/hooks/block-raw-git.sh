@@ -76,10 +76,13 @@ if printf '%s' "$SCAN" | grep -qE "$git_re"; then
     log "BLOCK: raw git commit/push -> $CMD"
     REASON='[block-raw-git] Raw `git commit` / `git push` is blocked by user policy.
 
-All commits and pushes MUST go through `~/save.sh`, which commits + pushes
-atomically with the project guards (and passes the commit-message / review gates).
+All commits and pushes MUST go through `~/save.sh`, which commits the STAGED
+index + pushes atomically with the project guards (and passes the
+commit-message / review gates). It does NOT stage for you — `git add` is
+allowed and is your job.
 
 Do this instead:
+  git add <paths>            # stage exactly what belongs in this commit
   ~/save.sh "<commit message>"
 
 If you genuinely need a raw git commit/push (rare — ask the user first):
