@@ -18,6 +18,11 @@ set -o pipefail
 # desktop bleeding through the compositor's opacity rules. Hyprland rounds corners at
 # composite time, so the rounding and the drop shadow are re-applied here instead.
 
+# Submap entry/exit goes through the compat shim: hyprctl's dispatch syntax
+# differs between the hyprlang and Lua config managers.
+# shellcheck source=hyprctl-compat.sh
+. "$(dirname "$(readlink -f "$0")")/hyprctl-compat.sh"
+
 TOGGLE_FLAG="${XDG_RUNTIME_DIR:-/tmp}/hypr-screenshot-toggle"
 SUBMAP="screenshot"
 SHADOW=${SCREENSHOT_SHADOW:-1}
@@ -151,7 +156,7 @@ window_boxes() {
 leave_submap() {
     cleanup
     rm -f "$TOGGLE_FLAG"
-    hyprctl dispatch submap reset >/dev/null
+    hypr_submap reset
 }
 
 # Loops so SPACE can switch between free-draw and window picking: the submap bind
@@ -160,7 +165,7 @@ interactive() {
     local mode=region geometry status boxes id fullscreen
 
     rm -f "$TOGGLE_FLAG"
-    hyprctl dispatch submap "$SUBMAP" >/dev/null
+    hypr_submap "$SUBMAP"
 
     # Never strand Hyprland in the submap if we die mid-selection
     trap leave_submap EXIT
@@ -241,6 +246,6 @@ case $1 in
     abort)
         rm -f "$TOGGLE_FLAG"
         pkill -x slurp
-        hyprctl dispatch submap reset >/dev/null
+        hypr_submap reset
         ;;
 esac

@@ -1,0 +1,50 @@
+-- ###########################################################################
+-- TEMPLATE for per-machine monitor + workspace config.
+--
+-- Setup on a new machine:
+--   cp ~/.config/hypr/monitors_local.lua.example ~/.config/hypr/monitors_local.lua
+-- then edit monitors_local.lua for this machine's outputs.
+--
+-- monitors_local.lua is require()d from hyprland.lua and is intentionally
+-- NOT tracked in dotfiles so each machine can keep its own layout.
+--
+-- TIP: match outputs by EDID description (desc:) rather than port name
+-- (DP-1 / HDMI-A-1). The description is tied to the physical monitor, so the
+-- config keeps working no matter which cable/port it is plugged into.
+-- Run `hyprctl monitors` to see each output's name, modes and description.
+-- ###########################################################################
+
+-- Name your outputs by description so they survive a cable/port change:
+-- local external = "desc:<make model from `hyprctl monitors`>"
+-- local laptop   = "desc:<laptop panel description>"
+
+------------------
+---- MONITORS ----
+------------------
+
+-- See https://wiki.hypr.land/Configuring/Basics/Monitors/
+--
+-- Example: external monitor on top, laptop centered below it
+-- hl.monitor({ output = external, mode = "3440x1440@99.99", position = "0x0",    scale = 1 })
+-- hl.monitor({ output = laptop,   mode = "2240x1400@60",    position = "600x1440", scale = 1 })
+
+-- Fallback so any unconfigured output still lights up.
+hl.monitor({ output = "", mode = "preferred", position = "auto", scale = 1 })
+
+--------------------
+---- WORKSPACES ----
+--------------------
+
+-- Optional: bind workspaces to a monitor. Binding to a monitor that is absent
+-- makes Hyprland fall back to an available one, so the same rules work whether
+-- the external monitor is connected or not.
+--
+-- `default = true` marks the workspace Hyprland opens on that monitor first;
+-- `or nil` keeps the field absent for the rest instead of writing default=false.
+--
+-- for i = 1, 7 do
+--     hl.workspace_rule({ workspace = tostring(i), monitor = external, default = (i == 1) or nil })
+-- end
+-- for i = 8, 10 do
+--     hl.workspace_rule({ workspace = tostring(i), monitor = laptop, default = (i == 8) or nil })
+-- end

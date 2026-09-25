@@ -30,7 +30,13 @@ OUTPUT="DP-1"
 DRY_RUN=0
 VERBOSE=0
 ATTEMPTS=3
-MONITORS_CONF="$HOME/.config/hypr/monitors.local.conf"
+MONITORS_LUA="$HOME/.config/hypr/monitors_local.lua"
+
+# Re-committing an output goes through the compat shim: `hyprctl keyword` is
+# rejected outright under the Lua config manager ("keyword can't work with
+# non-legacy parsers. Use eval.").
+# shellcheck source=hyprctl-compat.sh
+. "$(dirname "$(readlink -f "$0")")/hyprctl-compat.sh"
 
 die() { echo "monitor-doctor: $*" >&2; exit 1; }
 say() { echo "$*"; }
@@ -159,33 +165,46 @@ instability_note() {
     say "           Re-committing revives it but does not stop it recurring. In order:"
     say "           1. monitor OSD: DisplayPort version 1.4 -> 1.2, and turn Deep Sleep off"
     say "           2. try another cable, or another port (the free DP-* connectors)"
-    say "           3. drop the refresh rate in $MONITORS_CONF"
+    say "           3. drop the refresh rate in $MONITORS_LUA"
 }
 
 ###########
 ### FIX ###
 ###########
 
+# Pull one `field = value` out of a single-line hl.monitor({ ... }) call.
+# Handles both quoted strings and bare numbers; prints nothing when absent.
+lua_field() {
+    local re="[{,][[:space:]]*$2[[:space:]]*=[[:space:]]*(\"([^\"]*)\"|[^,}[:space:]]+)"
+    [[ $1 =~ $re ]] || return 1
+    printf '%s\n' "${BASH_REMATCH[2]:-${BASH_REMATCH[1]}}"
+}
+
 # The rule this machine wrote for this output, matched the way Hyprland itself
-# matches: by connector name, or by the EDID description that monitors.local.conf
-# recommends using instead so rules survive a cable swap. Rules keyed by a
-# config variable cannot be resolved from here and are skipped. Prints the spec
-# (everything after the first comma) or nothing.
+# matches: by connector name, or by the EDID description that monitors_local.lua
+# recommends using instead so rules survive a cable swap. Rules built from a Lua
+# variable or a loop cannot be resolved from here and are skipped — the same
+# limitation the hyprlang parser this replaced had with config variables.
+# Prints "MODE,POSITION,SCALE" or nothing.
 config_spec() {
-    local line key spec
-    [ -r "$MONITORS_CONF" ] || return 0
+    local line key mode position scale
+    [ -r "$MONITORS_LUA" ] || return 0
     while IFS= read -r line; do
-        case "$line" in *,*) ;; *) continue ;; esac
-        key="${line%%,*}"
-        key="$(printf '%s' "${key#*=}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
-        spec="${line#*,}"
+        key="$(lua_field "$line" output)" || continue
+        [ -n "$key" ] || continue
         case "$key" in
-            "$OUTPUT") printf '%s\n' "$spec"; return 0 ;;
+            "$OUTPUT") ;;
             desc:*)
                 [ -n "$HYPR_DESC" ] || continue
-                case "$HYPR_DESC" in "${key#desc:}"*) printf '%s\n' "$spec"; return 0 ;; esac ;;
+                case "$HYPR_DESC" in "${key#desc:}"*) ;; *) continue ;; esac ;;
+            *) continue ;;
         esac
-    done < <(grep -E '^[[:space:]]*monitor[[:space:]]*=' "$MONITORS_CONF" 2>/dev/null || true)
+        mode="$(lua_field "$line" mode || true)"
+        position="$(lua_field "$line" position || true)"
+        scale="$(lua_field "$line" scale || true)"
+        printf '%s,%s,%s\n' "${mode:-preferred}" "${position:-auto}" "${scale:-1}"
+        return 0
+    done < <(grep -E '^[[:space:]]*hl\.monitor\(' "$MONITORS_LUA" 2>/dev/null || true)
     return 0
 }
 
@@ -197,7 +216,7 @@ monitor_spec() {
     if [ -n "$spec" ]; then
         printf '%s\n' "$spec"
     else
-        say "warn     : no rule for $OUTPUT in $MONITORS_CONF — reviving at 'preferred,auto,1'" >&2
+        say "warn     : no rule for $OUTPUT in $MONITORS_LUA — reviving at 'preferred,auto,1'" >&2
         printf 'preferred,auto,1\n'
     fi
 }
@@ -247,9 +266,9 @@ recommit() {
     say "fixing   : re-committing as '$OUTPUT,$spec'"
 
     for attempt in $(seq 1 "$ATTEMPTS"); do
-        hyprctl keyword monitor "$OUTPUT,disable" >/dev/null
+        hypr_monitor_apply "$OUTPUT" disable || say "         : warn — compositor rejected the disable"
         sleep 1.5
-        hyprctl keyword monitor "$OUTPUT,$spec" >/dev/null
+        hypr_monitor_apply "$OUTPUT" "$spec" || say "         : warn — compositor rejected '$spec'"
         sleep 2.5
 
         if output_live; then

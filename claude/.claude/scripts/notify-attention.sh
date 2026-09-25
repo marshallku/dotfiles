@@ -161,7 +161,15 @@ focus_terminal_linux() {
     local pid="${1:-}"
     [[ -z "$pid" ]] && return
     if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] && command -v hyprctl >/dev/null 2>&1; then
-        hyprctl dispatch focuswindow "pid:$pid" >/dev/null 2>&1 && return
+        # hyprctl exits 0 even when it rejects a request, so branch on stdout --
+        # `&& return` here used to swallow every failure and strand the wmctrl
+        # fallback below as dead code. The dispatcher syntax also differs
+        # between the hyprlang and Lua config managers (Hyprland 0.57 drops
+        # hyprlang), hence the two attempts.
+        local focused
+        focused=$(hyprctl dispatch "hl.dsp.focus({ window = \"pid:$pid\" })" 2>/dev/null)
+        [[ $focused == ok* ]] || focused=$(hyprctl dispatch focuswindow "pid:$pid" 2>/dev/null)
+        [[ $focused == ok* ]] && return
     fi
     if command -v wmctrl >/dev/null 2>&1; then
         local wid

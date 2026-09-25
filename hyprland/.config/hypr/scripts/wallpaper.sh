@@ -16,6 +16,11 @@
 #   wallpaper.sh ensure      point .current at a real file if missing (boot)
 set -euo pipefail
 
+# hyprpaper is respawned through the compat shim: hyprctl's dispatch syntax
+# differs between the hyprlang and Lua config managers.
+# shellcheck source=hyprctl-compat.sh
+. "$(dirname "$(readlink -f "$0")")/hyprctl-compat.sh"
+
 WALLPAPER_DIR="${WALLPAPER_DIR:-$HOME/Pictures/Wallpapers}"
 CURRENT_LINK="$WALLPAPER_DIR/.current"
 
@@ -52,7 +57,7 @@ apply() {
         for i in $(seq 1 20); do pgrep -x hyprpaper >/dev/null || break; sleep 0.05; done
         if command -v hyprctl >/dev/null && [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]; then
             # Spawn as a Hyprland child so it inherits the session environment.
-            hyprctl dispatch exec hyprpaper >/dev/null 2>&1
+            hypr_exec hyprpaper
         else
             setsid hyprpaper >/dev/null 2>&1 < /dev/null &
         fi
