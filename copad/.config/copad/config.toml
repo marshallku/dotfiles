@@ -200,7 +200,9 @@ event_kind = "slack-memo-capture-fetch.awaited"
 [[triggers]]
 name = "hyprland-webkit-cure"
 action = "system.spawn"
-params = { argv = ["sh", "-c", "hyprctl dispatch resizewindowpixel '1 0,class:com.marshall.copad' && hyprctl dispatch -- resizewindowpixel '-1 0,class:com.marshall.copad'"] }
+# Routed through the hypr-do shim: `hyprctl dispatch resizewindowpixel ...` is
+# legacy syntax and is rejected by Hyprland's Lua config manager.
+params = { argv = ["sh", "-c", "~/.config/hypr/scripts/hypr-do.sh resize-px 1 0 class:com.marshall.copad && ~/.config/hypr/scripts/hypr-do.sh resize-px -1 0 class:com.marshall.copad"] }
 [triggers.when]
 event_kind = "window.restored"
 # Privileged-action opt-in (commit d03a01a). Without this, the new

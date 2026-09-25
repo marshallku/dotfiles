@@ -18,6 +18,10 @@
 # call site working across the restart and across a rollback.
 #
 # hyprctl exits 0 even when it rejects a request, so they branch on its stdout.
+#
+# This file is a library. Call sites that are not shell scripts (waybar's
+# config.jsonc, copad's config.toml, hypridle.conf) go through the executable
+# dispatcher next to it:  hypr-do.sh workspace 3
 
 # Error replies that mean "wrong config manager, try the other form".
 _hypr_rejected() {
@@ -84,4 +88,38 @@ hypr_monitor_apply() {
 
     out="$(hyprctl keyword monitor "$output,$spec" 2>/dev/null)"
     [ "$out" = "ok" ]
+}
+
+# hypr_workspace <id>  — focus a workspace by id or name (e.g. 3, "e+1").
+hypr_workspace() {
+    case "$1" in
+        ''|*[!0-9]*) hypr_dispatch "hl.dsp.focus({ workspace = \"$1\" })" workspace "$1" ;;
+        *)           hypr_dispatch "hl.dsp.focus({ workspace = $1 })"      workspace "$1" ;;
+    esac
+}
+
+# hypr_dpms <on|off|toggle> [monitor]
+#
+# The state MUST go in a table under the key `action`. hl.dsp.dpms("on") looks
+# like it works and replies "ok", but Internal::tableToggleAction() returns
+# TOGGLE for any non-table argument, and likewise for a table without an
+# `action` key -- so both hl.dsp.dpms("on") and hl.dsp.dpms({ state = "on" })
+# silently mean "toggle". Accepted values: on/enable, off/disable, toggle.
+hypr_dpms() {
+    if [ -n "${2:-}" ]; then
+        hypr_dispatch "hl.dsp.dpms({ action = \"$1\", monitor = \"$2\" })" dpms "$1" "$2"
+    else
+        hypr_dispatch "hl.dsp.dpms({ action = \"$1\" })" dpms "$1"
+    fi
+}
+
+# hypr_resize_px <dx> <dy> <window-selector>
+#
+# The legacy form takes one packed string ("1 0,class:foo"); the Lua form takes
+# named fields. Used to nudge a window by a pixel and back, which forces a
+# client to redraw.
+hypr_resize_px() {
+    hypr_dispatch \
+        "hl.dsp.window.resize({ x = $1, y = $2, relative = true, window = \"$3\" })" \
+        -- resizewindowpixel "$1 $2,$3"
 }

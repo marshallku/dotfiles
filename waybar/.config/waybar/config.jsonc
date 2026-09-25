@@ -32,7 +32,16 @@
       "active": "󰮯", // nf-md-circle_slice_8
       "urgent": "󰀨", // nf-md-alert_circle
     },
-    "on-click": "hyprctl dispatch workspace {id}",
+    // NOTE: waybar <= 0.15.0 never reads this for hyprland/workspaces. Each
+    // workspace button connects Workspace::handleClicked before the default
+    // handler and returns true, so the press never reaches the module's
+    // event box where on-click is wired. The button dispatches
+    // "dispatch workspace <id>" straight over the Hyprland socket, which the
+    // Lua config manager rejects (Waybar issue #5008); upstream fixed it in
+    // 74cf45d5/bfd0cfee, unreleased as of 0.15.0.
+    // Kept — and pointed at the shim rather than the legacy hyprctl string —
+    // so it is correct if a later waybar does route clicks through it.
+    "on-click": "~/.config/hypr/scripts/hypr-do.sh workspace {id}",
     "all-outputs": true,
     "disable-scroll": false,
   },
