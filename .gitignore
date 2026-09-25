@@ -14,3 +14,9 @@ copad/.config/copad/web-bridge-secrets.env
 *secrets*.env
 *.secret
 *.secret.env
+
+# Claude Code runtime state inside the stow package — generated, not authored.
+# .trash/ holds skills deleted through the UI; synced/ holds skills pulled from
+# claude.ai. Both reappear on their own and belong to the machine, not the repo.
+claude/.claude/skills/.trash/
+claude/.claude/skills/synced/
