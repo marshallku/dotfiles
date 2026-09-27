@@ -23,18 +23,34 @@ Complete a full `cross-review` before declaring an implementation unit done.
 Stage only the intended paths. Commits/pushes, when requested by the user or
 the invoked workflow, go through `~/save.sh`; never raw git commit/push.
 
-Review commands use the exact session ID injected by SessionStart, or
+Review commands always pass `--reviewer claude` and use the exact session ID injected by SessionStart, or
 `CODEX_THREAD_ID` if available. Never infer it from another session's state.
 If hooks were not active before edits, supply the known starting commit with
 `--base`; don't invent a baseline. Review approval remains bound to session,
 repository and full content. Keep the three-round limit and evidence-first triage.
 
-The shared reviewer invokes **Codex**, including when Codex is implementing.
-This provides a separate read-only review session, not a different model family.
-Do not describe it as a Claude cross-check. Read-only wrapper children suppress
-their own workflow hooks to avoid recursive review and overwriting parent handoffs;
-the shared safety checks remain enabled. A reviewer/consultant must answer the
-requested review or question directly, without invoking another review/plan cycle.
+Cross-model review is required: **Codex implements → Claude reviews; Claude implements → Codex reviews**.
+The shared `cross-review` skill selects the reviewer explicitly. The existing
+`codex-review.sh` retains its name but shares snapshots, triage and approval across
+both runners. Codex hooks reject approval from Codex, including legacy approvals.
+Delegation can mix both authors, so its pending marker requires **both Claude
+and Codex** to approve the same full snapshot after the delegate finishes.
+One approval neither opens the gate nor advances the baseline. Changed content
+invalidates both. The completed approval preserves this origin for the exact
+snapshot; subsequent Claude edits require Codex review again. Delegate launch
+and approval publication share a lock, and active delegates block publication.
+Resume threads are provider-specific. Switching reviewer after approval requires
+an explicit known `--base`, since the old approval advanced the work-unit baseline.
+Never fall back to the implementing model when the other CLI fails.
+
+Claude review runs with Read/Glob/Grep only, without command execution, writes,
+MCP, skills or workflow hooks. It receives the shared AGENTS.md review contract
+explicitly and can inspect callers; the implementer runs tests. Codex read-only
+children retain their existing safety checks but suppress workflow hooks.
+Neither reviewer starts another review/plan cycle.
+Write-delegated Codex children implement and test only; their parent owns the
+final cross-review after they return. Child hooks retain file/command protection,
+edit tracking and type checks, but skip session handoff and review lifecycle gates.
 
 ## Skill/tool compatibility
 

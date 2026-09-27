@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import time
 import unittest
 
 
@@ -26,9 +27,16 @@ class ReviewTests(unittest.TestCase):
         self.bin.mkdir()
         cli = self.bin / "codex"
         cli.write_text('''#!/usr/bin/env python3
-import json, os, pathlib, sys
+import hashlib, json, os, pathlib, sys, time
 prompt = sys.stdin.read()
 pathlib.Path(os.environ["PROMPT_CAPTURE"]).write_text(prompt)
+if os.environ.get("FAKE_CODEX_SLEEP"):
+    time.sleep(1)
+if os.environ.get("FAKE_DELEGATE_START"):
+    scope = hashlib.md5(str(pathlib.Path.cwd()).encode()).hexdigest()[:12]
+    state = pathlib.Path.home() / ".claude/state"
+    (state / ("codex-delegate-active-" + scope)).mkdir()
+    (state / ("codex-delegate-pending-" + scope)).touch()
 args = sys.argv[1:]
 if os.environ.get("FAKE_FAIL"):
     print("simulated CLI failure", file=sys.stderr)
@@ -41,6 +49,35 @@ print(json.dumps({"type":"thread.started", "thread_id":"test-thread"}))
 print(json.dumps({"type":"turn.completed", "usage":{"input_tokens":100,"output_tokens":10,"cached_input_tokens":50}}))
 ''')
         cli.chmod(0o755)
+        (self.home / ".codex").mkdir()
+        (self.home / ".codex/AGENTS.md").symlink_to(ROOT.parent / ".codex/AGENTS.md")
+        claude = self.bin / "claude"
+        claude.write_text('''#!/usr/bin/env python3
+import json, os, pathlib, sys, time
+args = sys.argv[1:]
+prompt = sys.stdin.read()
+pathlib.Path(os.environ["PROMPT_CAPTURE"]).write_text(prompt)
+pathlib.Path(os.environ["PROMPT_CAPTURE"] + ".claude-args").write_text(json.dumps(args))
+if os.environ.get("FAKE_NO_CLAUDE_SESSION") and "--resume" in args:
+    print("No conversation found", file=sys.stderr)
+    sys.exit(1)
+if os.environ.get("FAKE_FAIL"):
+    print("simulated Claude failure", file=sys.stderr)
+    sys.exit(1)
+if os.environ.get("FAKE_SLEEP"):
+    time.sleep(3)
+if os.environ.get("FAKE_MUTATE"):
+    pathlib.Path("code.py").write_text("changed_during_review = True\\n")
+verdict = os.environ.get("FAKE_VERDICT", "APPROVED")
+session = "11111111-2222-3333-4444-555555555555"
+print(json.dumps({"type":"system", "subtype":"init", "session_id":session}))
+print(json.dumps({"type":"result", "subtype":"success", "session_id":session,
+    "is_error": bool(os.environ.get("FAKE_CLAUDE_RESULT_ERROR")),
+    "result":"## Summary\\nDone.\\nVERDICT: " + verdict + "\\n",
+    "usage":{"input_tokens":100,"output_tokens":10},
+    "modelUsage":{"fake-claude":{"inputTokens":100}},"total_cost_usd":0}))
+''')
+        claude.chmod(0o755)
         coctl = self.bin / "coctl"
         coctl.write_text("#!/bin/sh\nexit 0\n")
         coctl.chmod(0o755)
@@ -281,6 +318,141 @@ print(json.dumps({"type":"turn.completed", "usage":{"input_tokens":100,"output_t
     def test_stop_does_not_review_while_waiting_for_clarification(self):
         (self.repo / "code.py").write_text("in_progress = True\n")
         self.assertEqual(self.hook("auto-cross-review.sh", last_assistant_message="Which behavior do you want?"), {})
+
+    def test_claude_review_uses_read_only_tools_and_provider_bound_approval(self):
+        (self.repo / "code.py").write_text("changed = True\n")
+        self.review("--reviewer", "claude", "--session", "s1")
+        args = json.loads((self.root / "prompt.claude-args").read_text())
+        self.assertEqual(args[args.index("--tools") + 1], "Read,Glob,Grep")
+        for flag in ("--safe-mode", "--restricted", "--strict-mcp-config", "--disable-slash-commands"):
+            self.assertIn(flag, args)
+        self.env["HARNESS_REQUIRED_REVIEWER"] = "claude"
+        self.assertEqual(self.gate(), {})
+        self.env["HARNESS_REQUIRED_REVIEWER"] = "codex"
+        self.assertEqual(self.gate()["hookSpecificOutput"]["permissionDecision"], "deny")
+
+    def test_codex_approval_cannot_satisfy_codex_authored_work(self):
+        (self.repo / "code.py").write_text("changed = True\n")
+        self.review("--session", "s1")
+        self.env["HARNESS_REQUIRED_REVIEWER"] = "claude"
+        self.assertEqual(self.gate()["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertEqual(self.hook("auto-cross-review.sh")["decision"], "block")
+        self.review("--reviewer", "claude", "--session", "s1", status=2)
+        self.review("--reviewer", "claude", "--session", "s1", "--base", "HEAD")
+        self.assertIn("+changed = True", (self.root / "prompt").read_text())
+        self.assertEqual(self.gate(), {})
+
+    def test_claude_resume_is_separate_from_codex_and_sends_delta(self):
+        code = self.repo / "code.py"
+        code.write_text("feature = True\nbug = True\n")
+        self.env["FAKE_VERDICT"] = "REVISE"
+        self.review("--session", "s1", status=1)
+        self.review("--reviewer", "claude", "--session", "s1", "--resume", status=1)
+        args = json.loads((self.root / "prompt.claude-args").read_text())
+        self.assertNotIn("--resume", args)
+        code.write_text("feature = True\nbug = False\n")
+        self.env["FAKE_VERDICT"] = "APPROVED"
+        self.review("--reviewer", "claude", "--session", "s1", "--resume")
+        args = json.loads((self.root / "prompt.claude-args").read_text())
+        self.assertEqual(args[args.index("--resume") + 1], "11111111-2222-3333-4444-555555555555")
+        self.assertIn("+bug = False", (self.root / "prompt").read_text())
+        self.assertNotIn("+feature = True", (self.root / "prompt").read_text())
+        ledger = self.home / ".claude/state/claude-review-usage.jsonl"
+        usage = json.loads(ledger.read_text().splitlines()[-1])
+        self.assertEqual(usage["provider"], "claude")
+        self.assertEqual(usage["round"], 2)
+        self.assertTrue(usage["resumed"])
+
+    def test_claude_failure_and_error_result_do_not_approve(self):
+        (self.repo / "code.py").write_text("changed = True\n")
+        for flag in ("FAKE_FAIL", "FAKE_CLAUDE_RESULT_ERROR"):
+            self.env[flag] = "1"
+            self.review("--reviewer", "claude", "--session", "s1", status=2)
+            self.assertFalse(list((self.home / ".claude/state").glob("reviewed-*")))
+            self.assertFalse((self.home / ".claude/state/codex-usage.jsonl").exists())
+            del self.env[flag]
+
+    def test_claude_missing_resume_rebuilds_full_prompt(self):
+        (self.repo / "code.py").write_text("changed = True\n")
+        self.env["FAKE_VERDICT"] = "REVISE"
+        self.review("--reviewer", "claude", "--session", "s1", status=1)
+        self.env["FAKE_NO_CLAUDE_SESSION"] = "1"
+        self.env["FAKE_VERDICT"] = "APPROVED"
+        self.review("--reviewer", "claude", "--session", "s1", "--resume")
+        self.assertIn("--- DIFF ---", (self.root / "prompt").read_text())
+
+    def test_claude_timeout_does_not_approve(self):
+        (self.repo / "code.py").write_text("changed = True\n")
+        self.env.update(FAKE_SLEEP="1", CLAUDE_REVIEW_TIMEOUT="1")
+        self.review("--reviewer", "claude", "--session", "s1", status=2)
+        self.assertFalse(list((self.home / ".claude/state").glob("reviewed-*")))
+
+    def test_claude_round_cap_and_concurrent_mutation(self):
+        (self.repo / "code.py").write_text("changed = True\n")
+        self.env["FAKE_VERDICT"] = "REVISE"
+        for _ in range(3):
+            self.review("--reviewer", "claude", "--session", "s1", status=1)
+        self.review("--reviewer", "claude", "--session", "s1", status=2)
+        self.env["FAKE_VERDICT"] = "APPROVED"
+        self.env["FAKE_MUTATE"] = "1"
+        self.review("--reviewer", "claude", "--session", "s2", "--base", "HEAD", status=2)
+        self.assertFalse(list((self.home / ".claude/state").glob("reviewed-*")))
+
+    def test_codex_delegation_requires_claude_even_with_claude_parent(self):
+        (self.repo / "code.py").write_text("claude_before = True\ndelegated = True\n")
+        self.shell('touch "$HOME/.claude/state/codex-delegate-pending-$(repo_hash "$PWD")"')
+        self.review("--reviewer", "claude", "--session", "s1")
+        self.assertEqual(self.gate()["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.review("--reviewer", "codex", "--session", "s1")
+        self.assertIn("+claude_before = True", (self.root / "prompt").read_text())
+        self.assertIn("+delegated = True", (self.root / "prompt").read_text())
+        self.assertEqual(self.gate(), {})
+
+    def test_delegate_start_during_review_blocks_publication(self):
+        (self.repo / "code.py").write_text("changed = True\n")
+        self.env["FAKE_DELEGATE_START"] = "1"
+        self.review("--reviewer", "codex", "--session", "s1", status=2)
+        self.assertFalse(list((self.home / ".claude/state").glob("reviewed-*")))
+        self.assertTrue(list((self.home / ".claude/state").glob("codex-delegate-pending-*")))
+
+    def test_mixed_approval_requires_both_reviewers_on_identical_content(self):
+        code = self.repo / "code.py"
+        code.write_text("mixed = True\n")
+        self.shell('touch "$HOME/.claude/state/codex-delegate-pending-$(repo_hash "$PWD")"')
+        self.review("--reviewer", "claude", "--session", "s1")
+        code.write_text("mixed = False\n")
+        self.review("--reviewer", "codex", "--session", "s1")
+        self.assertEqual(self.gate()["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.review("--reviewer", "claude", "--session", "s1")
+        self.assertEqual(self.gate(), {})
+
+    def test_background_delegate_blocks_reviews_until_completion(self):
+        (self.repo / "code.py").write_text("claude_before = True\n")
+        self.env["FAKE_CODEX_SLEEP"] = "1"
+        result = self.run_cmd(["bash", str(ROOT / "scripts/codex-delegate.sh"), "--background", "Inspect task"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        state = self.home / ".claude/state"
+        self.assertTrue(list(state.glob("codex-delegate-active-*")))
+        self.review("--reviewer", "claude", "--session", "s1", status=2)
+        deadline = time.monotonic() + 5
+        while list(state.glob("codex-delegate-active-*")) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertFalse(list(state.glob("codex-delegate-active-*")))
+        self.assertTrue(list(state.glob("codex-delegate-pending-*")))
+        self.review("--reviewer", "codex", "--session", "s1")
+        self.assertEqual(self.gate()["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.review("--reviewer", "claude", "--session", "s1")
+        self.assertEqual(self.gate(), {})
+        self.assertFalse(list((self.home / ".claude/state").glob("codex-delegate-pending-*")))
+        self.git("add", ".")
+        self.git("commit", "-qm", "delegated")
+        self.assertEqual(self.gate(), {})
+        (self.repo / "code.py").write_text("claude_followup = True\n")
+        self.assertEqual(self.gate()["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.review("--reviewer", "codex", "--session", "s1")
+        self.assertIn("+claude_followup = True", (self.root / "prompt").read_text())
+        self.assertNotIn("+claude_before = True", (self.root / "prompt").read_text())
+        self.assertEqual(self.gate(), {})
 
 
 if __name__ == "__main__":

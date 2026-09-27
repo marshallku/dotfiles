@@ -54,12 +54,38 @@ review_index_matches() (
     done
 )
 
+review_expected_reviewer() {
+    local repo="$1" session="$2" marker="$HOME/.claude/state/reviewed-$(repo_hash "$1")"
+    if [ -f "$HOME/.claude/state/codex-delegate-pending-$(repo_hash "$repo")" ]; then
+        printf 'both\n'
+        return
+    fi
+    # Delegation can mix both authors. Keep both approvals on that exact snapshot.
+    if [ -s "$marker" ] && jq -e --arg repo "$repo" --arg session "$session" \
+        '.version == 2 and .repo == $repo and .session == $session and .origin == "codex-delegate"' \
+        "$marker" >/dev/null 2>&1 \
+        && [ "$(jq -r '.tree' "$marker")" = "$(review_snapshot "$repo")" ]; then
+        printf 'both\n'
+        return
+    fi
+    printf '%s\n' "${HARNESS_REQUIRED_REVIEWER:-codex}"
+}
+
+review_has_provider() {
+    jq -e --arg reviewer "$2" '
+        (.reviewers // [(.reviewer // "codex")]) as $reviewers |
+        if $reviewer == "both" then ($reviewers | index("codex") != null and index("claude") != null)
+        else ($reviewers | index($reviewer) != null) end' "$1" >/dev/null 2>&1
+}
+
 review_approval_valid() {
     local marker="$1" session="$2" repo="$3" tree
     [ -s "$marker" ] || return 1
+    [ ! -d "$HOME/.claude/state/codex-delegate-active-$(repo_hash "$repo")" ] || return 1
     jq -e --arg session "$session" --arg repo "$repo" \
         '.version == 2 and .scope == "full" and .repo == $repo and .session == $session' \
         "$marker" >/dev/null 2>&1 || return 1
+    review_has_provider "$marker" "$(review_expected_reviewer "$repo" "$session")" || return 1
     tree=$(jq -r '.tree' "$marker")
     [ "$tree" = "$(review_snapshot "$repo")" ] || return 1
     review_index_matches "$repo" "$tree"
@@ -68,7 +94,15 @@ review_approval_valid() {
 # Repository changes, not tool calls or line counts, determine review eligibility.
 # Documentation-only work may skip; executable/config/dependency changes do not.
 review_required() {
-    local repo="$1" session="$2" base tree path
+    local repo="$1" session="$2" base tree path marker
+    marker="$HOME/.claude/state/reviewed-$(repo_hash "$repo")"
+    [ ! -f "$HOME/.claude/state/codex-delegate-pending-$(repo_hash "$repo")" ] || return 0
+    # An approval from the wrong family must not disappear behind its advanced baseline.
+    if [ -s "$marker" ] && jq -e --arg repo "$repo" --arg session "$session" \
+        '.version == 2 and .repo == $repo and .session == $session' "$marker" >/dev/null 2>&1 \
+        && ! review_has_provider "$marker" "$(review_expected_reviewer "$repo" "$session")"; then
+        return 0
+    fi
     base=$(review_baseline "$repo" "$session" 2>/dev/null) || return 0
     git -C "$repo" cat-file -e "${base}^{tree}" 2>/dev/null || return 0
     tree=$(review_snapshot "$repo") || return 0

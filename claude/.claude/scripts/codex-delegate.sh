@@ -242,7 +242,7 @@ else
     SCOPE_HINT="You may edit files in the cwd repo."
     [[ "$WRITE" -eq 0 ]] && SCOPE_HINT="Read-only: propose a diff, do not modify files."
     PROMPT=$(cat <<EOF
-Delegated sub-task per AGENTS.md. ${SCOPE_HINT} Make the smallest viable change — no refactors, renames, or cleanups beyond what the task requires. If ambiguous, pick the most likely interpretation and state the assumption. Run tests/typecheck if relevant. Do not commit/push. End with a ## Summary section listing touched files, what changed, what was intentionally not changed, and follow-ups for the calling agent.
+Delegated sub-task per AGENTS.md. ${SCOPE_HINT} Make the smallest viable change — no refactors, renames, or cleanups beyond what the task requires. If ambiguous, pick the most likely interpretation and state the assumption. Run tests/typecheck if relevant. Do not commit/push or start a review/plan child: the parent owns the final cross-review and commit gates after you return. End with a ## Summary section listing touched files, what changed, what was intentionally not changed, and follow-ups for the calling agent.
 
 --- TASK ---
 ${INPUT_TEXT}
@@ -264,11 +264,28 @@ fi
 #    until the next cross-review APPROVED clears the pending flag).
 # Pessimistic by design: both happen even if codex ends up making no edits;
 # user runs /cross-review to restore the marker and clear the pending flag.
+DELEGATE_ACTIVE=""
+ACTIVE_OWNED=0
+PUBLISH_OWNED=0
+trap 'if [[ "$ACTIVE_OWNED" == 1 ]]; then rmdir "$DELEGATE_ACTIVE"; fi; if [[ "$PUBLISH_OWNED" == 1 ]]; then rmdir "$PUBLISH_LOCK"; fi' EXIT
 if [[ "$WRITE" -eq 1 && -n "$REPO_ROOT" ]]; then
     STATE_DIR="$HOME/.claude/state"
     mkdir -p "$STATE_DIR"
+    PUBLISH_LOCK="$STATE_DIR/review-publish-$JOB_SCOPE.lock"
+    mkdir "$PUBLISH_LOCK" 2>/dev/null || { echo '[codex-delegate] Review publication in progress; retry.' >&2; exit 2; }
+    PUBLISH_OWNED=1
+    DELEGATE_ACTIVE="$STATE_DIR/codex-delegate-active-$JOB_SCOPE"
+    if ! mkdir "$DELEGATE_ACTIVE" 2>/dev/null; then
+        rmdir "$PUBLISH_LOCK"
+        PUBLISH_OWNED=0
+        echo "[codex-delegate] A write delegate is active (or needs interrupted-job recovery): $DELEGATE_ACTIVE" >&2
+        exit 2
+    fi
+    ACTIVE_OWNED=1
     rm -f "$STATE_DIR/reviewed-$JOB_SCOPE"
     touch "$STATE_DIR/codex-delegate-pending-$JOB_SCOPE"
+    rmdir "$PUBLISH_LOCK"
+    PUBLISH_OWNED=0
 fi
 
 RUN_ARGS=(--timeout "$TIMEOUT")
@@ -299,7 +316,7 @@ if [[ "$RUN_BACKGROUND" -eq 0 ]]; then
     # Foreground: progress streams to the terminal on stderr; the final
     # message lands in the job file and is echoed once codex is done.
     set +e
-    "$RUNNER" ${RUN_ARGS[@]+"${RUN_ARGS[@]}"} </dev/null > "$OUT"
+    HARNESS_DELEGATE_CHILD=1 "$RUNNER" ${RUN_ARGS[@]+"${RUN_ARGS[@]}"} </dev/null > "$OUT"
     STATUS=$?
     set -e
     printf 'exit_status=%s\nfinished_at=%s\n' "$STATUS" "$(date +%Y-%m-%dT%H:%M:%S%z)" >> "$META"
@@ -317,12 +334,14 @@ fi
 # stdout, so a caller doing `JOB=$(codex-delegate.sh …)` blocks in command
 # substitution until the whole job finishes — the exact opposite of "returns a
 # job id immediately".
-CODEX_JOB_OUT="$OUT" CODEX_JOB_LOG="$LOG" CODEX_JOB_META="$META" \
+HARNESS_DELEGATE_CHILD=1 CODEX_JOB_OUT="$OUT" CODEX_JOB_LOG="$LOG" CODEX_JOB_META="$META" CODEX_DELEGATE_ACTIVE="$DELEGATE_ACTIVE" \
 setsid bash -c '
+    trap '\''if [[ -n "$CODEX_DELEGATE_ACTIVE" ]]; then rmdir "$CODEX_DELEGATE_ACTIVE"; fi'\'' EXIT
     "$@" > "$CODEX_JOB_OUT" 2> "$CODEX_JOB_LOG"
     printf "exit_status=%s\nfinished_at=%s\n" "$?" "$(date +%Y-%m-%dT%H:%M:%S%z)" >> "$CODEX_JOB_META"
 ' codex-delegate-job "$RUNNER" ${RUN_ARGS[@]+"${RUN_ARGS[@]}"} </dev/null >/dev/null 2>&1 &
 JOB_PID=$!
+ACTIVE_OWNED=0
 
 # Record identity for liveness checks. `ps -o lstart=` pins the process start
 # time so a recycled pid cannot impersonate this job.

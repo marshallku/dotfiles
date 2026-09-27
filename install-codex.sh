@@ -2,7 +2,7 @@
 # Run after stow claude. Share source files; keep machine-specific config local.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")" && pwd)
-for dependency in python3 jq git codex; do
+for dependency in python3 jq git codex claude; do
     command -v "$dependency" >/dev/null || { echo "Missing dependency: $dependency" >&2; exit 1; }
 done
 if [ ! -f "$HOME/.claude/settings.json" ] || [ ! -f "$HOME/.claude/hooks/_lib.sh" ]; then

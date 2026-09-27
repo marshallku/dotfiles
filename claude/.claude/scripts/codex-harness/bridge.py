@@ -16,6 +16,9 @@ SUPPORTED = {
     "post-typecheck.sh", "ssot-check-mark.sh",
 }
 READ_ONLY_HOOKS = {"careful-with-judge.sh", "protect-secrets.sh", "freeze.sh"}
+DELEGATE_HOOKS = READ_ONLY_HOOKS | {
+    "post-typecheck.sh", "track-edit.sh", "pre-commit-gate.sh", "commit-policy-gate.sh", "block-raw-git.sh",
+}
 
 
 def normalized_events(payload):
@@ -65,6 +68,7 @@ def run_hook(name, payload, timeout):
     result = subprocess.run(
         ["bash", str(CLAUDE / "hooks" / name)], input=json.dumps(payload),
         text=True, capture_output=True, cwd=payload["cwd"], timeout=timeout,
+        env={**os.environ, "HARNESS_REQUIRED_REVIEWER": "claude"},
     )
     if result.stderr:
         print(result.stderr, file=sys.stderr, end="")
@@ -105,6 +109,8 @@ def dispatch(payload):
         for name, timeout in configured_hooks(normalized):
             if os.environ.get("HARNESS_READ_ONLY_CHILD") == "1" and name not in READ_ONLY_HOOKS:
                 continue
+            if os.environ.get("HARNESS_DELEGATE_CHILD") == "1" and name not in DELEGATE_HOOKS:
+                continue
             hook_input = normalized
             if name == "verification-gate.sh":
                 hook_input = {**normalized, "transcript_path": str(ledger)}
@@ -116,8 +122,13 @@ def dispatch(payload):
     if blocked:
         return {"decision": "block", "reason": "\n\n".join(blocked)}
     context = [output.get("hookSpecificOutput", {}).get("additionalContext", "") for output in outputs]
-    if event == "SessionStart" and os.environ.get("HARNESS_READ_ONLY_CHILD") != "1":
+    if (event == "SessionStart" and os.environ.get("HARNESS_DELEGATE_CHILD") == "1"
+            and os.environ.get("HARNESS_READ_ONLY_CHILD") != "1"):
+        context.append("Delegated implementation session: implement and test the assigned task. "
+                       "The parent owns cross-review and commit gates after you return. Do not start a review/plan child.")
+    elif event == "SessionStart" and os.environ.get("HARNESS_READ_ONLY_CHILD") != "1":
         context.append(f"Shared harness session ID: {session}. Use this exact ID with codex-review.sh --session. "
+                       "Codex-authored code MUST use --reviewer claude; a Codex review does not satisfy this gate. "
                        "Read ~/.codex/harness.md for Codex adaptations before using shared skills.")
     if any(context):
         return {"hookSpecificOutput": {"hookEventName": event, "additionalContext": "\n\n".join(filter(None, context))}}

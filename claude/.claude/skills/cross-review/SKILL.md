@@ -1,6 +1,6 @@
 ---
 name: cross-review
-description: 완료한 구현 작업을 Codex로 리뷰하고 근거를 검증해 반영한다. 작업 단위 승인 재사용, 수정분 재리뷰, 최대 3라운드.
+description: 구현 주체와 반대 모델로 교차 리뷰한다 (Claude 작성→Codex, Codex 작성→Claude). 작업 단위 승인 재사용, 근거 검증, 수정분 재리뷰, 최대 3라운드.
 user-invocable: true
 allowed-tools: Bash, Read, Grep, Glob, Edit
 effort: high
@@ -14,6 +14,23 @@ effort: high
 작은 인증·권한·설정 변경도 파일 수나 줄 수로 생략하지 않는다.
 
 ## 첫 리뷰
+
+구현 주체에 따라 리뷰어를 **명시적으로** 선택한다:
+
+- Claude가 구현 → `REVIEWER=codex`
+- Codex가 구현 → `REVIEWER=claude`
+
+`~/.claude/state/codex-delegate-pending-<repo-hash>`가 있으면 부모와 위임자의 코드가
+섞일 수 있으므로 **Claude와 Codex 양쪽**을 같은 전체 스냅샷으로 리뷰시킨다.
+위임 작업이 끝난 뒤 `--reviewer claude`, `--reviewer codex`를 각각 실행한다.
+한쪽 APPROVED만으로는 커밋 게이트가 열리지 않으며 기준점도 전진하지 않는다.
+수정으로 스냅샷이 바뀌면 양쪽 모두 새 내용에 대한 승인이 필요하다.
+
+모든 호출에 `--reviewer "$REVIEWER"`를 전달한다. `codex-review.sh`는 호환성을 위해
+이름만 유지한 공통 엔진이다. 기본값 codex에 의존하지 않는다. 선택한 CLI 실행·인증에
+실패하면 오류를 보고하고 멈춘다. 같은 모델 리뷰로 조용히 대체하지 않는다.
+Claude 리뷰어는 Read/Glob/Grep만 제공하고 Bash·Edit·Write·MCP·훅·다른 스킬은 로드하지 않는다.
+관련 파일은 직접 읽지만 테스트 실행은 구현 주체가 맡고 리뷰어는 그 결과를 검증한다.
 
 현재 저장소와 세션 ID를 확인한다. SessionStart가 시작 tree를 저장하며,
 승인 후에는 승인 tree가 다음 작업의 기준점이 된다. 세션 기준점이 없으면
@@ -34,9 +51,9 @@ INTENT_MARKER="$HOME/.claude/state/intent-active-${SESSION_ID}-${REPO_HASH}.path
 미구현 사항을 숨기지 않는다. 임시 파일은 저장소 밖에 둔다.
 
 ```bash
-bash ~/.claude/scripts/codex-review.sh --session "$SESSION_ID" --intent-file "$INTENT_FILE"
+bash ~/.claude/scripts/codex-review.sh --reviewer "$REVIEWER" --session "$SESSION_ID" --intent-file "$INTENT_FILE"
 # intent가 없는 경우
-bash ~/.claude/scripts/codex-review.sh --session "$SESSION_ID" --context-file "$BRIEF"
+bash ~/.claude/scripts/codex-review.sh --reviewer "$REVIEWER" --session "$SESSION_ID" --context-file "$BRIEF"
 ```
 
 Bash 호출은 foreground, `timeout: 600000`을 사용한다. Round 1에는 `--resume`을 붙이지 않는다.
@@ -57,7 +74,7 @@ Bash 호출은 foreground, `timeout: 600000`을 사용한다. Round 1에는 `--r
 원래 intent/brief는 유지하고, 같은 명령에 다음 인자를 추가한다:
 
 ```bash
-bash ~/.claude/scripts/codex-review.sh --session "$SESSION_ID" --context-file "$BRIEF" \
+bash ~/.claude/scripts/codex-review.sh --reviewer "$REVIEWER" --session "$SESSION_ID" --context-file "$BRIEF" \
     --resume --response-file "$RESPONSES"
 ```
 
@@ -68,12 +85,17 @@ bash ~/.claude/scripts/codex-review.sh --session "$SESSION_ID" --context-file "$
 
 ## 승인과 보고
 
-승인은 저장소·세션·전체 스냅샷에 묶인다. Bash·포매터·외부 도구 변경도 승인을 무효화한다.
+승인은 리뷰어·저장소·세션·전체 스냅샷에 묶인다. 다른 모델의 재시도 스레드는 재사용하지 않는다.
+위임 작업에서는 동일 스냅샷에 대한 양쪽 승인을 합쳐 전체 승인을 완성한다.
+이미 승인한 후 리뷰어를 바꾸면 이전 승인이 기준점을 전진시켰으므로 알려진 시작 커밋을
+`--base`로 명시해 전체 작업을 다시 리뷰한다. 빈 diff로 승인을 바꿔치기하지 않는다.
+Bash·포매터·외부 도구 변경도 승인을 무효화한다.
 리뷰 당시 코드와 다른 중간 버전만 부분 스테이징하면 게이트가 차단한다.
 `touch reviewed-*`는 승인으로 인정하지 않는다. 전역 opt-out은 기존
 `~/.claude/state/auto-review-disabled`이며 사용자가 요청한 경우에만 사용한다.
 
 사용자 언어로 최종 판정, 라운드 수, 수용한 수정, 테스트 결과, 남은 판단 사항만 간결하게 보고한다.
-사용량은 `~/.claude/state/codex-usage.jsonl`에 라운드·resume·판정·시간·캐시 토큰과 함께 기록된다.
+사용량은 Codex의 `~/.claude/state/codex-usage.jsonl`, Claude의
+`~/.claude/state/claude-review-usage.jsonl`에 각 CLI가 제공한 정보로 기록된다.
 `usage_reported=false`인 호출의 0은 사용량 미확인이며 무료 실행을 뜻하지 않는다.
 실제 모델을 CLI가 알려주지 않으면 `actual_model=null`로 남긴다.

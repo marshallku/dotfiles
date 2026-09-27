@@ -29,6 +29,7 @@ class BridgeTests(unittest.TestCase):
         self.env = {**os.environ, "HOME": str(self.home),
                     "PATH": f"{self.home / 'bin'}:{os.environ['PATH']}"}
         self.env.pop("HARNESS_READ_ONLY_CHILD", None)
+        self.env.pop("HARNESS_DELEGATE_CHILD", None)
         self.git("init", "-q", "-b", "main")
         self.git("config", "user.email", "test@example.invalid")
         self.git("config", "user.name", "Test")
@@ -101,6 +102,23 @@ class BridgeTests(unittest.TestCase):
         result = self.hook("Stop", stop_hook_active=False)
         self.assertNotIn("verify-gate", result.get("reason", ""))
         self.assertFalse((self.home / ".claude/state/verify-blocked-test-session").exists())
+
+    def test_write_delegate_leaves_final_review_to_parent_but_keeps_protection(self):
+        self.env["HARNESS_DELEGATE_CHILD"] = "1"
+        start = self.hook("SessionStart", source="startup")
+        self.assertIn("parent owns cross-review", start["hookSpecificOutput"]["additionalContext"])
+        (self.repo / "code.py").write_text("changed = True\n")
+        self.assertEqual(self.hook("Stop", stop_hook_active=False), {})
+        self.patch("*** Begin Patch\n*** Add File: edited.py\n+x\n*** End Patch", event="PostToolUse")
+        self.assertIn("edited.py", (self.home / ".claude/state/dirty-test-session.log").read_text())
+        result = self.patch("*** Begin Patch\n*** Add File: .env\n+x\n*** End Patch")
+        self.assertEqual(result["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertFalse((self.home / ".claude/handoffs/latest.md").exists())
+        for command in ("git commit -m test", "git push", "~/save.sh 'Fix test'"):
+            result = self.hook("PreToolUse", tool_name="Bash", tool_input={"command": command})
+            self.assertEqual(result["hookSpecificOutput"]["permissionDecision"], "deny", command)
+        self.env["HARNESS_READ_ONLY_CHILD"] = "1"
+        self.assertEqual(self.hook("SessionStart", source="startup"), {})
 
     def test_plan_requires_recall_then_accepts_it(self):
         dn = self.home / "docs/scripts/dn"
