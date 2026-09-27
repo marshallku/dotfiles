@@ -51,6 +51,11 @@ hypr_submap() {
     hypr_dispatch "hl.dsp.submap(\"$1\")" submap "$1"
 }
 
+# hypr_exit  — end the Hyprland session (logout).
+hypr_exit() {
+    hypr_dispatch "hl.dsp.exit()" exit
+}
+
 # hypr_exec <command>  — spawn as a compositor child so it inherits the session.
 hypr_exec() {
     hypr_dispatch "hl.dsp.exec_cmd(\"$1\")" exec "$1"

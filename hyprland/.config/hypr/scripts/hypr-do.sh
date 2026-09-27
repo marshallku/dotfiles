@@ -23,6 +23,7 @@ case "$verb" in
     dpms)         hypr_dpms "$1" "${2:-}" ;;
     submap)       hypr_submap "$1" ;;
     exec)         hypr_exec "$*" ;;
+    exit)         hypr_exit ;;
     focus-window) hypr_focus_window "$1" ;;
     resize-px)    hypr_resize_px "$1" "$2" "$3" ;;
     monitor)      hypr_monitor_apply "$1" "$2" ;;
@@ -34,6 +35,7 @@ usage: hypr-do.sh <verb> [args]
   dpms on|off|toggle [MON]     set display power
   submap NAME                  enter a submap ("reset" leaves)
   exec CMD                     spawn CMD as a compositor child
+  exit                         end the Hyprland session (logout)
   focus-window SELECTOR        focus a window ("pid:1234", "class:foo")
   resize-px DX DY SELECTOR     nudge a window by pixels
   monitor OUTPUT SPEC          re-commit an output ("disable" or "MODE,POS,SCALE")

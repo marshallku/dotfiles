@@ -1,9 +1,7 @@
 #!/bin/bash
 
-SERVER_GROUPS=(
-  "HomeLab:marshallku.com,gitgarden.marshallku.dev",
-  "Cloud:cdn.marshallku.com/files/favicon.ico"
-)
+# Server list is shared with the quickshell desktop widget.
+source "$(dirname "$(readlink -f "$0")")/servers.conf"
 
 TIMEOUT=3
 STATE_FILE="/tmp/server_health_state"

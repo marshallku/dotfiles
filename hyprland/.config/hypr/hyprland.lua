@@ -71,6 +71,8 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP HYPRLAND_INSTANCE_SIGNATURE")
 
     hl.exec_cmd("waybar")
+    -- Desktop widget (agents + homelab) and the IPC power menu.
+    hl.exec_cmd("qs")
     -- Ensure the wallpaper symlink resolves before hyprpaper reads it (fresh stow).
     hl.exec_cmd(scripts .. "/wallpaper.sh ensure && hyprpaper")
     hl.exec_cmd("fcitx5")
@@ -296,6 +298,7 @@ hl.bind(mainMod .. " + P",     hl.dsp.window.pseudo())          -- dwindle
 hl.bind(mainMod .. " + J",     hl.dsp.layout("togglesplit"))    -- dwindle
 hl.bind(mainMod .. " + R",     hl.dsp.exec_cmd("~/.config/waybar/scripts/launch.sh"))
 hl.bind(mainMod .. " + L",     hl.dsp.exec_cmd("hyprlock"))
+hl.bind(mainMod .. " + Escape", hl.dsp.exec_cmd("qs ipc call power toggle"))
 
 -- Move focus with mainMod + arrow keys
 hl.bind(mainMod .. " + left",  hl.dsp.focus({ direction = "left" }))
@@ -393,6 +396,17 @@ hl.window_rule({
 --     match   = { class = "^com\\.marshall\\.copad$" },
 --     opacity = "0.92 0.88",
 -- })
+
+
+-- Quickshell surfaces (desktop cards, power menu scrim): blur what shows
+-- through their translucent fill. ignore_alpha keeps the fully transparent
+-- gaps between cards from being blurred into a visible box.
+hl.layer_rule({
+    name         = "blur-quickshell",
+    match        = { namespace = "^quickshell-(desktop|power)$" },
+    blur         = true,
+    ignore_alpha = 0.3,
+})
 
 
 -----------------
