@@ -7,7 +7,7 @@
 #   codex-review.sh                              # HEAD vs main (or origin/main)
 #   codex-review.sh --base develop               # HEAD vs given base
 #   codex-review.sh --uncommitted                # working tree changes
-#   codex-review.sh --session <id>               # session dirty-log files only
+#   codex-review.sh --session <id>               # work-unit changes in this repository
 #   codex-review.sh --files f1.ts,f2.ts          # specific files (comma-sep)
 #   codex-review.sh --focus security             # focused review
 #   codex-review.sh --context "user asked to..." # inline intent brief
@@ -23,19 +23,15 @@
 #                                                # fixes (big token saving). Round
 #                                                # 1 must run WITHOUT --resume.
 #
-# --session and --files collect diffs per-file, trying (in order):
-#   1. uncommitted changes (git diff HEAD -- <file>)
-#   2. committed changes vs base (git diff <base>...HEAD -- <file>)
-#   3. last commit that touched the file (git log -1 -p -- <file>)
-# This ensures review works regardless of whether changes are committed.
-#
-# Intent context is strongly recommended. Without it, codex can only judge
-# "is this good code" — not "does this implement what the user asked for".
-# The skill / Stop hook flow will instruct Claude to write a short brief.
+# --session compares the captured work-unit baseline with a repository snapshot,
+# including committed, unstaged and untracked changes. --base overrides baseline.
+# --resume sends only changes since the previous review snapshot plus responses.
+# Narrow --files / --focus reviews never grant a repository-wide approval.
+# --response-file F supplies accepted/rebutted findings and verification results.
 #
 # Environment overrides:
 #   CODEX_REVIEW_MODEL   — override model passed to codex (-m)
-#   CODEX_REVIEW_TIMEOUT — seconds before the review is aborted (default 1200)
+#   CODEX_REVIEW_TIMEOUT — seconds before the review is aborted (default 540)
 #
 # Exit codes:
 #   0 = VERDICT: APPROVED
@@ -55,9 +51,14 @@ INTENT_FILE=""
 SESSION_ID=""
 FILE_LIST=""
 RESUME=0
-TIMEOUT="${CODEX_REVIEW_TIMEOUT:-1200}"
+RESPONSE_FILE=""
+TIMEOUT="${CODEX_REVIEW_TIMEOUT:-540}"
 
 while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --base|--session|--files|--focus|--context|--context-file|--intent-file|--response-file)
+            [[ $# -ge 2 ]] || { echo "[codex-review] $1 requires a value" >&2; exit 2; } ;;
+    esac
     case "$1" in
         --base)
             BASE="$2"
@@ -91,6 +92,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --intent-file)
             INTENT_FILE="$2"
+            shift 2
+            ;;
+        --response-file)
+            RESPONSE_FILE="$2"
             shift 2
             ;;
         --resume)
@@ -148,7 +153,7 @@ if [[ -n "$INTENT_FILE" ]]; then
     INTENT_AVAILABLE=1
 fi
 
-RUNNER="$(dirname "$0")/codex-exec.sh"
+RUNNER="$(cd "$(dirname "$0")" && pwd)/codex-exec.sh"
 if [[ ! -x "$RUNNER" ]]; then
     echo "[codex-review] runner missing: $RUNNER" >&2
     exit 2
@@ -159,38 +164,53 @@ if ! git rev-parse --show-toplevel >/dev/null 2>&1; then
     exit 2
 fi
 
-# Defined early so that empty-diff APPROVED early-exits below can call it.
-# On APPROVED: mark the current repo as reviewed so pre-commit-gate.sh lets
-# subsequent save.sh / git commit / git push through. Also clear any pending
-# codex-delegate marker for this repo — the review just covered whatever
-# codex wrote (or confirmed it wrote nothing), so the gate-bypass flag is
-# no longer needed.
+RESPONSE=""
+if [[ -n "$RESPONSE_FILE" ]]; then
+    RESPONSE=$(cat "$RESPONSE_FILE") || exit 2
+fi
+
+INVOCATION_DIR="$PWD"
+REVIEW_REPO_ROOT=$(git rev-parse --show-toplevel)
+cd "$REVIEW_REPO_ROOT"
+STATE_DIR="$HOME/.claude/state"
+mkdir -p "$STATE_DIR"
+REPO_HASH=$(repo_hash "$REVIEW_REPO_ROOT")
+THREAD_KEY="review-${REPO_HASH}-$(printf '%s' "${SESSION_ID:-manual}" | portable_md5)"
+REVIEW_STATE="$STATE_DIR/${THREAD_KEY}.json"
+LOCK_DIR="$STATE_DIR/${THREAD_KEY}.lock"
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    echo "[codex-review] Review already running for this repo/session: $LOCK_DIR" >&2
+    exit 2
+fi
+PROMPT_FILE=""
+STDOUT_FILE=""
+trap 'rm -f "$PROMPT_FILE" "$STDOUT_FILE"; rmdir "$LOCK_DIR"' EXIT
+REVIEW_TREE=$(review_snapshot "$REVIEW_REPO_ROOT") || exit 2
+
 mark_repo_reviewed() {
-    local repo_root
-    repo_root=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
-    [ -z "$repo_root" ] && return 0
-    local repo_hash_v
-    repo_hash_v=$(repo_hash "$repo_root")
-    local state_dir="$HOME/.claude/state"
-    mkdir -p "$state_dir"
-    # Bind the marker to the reviewing session so a later session cannot ride
-    # this approval for the same repo (reviewed_marker_valid in _lib.sh enforces
-    # the match + a TTL). When SESSION_ID is empty (manual --uncommitted/--branch
-    # review) the marker is left empty: repo-scoped but still TTL-bounded.
-    #
-    # Publish atomically (same-dir temp + mv). A direct `> marker` write that is
-    # interrupted mid-write would leave a 0-byte marker, which validator treats
-    # as an any-session bypass — exactly the cross-session hole this closes.
-    local tmp
-    tmp=$(mktemp "$state_dir/.reviewed-${repo_hash_v}.XXXXXX") || return 0
-    if [ -n "${SESSION_ID:-}" ]; then
-        printf 'session=%s\n' "$SESSION_ID" > "$tmp"
+    [[ "$MODE" != "files" && -z "$FOCUS" ]] || return 0
+    if [[ "$REVIEW_TREE" != "$(review_snapshot "$REVIEW_REPO_ROOT")" ]]; then
+        echo '[codex-review] Files changed during review; approval not published. Re-review current changes.' >&2
+        return 1
     fi
-    mv -f "$tmp" "$state_dir/reviewed-$repo_hash_v"
-    rm -f "$state_dir/codex-delegate-pending-$repo_hash_v"
+    review_index_matches "$REVIEW_REPO_ROOT" "$REVIEW_TREE" || {
+        echo '[codex-review] Staged content differs from reviewed files. Stage the reviewed versions and re-run.' >&2
+        return 1
+    }
+    local tmp
+    tmp=$(mktemp "$STATE_DIR/.reviewed.XXXXXX")
+    jq -n --arg repo "$REVIEW_REPO_ROOT" --arg session "$SESSION_ID" --arg tree "$REVIEW_TREE" \
+        '{version:2, scope:"full", repo:$repo, session:$session, tree:$tree}' > "$tmp"
+    mv -f "$tmp" "$STATE_DIR/reviewed-$REPO_HASH"
+    if [[ -n "$SESSION_ID" ]]; then
+        tmp=$(mktemp "$STATE_DIR/.review-base.XXXXXX")
+        printf '%s\n' "$REVIEW_TREE" > "$tmp"
+        mv -f "$tmp" "$(review_state_path "$REVIEW_REPO_ROOT" "$SESSION_ID")"
+    fi
+    rm -f "$STATE_DIR/codex-delegate-pending-$REPO_HASH"
 }
 
-# Auto-detect default branch when needed (branch mode, or session/files fallback)
+# Auto-detect the comparison branch for branch/files queries.
 detect_base() {
     if [[ -n "$BASE" ]]; then return 0; fi
     BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||') \
@@ -216,138 +236,40 @@ detect_base() {
     fi
 }
 
-# Collect diff for a single file, trying multiple strategies.
-# Prints the diff to stdout. Returns 1 if no diff found.
-collect_file_diff() {
-    local file="$1"
-    local d=""
-
-    # 1. Uncommitted changes (staged + unstaged)
-    d=$(git diff HEAD -- "$file" 2>/dev/null || true)
-    if [[ -n "$d" ]]; then echo "$d"; return 0; fi
-
-    # 2. Committed changes vs base branch
-    detect_base
-    d=$(git diff "${BASE}...HEAD" -- "$file" 2>/dev/null || true)
-    if [[ -n "$d" ]]; then echo "$d"; return 0; fi
-
-    # 3. Last commit that touched this file
-    d=$(git log -1 -p --format="" -- "$file" 2>/dev/null || true)
-    if [[ -n "$d" ]]; then echo "$d"; return 0; fi
-
-    # 4. Untracked new file: synthetic diff vs /dev/null. Otherwise files
-    #    that were created (e.g. by /codex-delegate) but never committed
-    #    return empty here and slip through the empty-DIFF early-exit.
-    if [[ -f "$file" ]]; then
-        d=$(git diff --no-index --binary -- /dev/null "$file" 2>/dev/null || true)
-        if [[ -n "$d" ]]; then echo "$d"; return 0; fi
-    fi
-
-    return 1
-}
-
-# Resolve file list for session/files modes
 TARGET_FILES=()
-FILES_SUMMARY=""
-
-if [[ "$MODE" == "session" ]]; then
-    DIRTY_LOG="$HOME/.claude/state/dirty-${SESSION_ID}.log"
-    if [[ ! -f "$DIRTY_LOG" ]]; then
-        # Fallback: a /codex-delegate --write only session never invokes
-        # track-edit.sh, so no dirty log exists, but the working tree still
-        # has codex's writes that need review. Treat as --uncommitted so the
-        # gate's "run --session ${SESSION}" instruction Just Works for that
-        # case instead of hard-failing.
-        echo "[codex-review] no dirty log for session ${SESSION_ID}; falling back to --uncommitted" >&2
-        MODE="uncommitted"
-    else
-        REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
-        while IFS= read -r f; do
-            # Scope to current repo
-            if [[ -n "$REPO_ROOT" ]] && [[ "$f" != "${REPO_ROOT}/"* ]]; then
-                continue
-            fi
-            TARGET_FILES+=("$f")
-        done < <(sort -u "$DIRTY_LOG")
-    fi
-
-elif [[ "$MODE" == "files" ]]; then
-    IFS=',' read -ra TARGET_FILES <<< "$FILE_LIST"
-fi
-
-# Collect diffs based on mode
-if [[ "$MODE" == "session" || "$MODE" == "files" ]]; then
-    if [[ ${#TARGET_FILES[@]} -eq 0 ]]; then
-        # No targets to review. For session mode this is the cross-repo edge
-        # case: the dirty log exists (other repo touched) but has zero entries
-        # for the cwd repo. Falling through to APPROVED would clear the
-        # delegate-pending marker for the cwd repo without actually reviewing
-        # codex's working-tree writes — exactly the bypass we are trying to
-        # close. Fall back to --uncommitted instead so the cwd repo's working
-        # tree is what gets reviewed.
-        if [[ "$MODE" == "session" ]]; then
-            echo "[codex-review] no session-tracked files for this repo; falling back to --uncommitted" >&2
-            MODE="uncommitted"
+case "$MODE" in
+    session)
+        if [[ -n "$BASE" ]]; then
+            REVIEW_BASE=$(git rev-parse "${BASE}^{tree}") || exit 2
         else
-            # explicit --files mode with empty list. This is a caller error
-            # (or empty-set query). Do NOT mark reviewed — that would clear
-            # the repo's reviewed/pending markers without ever reviewing the
-            # actual working tree, granting a free gate bypass.
-            echo "[codex-review] --files mode requires at least one file" >&2
-            exit 2
+            REVIEW_BASE=$(review_baseline "$REVIEW_REPO_ROOT" "$SESSION_ID") || exit 2
         fi
-    fi
-fi
-
-# Branch the diff collection on (possibly fallback-adjusted) MODE.
-if [[ "$MODE" == "session" || "$MODE" == "files" ]]; then
-
-    DIFF=""
-    SUMMARY_LINES=""
-    DIFF_SOURCE_DESC=""
-    for file in "${TARGET_FILES[@]}"; do
-        file_diff=$(collect_file_diff "$file" || true)
-        if [[ -n "$file_diff" ]]; then
-            DIFF="${DIFF}${file_diff}"$'\n'
-            rel_path="${file#"$(git rev-parse --show-toplevel 2>/dev/null)/"}"
-            SUMMARY_LINES="${SUMMARY_LINES}- ${rel_path}"$'\n'
+        DIFF_DESC="work unit in session ${SESSION_ID}; all repository changes since ${REVIEW_BASE}"
+        ;;
+    uncommitted)
+        REVIEW_BASE=$(review_head_tree "$REVIEW_REPO_ROOT")
+        DIFF_DESC="uncommitted repository changes including untracked files"
+        ;;
+    branch|files)
+        detect_base
+        REVIEW_BASE=$(git merge-base "$BASE" HEAD) || exit 2
+        DIFF_DESC="repository snapshot vs merge-base of ${BASE} and HEAD"
+        if [[ "$MODE" == "files" ]]; then
+            [[ -n "$FILE_LIST" ]] || { echo '[codex-review] --files requires paths' >&2; exit 2; }
+            IFS=',' read -ra TARGET_FILES <<< "$FILE_LIST"
+            for i in "${!TARGET_FILES[@]}"; do
+                [[ "${TARGET_FILES[$i]}" == /* ]] || TARGET_FILES[$i]="$INVOCATION_DIR/${TARGET_FILES[$i]}"
+            done
+            DIFF_DESC="selected files: ${FILE_LIST}"
         fi
-    done
-    FILE_TOTAL=${#TARGET_FILES[@]}
-    if [[ "$MODE" == "session" ]]; then
-        DIFF_DESC="session ${SESSION_ID} (${FILE_TOTAL} files touched)"
-    else
-        DIFF_DESC="specified files (${FILE_TOTAL} files)"
-    fi
-    FILES_SUMMARY="## Files in scope (${FILE_TOTAL} files)
-${SUMMARY_LINES}"
-
-elif [[ "$MODE" == "uncommitted" ]]; then
-    # `git diff HEAD` excludes untracked files. A /codex-delegate that only
-    # creates new files would show an empty diff here and bypass review via
-    # the empty-DIFF path below. Append a synthetic diff for each untracked
-    # file (vs /dev/null) so they actually get reviewed.
-    DIFF=$(git diff HEAD)
-    while IFS= read -r untracked; do
-        [ -z "$untracked" ] && continue
-        # --no-index always exits 1 when files differ; swallow it.
-        u_diff=$(git diff --no-index --binary -- /dev/null "$untracked" 2>/dev/null || true)
-        if [[ -n "$u_diff" ]]; then
-            DIFF="${DIFF}"$'\n'"${u_diff}"
-        fi
-    done < <(git ls-files --others --exclude-standard 2>/dev/null)
-    DIFF_DESC="uncommitted working tree changes (incl. untracked files)"
-
-else
-    detect_base
-    DIFF=$(git diff "${BASE}...HEAD")
-    DIFF_DESC="HEAD vs ${BASE}"
-fi
+        ;;
+esac
+RAW_DIFF=$(git diff --no-ext-diff --no-textconv "$REVIEW_BASE" "$REVIEW_TREE" -- "${TARGET_FILES[@]}") || exit 2
+DIFF="$RAW_DIFF"
 
 # Strip well-known package-manager lock files from a git-diff stream.
-# Lock-file diffs are pure dependency-resolver output — reviewing them line by
-# line burns codex tokens with zero signal, and a single dep bump can dominate
-# the entire diff. We drop the whole `diff --git` block for each match.
+# Lock-file bodies can dominate the prompt. Replace them with a change summary;
+# the reviewer can inspect versions, sources and integrity from the Git trees.
 filter_lock_files() {
     awk '
         BEGIN {
@@ -375,8 +297,12 @@ filter_lock_files() {
 }
 
 DIFF=$(filter_lock_files <<< "$DIFF")
+if [[ "$DIFF" != "$RAW_DIFF" ]]; then
+    DIFF+=$'\nDependency/lock-file changes (inspect relevant versions, sources and integrity from snapshot):\n'
+    DIFF+=$(git diff --stat "$REVIEW_BASE" "$REVIEW_TREE" -- "${TARGET_FILES[@]}")
+fi
 
-if [[ -z "$DIFF" ]]; then
+if [[ -z "$RAW_DIFF" && "$RESUME" == "0" && -z "$CONTEXT" && "$INTENT_AVAILABLE" == "0" && ! -f "$REVIEW_STATE" ]]; then
     echo "## Summary" >&2
     echo "No diff to review (${DIFF_DESC})." >&2
     echo ""
@@ -386,7 +312,7 @@ if [[ -z "$DIFF" ]]; then
     # about a narrow set; granting the wider repo's reviewed/pending marker
     # would be an unauthorized gate bypass.
     if [[ "$MODE" != "files" ]]; then
-        mark_repo_reviewed
+        mark_repo_reviewed || exit 2
     fi
     notify_codex_done "VERDICT: APPROVED (no diff to review)" "$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")"
     exit 0
@@ -451,35 +377,46 @@ if [[ -n "${CODEX_REVIEW_MODEL:-}" ]]; then
     MODEL_ARGS=(--model "$CODEX_REVIEW_MODEL")
 fi
 
-# Build the prompt
-FILES_SECTION=""
-if [[ -n "$FILES_SUMMARY" ]]; then
-    FILES_SECTION="${FILES_SUMMARY}
-"
+if [[ -n "${CODEX_REVIEW_EFFORT:-}" ]]; then
+    MODEL_ARGS+=(--effort "$CODEX_REVIEW_EFFORT")
 fi
 
-# Review role + classification scheme + VERDICT contract live in
-# ~/.codex/AGENTS.md "Code Review Principles" / "Review Output Contract".
-# Auto-loaded — don't restate. We only supply scope + context + diff.
-#
-# RESUME rounds (VERDICT-loop round 2+) reuse the prior review thread by its
-# stored thread id. Codex already holds round 1's diff, its analysis,
-# and the task context/intent, so we DON'T resend CONTEXT_SECTION / INTENT_CHECK
-# (would just re-bill tokens codex already has). We send a short continuation
-# framing + the freshly-recomputed diff so codex reasons only about the fixes
-# instead of re-analysing the whole change from scratch. The diff is still
-# embedded (not "go run git diff yourself") to preserve exact review scope
-# across all collection strategies — committed, uncommitted, and untracked.
+CONTEXT_HASH=$(printf '%s\n' "$MODE" "$FOCUS" "$FILE_LIST" "$REVIEW_BASE" "$CONTEXT_SECTION" | portable_md5)
+ROUND=1
+# Repeated automatic invocations of the same unfinished work unit keep the cap.
+if [[ -f "$REVIEW_STATE" ]] && jq -e --arg context "$CONTEXT_HASH" \
+    '.context == $context and .verdict == "REVISE"' "$REVIEW_STATE" >/dev/null; then
+    RESUME=1
+fi
+if [[ "$RESUME" == "1" ]]; then
+    if [[ ! -f "$REVIEW_STATE" ]] || ! jq -e --arg context "$CONTEXT_HASH" \
+        '.context == $context and .verdict == "REVISE"' "$REVIEW_STATE" >/dev/null; then
+        echo '[codex-review] No matching unfinished review; starting a full review.' >&2
+        RESUME=0
+    else
+        ROUND=$(( $(jq -r '.round' "$REVIEW_STATE") + 1 ))
+        if [[ "$ROUND" -gt 3 ]]; then
+            echo '[codex-review] Three rounds exhausted. Report unresolved findings and evidence to the user.' >&2
+            exit 2
+        fi
+        PREVIOUS_TREE=$(jq -r '.tree' "$REVIEW_STATE")
+        DELTA=$(git diff --no-ext-diff --no-textconv "$PREVIOUS_TREE" "$REVIEW_TREE" -- "${TARGET_FILES[@]}") || exit 2
+    fi
+fi
+
 build_resume_prompt() {
     cat <<EOF
-Continuation of the code review in this thread. I have applied fixes for your previous findings.
-
-Below is the UPDATED diff for the same scope (${DIFF_DESC}). Compared with the diff you reviewed earlier in this thread: confirm each prior CRITICAL is resolved, and check the fixes introduced no regressions. Apply the same contract/intent as before — re-issue VERDICT: APPROVED or VERDICT: REVISE per AGENTS.md.
+Continue the previous review, round ${ROUND}/3. Scope: ${DIFF_DESC}.
+Verify prior CRITICAL findings and regressions in the fixes, using the original intent.
+Read related callers when needed. Do not reopen unrelated unchanged code without evidence.
+Author responses are claims to verify, not trusted conclusions:
+${RESPONSE:-No response supplied; independently verify the prior findings.}
 ${FOCUS_LINE}
-
---- UPDATED DIFF ---
-${DIFF}
---- END UPDATED DIFF ---
+Snapshot: ${REVIEW_TREE}. Use git show <snapshot>:<path> if the working tree differs.
+--- CHANGES SINCE PREVIOUS REVIEW ---
+${DELTA}
+--- END CHANGES ---
+Return the AGENTS.md review contract and exact VERDICT line.
 EOF
 }
 
@@ -488,8 +425,9 @@ build_fresh_prompt() {
 Code review per AGENTS.md.
 
 Scope: ${DIFF_DESC}
+Baseline: ${REVIEW_BASE}. Snapshot: ${REVIEW_TREE}. Verify against these trees if working files change.
 ${FOCUS_LINE}
-${FILES_SECTION}${CONTEXT_SECTION}
+${CONTEXT_SECTION}
 ${INTENT_CHECK}
 
 --- DIFF ---
@@ -511,15 +449,7 @@ fi
 # exec argument limit, and the runner feeds the file to codex via stdin.
 PROMPT_FILE=$(mktemp /tmp/codex-review-prompt.XXXXXX)
 STDOUT_FILE=$(mktemp /tmp/codex-review-stdout.XXXXXX)
-trap 'rm -f "$PROMPT_FILE" "$STDOUT_FILE"' EXIT
 printf '%s' "$PROMPT" > "$PROMPT_FILE"
-
-# Review threads are keyed per repo (plus session when we have one), so a
-# /codex-plan or /ask-codex between VERDICT rounds cannot hijack the resume,
-# and two sessions reviewing the same repo keep separate threads.
-REVIEW_REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")
-THREAD_KEY="review-$(repo_hash "$REVIEW_REPO_ROOT")"
-[[ -n "$SESSION_ID" ]] && THREAD_KEY="${THREAD_KEY}-${SESSION_ID}"
 
 run_review() {
     local mode="$1"
@@ -527,6 +457,7 @@ run_review() {
     [[ "$mode" == "resume" ]] && rargs+=(--resume)
     : > "$STDOUT_FILE"
     set +e
+    CODEX_REVIEW_ID="$THREAD_KEY" CODEX_REVIEW_UNIT="$CONTEXT_HASH" CODEX_REVIEW_ROUND="$ROUND" CODEX_REVIEW_SNAPSHOT="$REVIEW_TREE" \
     "$RUNNER" --prompt-file "$PROMPT_FILE" --timeout "$TIMEOUT" \
         ${rargs[@]+"${rargs[@]}"} ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} </dev/null \
         >"$STDOUT_FILE"
@@ -548,6 +479,7 @@ fi
 # fresh so the commit gate is not blocked by a missing thread.
 if [[ "$RESUME" == "1" && $STATUS -eq 3 ]]; then
     echo "[codex-review] no resumable thread found; falling back to a fresh review" >&2
+    RESUME=0
     PROMPT=$(build_fresh_prompt)
     printf '%s' "$PROMPT" > "$PROMPT_FILE"
     run_review fresh
@@ -579,13 +511,19 @@ fi
 echo "$OUTPUT"
 
 # Parse the final verdict — check the last 20 lines so conversational preamble does not confuse us
-VERDICT_LINE=$(echo "$OUTPUT" | tail -n 20 | grep -E "^VERDICT: (APPROVED|REVISE)" | tail -n 1 || true)
+VERDICT_LINE=$(echo "$OUTPUT" | tail -n 20 | grep -E "^VERDICT: (APPROVED|REVISE)$" | tail -n 1 || true)
 
 # No manual ping here: a completed codex turn fires the `notify` program from
 # ~/.codex/config.toml with the final message (which carries the VERDICT line).
 # The app-server path swallowed that event; `codex exec` does not. The explicit
 # notify_codex_done calls that remain cover only the paths where no codex turn
 # completes — empty diff, timeout, spawn failure.
+
+STATE_TMP=$(mktemp "$STATE_DIR/.review-round.XXXXXX")
+jq -n --arg tree "$REVIEW_TREE" --arg context "$CONTEXT_HASH" --argjson round "$ROUND" \
+    --arg verdict "${VERDICT_LINE#VERDICT: }" \
+    '{tree:$tree, context:$context, round:$round, verdict:$verdict}' > "$STATE_TMP"
+mv -f "$STATE_TMP" "$REVIEW_STATE"
 
 case "$VERDICT_LINE" in
     "VERDICT: APPROVED")
@@ -595,7 +533,7 @@ case "$VERDICT_LINE" in
         # marker on its APPROVED would let unrelated unreviewed changes
         # slip past pre-commit-gate.sh.
         if [[ "$MODE" != "files" ]]; then
-            mark_repo_reviewed
+            mark_repo_reviewed || exit 2
         fi
         # COPAD_HOOK_PUBLISH: claude.review_approved $(jq -n --arg s "$SESSION_ID" --arg m "$MODE" '{session:$s,mode:$m}')
         # Redirect coctl's ack ({"queued":true}) away from stdout so it does not

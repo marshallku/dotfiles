@@ -389,7 +389,7 @@ The full collaboration surface, mapped to where they belong in the workflow:
 
 All four user-facing skills (`/ask-codex`, `/codex-plan`, `/codex-delegate`, `/cross-review`) route through `~/.claude/scripts/codex-exec.sh`, a thin runner over `codex exec --json`. Its contract: **stdout = the final assistant message only** (safe to parse for `VERDICT:`), **stderr = rendered progress** (`🧵 thread` / `🟢 turn started` / `▶ command` / `✓ exit N` / `💬 message` / `🔵 turn completed`), so codex is not a black box. Exit codes: `0` ok · `2` error · `3` resume unavailable · `124` timeout.
 
-- **Thread resume is by explicit id.** `--thread-key KEY` persists the thread id under `~/.claude/state/codex-threads/<key>`; `--resume` continues exactly that thread. Keys are `plan-<repo_hash>` and `review-<repo_hash>[-<session>]`, so an `/ask-codex` between VERDICT rounds can no longer hijack a resume — the failure mode of the old workspace-wide `--resume-last`. A missing or GC'd thread exits `3` and the wrapper degrades to a fresh round instead of failing.
+- **Thread resume is by explicit id.** `--thread-key KEY` persists the thread id under `~/.claude/state/codex-threads/<key>`; `--resume` continues exactly that thread. Keys are `plan-<repo_hash>` and `review-<repo_hash>-<session_hash>`, so an `/ask-codex` between VERDICT rounds can no longer hijack a resume — the failure mode of the old workspace-wide `--resume-last`. A missing or GC'd thread exits `3` and the wrapper degrades to a fresh round instead of failing.
 - **Delegate jobs are plain files** at `~/.claude/state/codex-jobs/<repo-hash>/<id>.{meta,log,out,prompt}`. A background job is its own process group (`setsid`), so `--cancel` takes down codex and its tool commands together; liveness is verified against the recorded process start time, so a recycled pid can't fake a running job.
 - **Notifications are native again.** `codex exec` invokes the `notify` program from `~/.codex/config.toml`, so a finished turn pings the user by itself. Wrappers call `notify_codex_done` only for outcomes codex never reports (empty diff, timeout, spawn failure) — adding it to a success path double-pings.
 
@@ -403,7 +403,7 @@ Codex calls (`/codex-plan`, `/cross-review`, a heavy `/ask-codex`) are slow — 
 
 **Default: run the codex wrapper script foreground and block on it — ALWAYS pass an explicit `timeout`.** In the work-unit gate a cross-review or plan is the step that decides whether you commit; you wait on its verdict regardless, so there is nothing to overlap.
 
-The one thing that makes foreground "look broken": the Bash tool's **default timeout is 120 s (2 min)**, but a real review/plan runs 3–8 min (the wrappers' own internal caps are 1200 s for review, 420 s for plan). With the default, the Bash call is killed at 2 min and you see a half-finished review that "just exited" — so **set `timeout: 600000`** (the 10-min Bash maximum) on every foreground codex call. That, not backgrounding, is the fix. `notify_codex_done` still pings you on completion so you can step away during the wait.
+The one thing that makes foreground "look broken": the Bash tool's **default timeout is 120 s (2 min)**, but a real review/plan runs 3–8 min (the wrappers' own internal caps are 540 s for review, 420 s for plan). With the default, the Bash call is killed at 2 min and you see a half-finished review that "just exited" — so **set `timeout: 600000`** (the 10-min Bash maximum) on every foreground codex call. That, not backgrounding, is the fix. `notify_codex_done` still pings you on completion so you can step away during the wait.
 
 **Do NOT background a gating review/plan.** A `run_in_background` Bash call returns instantly, so with nothing else to do you end the turn — the session goes idle and the verdict arrives detached from the flow. That is exactly the "nothing executes, it just exits" symptom. Background is only for the rare case where you have genuine independent work to do alongside codex (and never edit the same files codex is reviewing); there a backgrounded Bash command re-invokes you automatically when it exits.
 
@@ -411,45 +411,34 @@ The one thing that makes foreground "look broken": the Bash tool's **default tim
 - Codex call with real parallel work alongside (rare) → `run_in_background: true`, continue; you are re-invoked when it exits.
 - **Never** → a `Monitor` poll-loop + re-arm, or a hand-rolled "poll for completion marker" background script, for a *local* codex job. Reserve `Monitor`/`ScheduleWakeup` for external state the harness cannot observe (a remote CI run, a deploy), never for a background job the harness already tracks.
 
-### Auto-review (three-layer enforcement)
+### Auto-review — work-unit approval
 
-Three hooks work together to eliminate the "I forgot to get a review" failure mode, with the last one being the strong gate for projects that use `~/save.sh` (which commits the staged index + pushes atomically — you stage with `git add <paths>` first; save.sh deliberately does not run `git add -A`):
+Run `/cross-review` after relevant tests pass, once per completed implementation work unit.
+SessionStart captures a baseline tree; approval advances it to the reviewed snapshot.
+`--session` includes all repository changes since that baseline, whether committed or not.
+A missing baseline requires an explicit known `--base`; never silently substitute HEAD.
 
-**Hard gate — `pre-commit-gate.sh` (PreToolUse Bash)**
-Blocks any Bash command matching `save.sh`, `git commit`, or `git push` when the current repo has pending edits and no fresh `reviewed-<repo-hash>` marker. The block message tells you to write an intent brief, run `codex-review.sh`, and then re-run the original command. On APPROVED, `codex-review.sh` automatically touches the marker so the re-run passes. On any subsequent Edit/Write in the same repo, `track-edit.sh` invalidates the marker so you must re-review.
+The commit, Stop and prompt hooks share content-based eligibility. Documentation-only changes
+may skip; single-file implementation, configuration and dependency changes still require review.
+The prompt reminder is emitted once per unreviewed snapshot. Stop avoids recursive hook loops,
+but a new user turn or new work unit can trigger review again. Commit remains a hard gate.
 
-This is the layer that matters for "save.sh projects" — it is the only one that fires BEFORE push rather than after. The Stop/UserPromptSubmit layers below are safety nets for sessions that never hit a commit command.
+Approval is bound to repository, session and the full reviewed tree. Staging and committing the
+same content reuse it. Changes by any tool invalidate it. Partial staging of an intermediate
+unreviewed version is rejected. `--files` and `--focus` do not grant full approval.
+Empty/legacy `reviewed-*` markers are not approvals. Global opt-out remains
+`~/.claude/state/auto-review-disabled`, only when requested by the user.
 
+For REVISE, verify each finding before accepting it, make minimal fixes, run relevant tests,
+and send dispositions/evidence using `--resume --response-file`. Resume sends only the delta
+from the prior snapshot. Stop after three rounds or a repeated unresolved finding; present both
+sides' evidence. The skill defines this workflow for automatic and manual calls alike.
 
-
-**Proactive — `remind-cross-review.sh` (UserPromptSubmit)**
-At the start of every user turn, if the session already has ≥ 2 files edited (tracked via `track-edit.sh`), a short reminder is injected as `additionalContext`: *"you have pending edits, run codex-review.sh before concluding"*. This keeps the review goal in your working memory throughout a multi-turn task, not just at the end.
-
-**Reactive — `auto-cross-review.sh` (Stop hook)**
-If you still try to end a turn with non-trivial uncommitted changes, the Stop hook blocks with a `decision: block + reason` telling you to run `codex-review.sh` before concluding. Conditions for injection:
-- ≥ 2 distinct files touched via Edit/Write this session
-- `git diff HEAD` line count ≥ 40
-- Last assistant message does not end with `?` (clarification pause heuristic)
-- Not blocked already this session (single-shot per session)
-
-**Shared gating conditions** (all three hooks):
-- ≥ `AUTO_REVIEW_MIN_FILES` (default 2) distinct files touched via Edit/Write this session
-- Stop hook + pre-commit gate additionally require `git diff HEAD` ≥ `AUTO_REVIEW_MIN_LINES` (default 40) in cwd repo
-- Stop hook additionally skips when last assistant message ends with `?` (clarification pause heuristic)
-- Stop hook skips when `stop-blocked-<session>` marker exists (single-shot per session)
-- All three skip when a fresh `reviewed-<repo-hash>` marker exists for the cwd repo (prevents double-triggering after a successful review + commit)
-- All three skip when `~/.claude/state/auto-review-disabled` exists (global opt-out)
-
-**Per-repo reviewed marker lifecycle**:
-- **Set** by `codex-review.sh` on VERDICT: APPROVED (hash of `git rev-parse --show-toplevel`)
-- **Invalidated** by `track-edit.sh` whenever any file in the same repo is edited
-- **Checked** by `pre-commit-gate.sh` (to allow commits) and the other two hooks (to skip reminders)
-- **Emergency bypass**: `touch ~/.claude/state/reviewed-<hash>` manually, or `touch ~/.claude/state/auto-review-disabled` for session-wide opt-out
-
-When either hook fires, you will receive a message instructing you to run `bash ~/.claude/scripts/codex-review.sh --session "<session-id>" --context-file <brief>` (with intent brief inline). Follow those instructions exactly — do not argue with the hook or try to skip. The point is that self-assessment of "I'm done" is unreliable. The `--session` mode falls back to `--uncommitted` when no dirty log exists for the session (e.g. pure `/codex-delegate` writes), so the instruction works for both Claude-edit and codex-edit cases.
-
-Opt-out (global): `touch ~/.claude/state/auto-review-disabled`
-Tune thresholds: set `AUTO_REVIEW_MIN_FILES` / `AUTO_REVIEW_MIN_LINES` env vars.
+Snapshots use a temporary Git index and create unreferenced Git tree/blob objects; the user's
+index and branches are unchanged. They follow normal Git object retention. If Git pruning removes
+a baseline, select a known starting commit explicitly. Do not prune objects during an active review.
+Usage telemetry records round, snapshot, resume, verdict, elapsed time and cached tokens; missing
+usage is explicitly marked. The actual model remains unknown unless reported by the CLI.
 
 ### Intent capture — DISABLED 2026-06-30, kept for reference
 
@@ -483,14 +472,14 @@ inline-brief mode, which covers most of the value.
 | `pre-commit-gate.sh` | PreToolUse | Bash | Block `save.sh`/`git commit`/`git push` until session has a fresh codex-review marker AND (hard-gate mode) acked intent file |
 | `block-raw-git.sh` | PreToolUse | Bash | UNCONDITIONALLY deny raw `git commit`/`git push` (incl. `-C`/composed forms); allows save.sh. Forces all commits through `~/save.sh`. Opt-out: `raw-git-block-disabled` |
 | `plan-ssot-gate.sh` | PreToolUse | ExitPlanMode | Block presenting a plan until the session has consulted ~/docs (a `dn search`/`tag`/`related` query → `ssot-checked-<session>` marker). Per-session: one consult clears the gate for the session. No-op when `dn`/`~/docs` absent. Opt-out: `ssot-gate-disabled` |
-| `track-edit.sh` | PostToolUse | Edit/Write | Append edited file path to `~/.claude/state/dirty-<session>.log`; invalidate reviewed markers |
+| `track-edit.sh` | PostToolUse | Edit/Write | Append edited file path to `~/.claude/state/dirty-<session>.log`; review validity is checked from Git content |
 | `ssot-check-mark.sh` | PostToolUse | Bash | Detect `dn search`/`tag`/`related` and touch `ssot-checked-<session>`; this is what clears `plan-ssot-gate.sh` |
 | `post-typecheck.sh` | PostToolUse | Edit/Write | **The computational sensor.** Runs the project's `tsc --noEmit` / `cargo check` / `go vet ./...` once per edit and feeds errors back as `additionalContext`. Requires a *local* `tsc` (walks up for workspace hoisting) — bare `npx tsc` resolves to an unrelated binary and silently reports clean. Logs every outcome (pass/fail/skip/timeout/checker_error) to the event ledger. **Was silently dead 2026-04-21 → 2026-08-31**: `set -e` + an unguarded pipefail pipeline killed it on the error path only. Runs without `set -e` now — do not re-add it. Opt-out: `post-typecheck-disabled` |
 | `session-start.sh` | SessionStart | — | Load last handoff into systemPrompt; GC stale state files (incl. `intent-active-*` older than 7d); rotate `hooks-debug.log` + the two JSONL ledgers |
 | `remind-cross-review.sh` | UserPromptSubmit | — | Inject additionalContext reminding Claude to run codex-review before concluding |
 | `contract-inject.sh` | UserPromptSubmit | — | On `/goal`·`/loop` activation, inject the per-work-unit autonomous-loop contract as additionalContext so the user need not retype it (non-blocking). Opt-out: `contract-inject-disabled` |
 | `verification-gate.sh` | Stop | — | Block stop once/session when code changed but no test/e2e/run/deploy command was actually executed this session (scans executed Bash commands, not output text; excludes build/typecheck). Single-shot, so a genuinely-N/A change is handled by stating the reason once. Sibling to auto-cross-review (did *you* run it? vs. did a reviewer see it?). Opt-out: `verify-gate-disabled` |
-| `auto-cross-review.sh` | Stop | — | Block stop once/session, inject review mandate if dirty log ≥ N files and no reviewed marker |
+| `auto-cross-review.sh` | Stop | — | Block for unreviewed implementation snapshots, avoiding recursive Stop hooks |
 | `auto-handoff.sh` | Stop | — | Capture git status + branch + recent log to `~/.claude/handoffs/latest.md` for next session |
 | `harness-report.sh --tripwire` | SessionStart | — | Trip wires over the two ledgers: codex spend >2x the 6-day mean, a sensor erroring/timing out, or a component that used to emit events going silent for 7d. Silent unless something trips. Opt-out: `tripwire-disabled` |
 
@@ -553,7 +542,7 @@ User-invocable skills live at `~/dotfiles/claude/.claude/skills/<name>/SKILL.md`
 
 ### The rule (strong, manual fallback)
 
-Even with auto-review, **manually invoke `/cross-review` before declaring the task done** when you suspect the hook will not fire (e.g., single file with 100 lines changed, or the hook already fired once). Do not skip because it feels complete.
+Use `/cross-review` before declaring an implementation work unit complete; reuse its approval while the reviewed content is unchanged.
 
 "Non-trivial" means:
 - Any change touching 2+ files with logic (not just formatting/rename)

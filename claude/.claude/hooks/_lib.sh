@@ -48,105 +48,21 @@ portable_fmtdate() {
     date -d "@$epoch" +"$fmt" 2>/dev/null || date -r "$epoch" +"$fmt" 2>/dev/null || echo ""
 }
 
-# Predicate: is a reviewed-<repo_hash> marker currently trustworthy?
-# Returns 0 (valid) / 1 (invalid). Pure read — writes nothing.
-#
-# A marker is trustworthy only when ALL hold:
-#   - it exists
-#   - its mtime is within AUTO_REVIEW_MARKER_TTL_SECS (default 86400 = 24h) and
-#     not future-dated (a future mtime means clock skew or tampering → reject)
-#   - its ownership line matches the committing session, OR it is a bypass marker
-#
-# Marker body (first line):
-#   "session=<id>"  → codex-review.sh wrote it; honored only for that session
-#                     (closes cross-session reuse: session B cannot ride session
-#                      A's approval for the same repo).
-#   ""  (empty)     → manual `touch` bypass or a non-session-scoped review
-#                     (--uncommitted/--branch); honored for any session but only
-#                     within the TTL, so stale/legacy orphan markers self-expire.
-#   anything else   → unknown/legacy format; treated like empty (TTL-bounded).
-#
-# Args: marker_path, session_id
+# Review state helpers share one policy across Stop, prompt and commit hooks.
+. "$(dirname "${BASH_SOURCE[0]}")/_review-state.sh"
+
 reviewed_marker_valid() {
-    local marker="$1" session="${2:-}"
-    [ -f "$marker" ] || return 1
-    local ttl="${AUTO_REVIEW_MARKER_TTL_SECS:-86400}"
-    case "$ttl" in ''|*[!0-9]*) ttl=86400 ;; esac  # reject malformed → default (set -e safe)
-    local now mt age
-    now=$(date +%s)
-    mt=$(portable_mtime "$marker")
-    age=$(( now - mt ))
-    [ "$age" -gt "$ttl" ] && return 1   # expired
-    [ "$age" -lt 0 ] && return 1        # future-dated → reject
-    local first
-    first=$(head -n1 "$marker" 2>/dev/null || true)
-    case "$first" in
-        session=*) [ "${first#session=}" = "$session" ] && return 0 || return 1 ;;
-        *)         return 0 ;;  # empty or legacy → bypass, TTL-bounded
-    esac
+    local marker="$1" session="${2:-}" repo="${3:-}"
+    [ -n "$repo" ] || repo=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
+    review_approval_valid "$marker" "$session" "$repo"
 }
 
-# Predicate: would auto-cross-review.sh block this Stop event right now?
-# Returns 0 if it would block, 1 otherwise. Pure read-only — writes nothing.
-# Mirrors auto-cross-review.sh's gating; keep in sync.
-#
-# Race-aware: auto-cross-review.sh creates stop-blocked-<session> AS it blocks
-# the current Stop. A naive presence check misclassifies that event as
-# "already blocked, will skip" when it's actually "blocking right now".
-# Resolved with a freshness window: a marker newer than ~2s is treated as
-# evidence of an in-flight block by the parallel hook (suppress the
-# notification); only an older marker is trusted as "previous-session block,
-# this Stop will pass through".
-#
-# Args: session_id, cwd, transcript_path
 auto_review_would_block() {
-    local session="${1:-default}" cwd="${2:-}" transcript="${3:-}"
-    local state="$HOME/.claude/state"
-    local dirty="$state/dirty-${session}.log"
-    local blocked="$state/stop-blocked-${session}"
-    local disabled="$state/auto-review-disabled"
-    local min_files="${AUTO_REVIEW_MIN_FILES:-2}"
-    local min_lines="${AUTO_REVIEW_MIN_LINES:-40}"
-    local freshness="${AUTO_REVIEW_BLOCK_FRESH_SECS:-2}"
-
-    [[ -f "$disabled" ]] && return 1
-    [[ ! -f "$dirty" ]] && return 1
-    if [[ -f "$blocked" ]]; then
-        local age=$(( $(date +%s) - $(portable_mtime "$blocked") ))
-        if [[ "$age" -gt "$freshness" ]]; then
-            return 1  # old marker → previous-session block; this Stop passes
-        else
-            return 0  # fresh marker → parallel auto-cross-review just blocked this Stop
-        fi
-    fi
-
-    local file_count
-    file_count=$(sort -u "$dirty" 2>/dev/null | wc -l | tr -d ' ')
-    [[ "${file_count:-0}" -lt "$min_files" ]] && return 1
-
-    if [[ -n "$cwd" ]]; then
-        local repo
-        if repo=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null); then
-            local rh
-            rh=$(repo_hash "$repo")
-            reviewed_marker_valid "$state/reviewed-$rh" "$session" && return 1
-            local tracked untracked weighted
-            tracked=$(git -C "$repo" diff HEAD 2>/dev/null | wc -l | tr -d ' ')
-            untracked=$(git -C "$repo" ls-files --others --exclude-standard 2>/dev/null | wc -l | tr -d ' ')
-            weighted=$(( ${tracked:-0} + ${untracked:-0} * 10 ))
-            [[ "$weighted" -lt "$min_lines" ]] && return 1
-        fi
-    fi
-
-    if [[ -f "$transcript" ]]; then
-        local last_text
-        last_text=$(tail -c 16384 "$transcript" 2>/dev/null \
-            | jq -rc 'select(.type=="assistant") | .message.content[]? | select(.type=="text") | .text' 2>/dev/null \
-            | tail -n1 || true)
-        echo "$last_text" | grep -qE '\?\s*$' && return 1
-    fi
-
-    return 0
+    local session="${1:-default}" cwd="${2:-}" transcript="${3:-}" repo
+    [ -f "$HOME/.claude/state/auto-review-disabled" ] && return 1
+    repo=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || return 1
+    reviewed_marker_valid "$HOME/.claude/state/reviewed-$(repo_hash "$repo")" "$session" "$repo" && return 1
+    review_required "$repo" "$session"
 }
 
 # Path to notify-codex.sh. Anchored to the deployed ~/.claude/hooks location

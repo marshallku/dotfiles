@@ -6,9 +6,7 @@
 # Triggers on Bash commands that match: save.sh, git commit, git push.
 # Allows when:
 #   - ~/.claude/state/auto-review-disabled exists (global opt-out)
-#   - no dirty log for this session (nothing to review)
-#   - dirty log has fewer than AUTO_REVIEW_MIN_FILES entries (trivial change)
-#   - git diff HEAD line count below AUTO_REVIEW_MIN_LINES
+#   - no implementation changes since the work-unit baseline
 #   - a reviewed-<repo-hash> marker exists AND intent gate passes
 #
 # Intent gate (hard-gate mode only, AUTO_INTENT_SOFT_GATE=0):
@@ -37,8 +35,6 @@ STATE_DIR="$HOME/.claude/state"
 DISABLED="$STATE_DIR/auto-review-disabled"
 LOG_FILE="$HOME/.claude/hooks-debug.log"
 
-MIN_FILES="${AUTO_REVIEW_MIN_FILES:-2}"
-MIN_LINES="${AUTO_REVIEW_MIN_LINES:-40}"
 INTENT_DISABLED="$STATE_DIR/intent-capture-disabled"
 INTENT_SOFT_GATE="${AUTO_INTENT_SOFT_GATE:-1}"
 
@@ -131,10 +127,7 @@ if [ "$COMMIT_LIKE" = false ]; then
     exit 0
 fi
 
-# Resolve cwd → repo → pending marker BEFORE checking dirty log. A pure
-# /codex-delegate --write session never invokes track-edit.sh, so no
-# dirty log exists for this session — but codex-delegate-pending DOES,
-# and we must respect it as proof the change is non-trivial.
+# Resolve the repository independently of Edit/Write tracking.
 if [ -z "$CWD" ]; then
     log "allow: no cwd provided"
     echo '{}'
@@ -151,48 +144,9 @@ REPO_HASH=$(repo_hash "$REPO_ROOT")
 MARKER="$STATE_DIR/reviewed-$REPO_HASH"
 DELEGATE_PENDING="$STATE_DIR/codex-delegate-pending-$REPO_HASH"
 
-# Nothing edited via Claude this session AND no pending delegate → nothing
-# to review. The pending marker overrides this fast-path because a
-# delegate-only session has no dirty log but still has writes.
-DIRTY_LOG="$STATE_DIR/dirty-${SESSION}.log"
-if [ ! -f "$DIRTY_LOG" ] && [ ! -f "$DELEGATE_PENDING" ]; then
-    echo '{}'
-    exit 0
-fi
-
-# Count only *distinct* dirty-log entries whose path is under this repo.
-# track-edit.sh appends one line per edit, so the same file can appear many
-# times; dedupe before counting to match the AUTO_REVIEW_MIN_FILES semantics.
-# The trailing "/" on $REPO_ROOT prevents sibling repos with the same prefix
-# (e.g. /home/foo vs /home/foo-bar) from bleeding into the count. When the
-# dirty log is missing entirely (delegate-only session) skip grep — `set -e`
-# + `pipefail` would otherwise kill the script on grep's non-zero exit
-# before we reach the pending-marker logic below.
-FILE_COUNT=0
-if [ -f "$DIRTY_LOG" ]; then
-    # awk index() does literal substring matching, no regex. This avoids two
-    # grep failure modes that would trip `set -euo pipefail`: (a) zero matches
-    # → grep exit 1, (b) repo path containing regex metachars (e.g. "[")
-    # → grep exit 2 (parse error). Both would otherwise abort the hook
-    # before reaching the pending-marker logic.
-    FILE_COUNT=$(awk -v p="${REPO_ROOT}/" 'index($0, p) == 1' "$DIRTY_LOG" | sort -u | wc -l | tr -d ' ')
-fi
-
-# Honor the file-count early-exit only when codex-delegate has not run with
-# write access since the last cross-review. The pending flag means codex
-# wrote files outside Claude's Edit/Write tools — track-edit.sh did not
-# count those, so dirty-log undercounts and the early-exit would falsely
-# allow the commit. The flag is cleared by mark_repo_reviewed() in
-# codex-review.sh on APPROVED.
-if [ "$FILE_COUNT" -lt "$MIN_FILES" ] && [ ! -f "$DELEGATE_PENDING" ]; then
-    log "allow: only $FILE_COUNT file(s) touched in $REPO_ROOT (min $MIN_FILES)"
-    echo '{}'
-    exit 0
-fi
-
 # Fresh, session-owned, non-expired review marker → check intent gate before
-# allowing. reviewed_marker_valid rejects expired/legacy/cross-session markers.
-if reviewed_marker_valid "$MARKER" "$SESSION"; then
+# allowing. reviewed_marker_valid rejects changed-content/legacy/cross-session markers.
+if reviewed_marker_valid "$MARKER" "$SESSION" "$REPO_ROOT"; then
     # Intent gate is a no-op in soft-gate or globally-disabled mode. The
     # review marker alone is the gate, same as before this hook was extended.
     if [ "$INTENT_SOFT_GATE" = "1" ] || [ -f "$INTENT_DISABLED" ]; then
@@ -230,7 +184,7 @@ visible in the recent transcript. Either:
 Intent file: '"$INTENT_PATH"'
 
 Bypass: touch ~/.claude/state/intent-capture-disabled  (session-wide)'
-                jq -n --arg msg "$E2E_MSG" '{permissionDecision: "deny", message: $msg}'
+                jq -n --arg msg "$E2E_MSG" '{hookSpecificOutput:{hookEventName:"PreToolUse", permissionDecision:"deny", permissionDecisionReason:$msg}}'
                 exit 0
             fi
             log "allow: reviewed marker + intent gate passed ($INTENT_PATH)"
@@ -254,7 +208,7 @@ instruct you. Or to bypass for this commit:
 Bypass markers (use sparingly):
   touch ~/.claude/state/intent-capture-disabled   (intent only)
   touch ~/.claude/state/auto-review-disabled      (review + intent)'
-            jq -n --arg msg "$INTENT_MSG" '{permissionDecision: "deny", message: $msg}'
+            jq -n --arg msg "$INTENT_MSG" '{hookSpecificOutput:{hookEventName:"PreToolUse", permissionDecision:"deny", permissionDecisionReason:$msg}}'
             exit 0
             ;;
         stale_ack)
@@ -267,7 +221,7 @@ stale. Re-confirm with the user, then run:
   bash ~/.claude/scripts/intent-finalize.sh '"$INTENT_PATH"'
 
 Intent file: '"$INTENT_PATH"''
-            jq -n --arg msg "$STALE_MSG" '{permissionDecision: "deny", message: $msg}'
+            jq -n --arg msg "$STALE_MSG" '{hookSpecificOutput:{hookEventName:"PreToolUse", permissionDecision:"deny", permissionDecisionReason:$msg}}'
             exit 0
             ;;
         bad_e2e)
@@ -278,7 +232,7 @@ Intent file: '"$INTENT_PATH"''
 The intent file at '"$INTENT_PATH"' has an invalid `verification.e2e`
 value. Must be one of: required, not_applicable, deferred.
 Edit the file and re-run intent-finalize.sh.'
-            jq -n --arg msg "$BADE2E_MSG" '{permissionDecision: "deny", message: $msg}'
+            jq -n --arg msg "$BADE2E_MSG" '{hookSpecificOutput:{hookEventName:"PreToolUse", permissionDecision:"deny", permissionDecisionReason:$msg}}'
             exit 0
             ;;
         *)
@@ -289,17 +243,8 @@ Edit the file and re-run intent-finalize.sh.'
     esac
 fi
 
-# Trivial diff → allow even without review. Weight untracked files (same
-# rationale as auto-cross-review.sh) so a new-file-only session still gates.
-# As with the file-count check above, the codex-delegate-pending flag
-# overrides the trivial-diff allow-path: we cannot trust the diff size to
-# represent the change because codex may have written and reverted, or
-# made small but consequential edits, outside Claude's tracked path.
-TRACKED_LINES=$(git -C "$REPO_ROOT" diff HEAD 2>/dev/null | wc -l | tr -d ' ')
-UNTRACKED=$(git -C "$REPO_ROOT" ls-files --others --exclude-standard 2>/dev/null | wc -l | tr -d ' ')
-DIFF_LINES=$(( TRACKED_LINES + UNTRACKED * 10 ))
-if [ "$DIFF_LINES" -lt "$MIN_LINES" ] && [ ! -f "$DELEGATE_PENDING" ]; then
-    log "allow: $TRACKED_LINES tracked lines + $UNTRACKED untracked (weighted=$DIFF_LINES, min $MIN_LINES)"
+if ! review_required "$REPO_ROOT" "$SESSION" && [ ! -f "$DELEGATE_PENDING" ]; then
+    log "allow: no implementation changes in this work unit"
     echo '{}'
     exit 0
 fi
@@ -307,43 +252,14 @@ fi
 log "BLOCK: $CMD — no review marker for $REPO_ROOT"
 
 # shellcheck disable=SC2016
-REASON='[pre-commit-gate] Blocking this commit/push: '"$CMD"'
-
-Repo: '"$REPO_ROOT"'
-Session has '"$FILE_COUNT"' edited files with '"$DIFF_LINES"' diff lines and NO recent cross-review for this repo.
-
-Before re-running this command:
-
-1. Write a short intent brief (≤150 words, three sections):
-
-    BRIEF=$(mktemp /tmp/codex-brief-XXXXXX)
-    cat > "$BRIEF" <<EOF
-    ## User'"'"'s request
-    <paraphrase, 1-2 lines>
-
-    ## What was done
-    <what you implemented, 2-3 lines, name key files>
-
-    ## Key decisions
-    <tradeoffs, alternatives rejected, or "none">
-    EOF
-
-2. Run the review (--session scopes the diff to only files touched this session, even if already committed):
-
-    bash ~/.claude/scripts/codex-review.sh --session '"$SESSION"' --context-file "$BRIEF"
-
-3. Handle the verdict:
-   - APPROVED → a reviewed marker is set automatically; re-run the original command.
-   - REVISE   → apply Fix-First (auto-fix mechanical CRITICALs, surface judgment calls as numbered questions, pay extra attention to [INTENT-MISMATCH]). After fixing, the track-edit hook will invalidate the marker, so you must re-review before retrying.
-   - error    → report the cause to the user.
-
-Emergency bypass (use sparingly, documents the skip):
-    touch ~/.claude/state/reviewed-'"$REPO_HASH"'
-
-To disable the gate entirely for this session:
-    touch ~/.claude/state/auto-review-disabled'
+REASON="[pre-commit-gate] This work unit has no approval matching the current repository and staged content.
+Run /cross-review for session $SESSION in $REPO_ROOT. Use its evidence-first triage and maximum three rounds.
+If no session baseline exists, identify the actual starting commit and pass --base <commit>; do not guess.
+After fixes, run relevant tests and re-review with --resume --response-file <finding dispositions and test results>.
+Only a full review grants approval. Stage the reviewed file versions; partial intermediate staging requires review.
+On error or unresolved disagreement, report the evidence. Never fabricate an approval marker."
 
 # COPAD_HOOK_PUBLISH: claude.commit_blocked $(jq -n --arg c "$CMD" '{reason:"missing-review",command:$c}')
-command -v coctl >/dev/null && coctl event publish claude.commit_blocked --quiet "$(jq -n --arg c "$CMD" '{reason:"missing-review",command:$c}')" &
+command -v coctl >/dev/null && coctl event publish claude.commit_blocked --quiet "$(jq -n --arg c "$CMD" '{reason:"missing-review",command:$c}')" >/dev/null 2>&1 &
 # COPAD_HOOK_PUBLISH_END
-jq -n --arg msg "$REASON" '{permissionDecision: "deny", message: $msg}'
+jq -n --arg msg "$REASON" '{hookSpecificOutput:{hookEventName:"PreToolUse", permissionDecision:"deny", permissionDecisionReason:$msg}}'

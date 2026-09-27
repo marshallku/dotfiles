@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# PostToolUse hook for Edit|Write — records touched files per session AND
-# invalidates the cross-review "reviewed" marker for the file's repo, so any
-# new edit after an approved review requires a fresh review before commit.
+# PostToolUse Edit|Write: retain touched paths for session reporting.
+# Review gates independently compare Git content.
 
 set -euo pipefail
 
@@ -17,11 +16,5 @@ STATE_DIR="$HOME/.claude/state"
 mkdir -p "$STATE_DIR"
 echo "$FILE" >> "$STATE_DIR/dirty-${SESSION}.log"
 
-# Invalidate reviewed marker for this file's repo (if it is a git repo)
-FILE_DIR=$(dirname "$FILE")
-if REPO_ROOT=$(cd "$FILE_DIR" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null); then
-    REPO_HASH=$(repo_hash "$REPO_ROOT")
-    rm -f "$STATE_DIR/reviewed-$REPO_HASH"
-fi
-
+# Approval validity is checked against content, including edits made outside Claude.
 echo '{}'

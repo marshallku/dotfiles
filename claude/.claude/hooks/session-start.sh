@@ -11,14 +11,17 @@ SOURCE=$(echo "$INPUT" | jq -r '.source // empty' 2>/dev/null || echo "")
 SESSION=$(echo "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || echo "")
 
 # 부수 작업: 1일 이상 된 ephemeral 세션 마커 청소.
-# reviewed-* 는 reviewed_marker_valid 의 TTL(기본 24h)로 이미 무효화되므로
-# 여기서 지워도 의미 변화 없음(디스크 정리). codex-delegate-pending-* 는 하루
-# 넘게 지속되는 세션의 live enforcement 상태일 수 있어 제외한다.
+# 승인·기준점·delegate 마커는 긴 세션에서도 필요하므로 나이 기준 삭제에서 제외한다.
 STATE_DIR="$HOME/.claude/state"
+CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
+if [[ "$SOURCE" == "startup" || "$SOURCE" == "clear" ]] && [ -n "$SESSION" ] && REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null); then
+    review_init_baseline "$REPO_ROOT" "$SESSION" || echo '[review] Could not capture session baseline' >&2
+fi
+
 if [ -d "$STATE_DIR" ]; then
     find "$STATE_DIR" -maxdepth 1 -type f \( \
         -name "dirty-*.log" -o -name "stop-blocked-*" -o -name "verify-blocked-*" \
-        -o -name "ssot-checked-*" -o -name "reviewed-*" -o -name "compact-reinject-*" \
+        -o -name "ssot-checked-*" -o -name "compact-reinject-*" \
         \) -mtime +1 -delete 2>/dev/null || true
 
     # intent-active-* 는 원래 live enforcement 상태라 나이 기준 삭제에서

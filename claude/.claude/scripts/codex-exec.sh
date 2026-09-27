@@ -181,6 +181,7 @@ render_events() {
     ' 2>/dev/null || true
 }
 
+START_SECONDS=$SECONDS
 set +e
 portable_timeout "$TIMEOUT" codex "${ARGS[@]}" < "$PROMPT_FILE" 2>"$ERR_FILE" \
     | tee "$EVENTS_FILE" \
@@ -198,7 +199,7 @@ set -e
 # Runs before the failure/timeout exits, so a run that burned 40k tokens and
 # then failed is still accounted for — but only to the extent codex reported it:
 # usage comes from `turn.completed`, so a run killed before any turn completed
-# leaves no row. That is the best source available; it is not a full accounting
+# leaves a row with usage_reported=false. This is not a full accounting
 # of a hard timeout mid-turn.
 # Best-effort throughout — never let accounting fail a codex run.
 record_usage() {
@@ -219,7 +220,6 @@ record_usage() {
     ' "$EVENTS_FILE" 2>/dev/null) || return 0
     [ -z "$sums" ] && return 0
     IFS=$'\t' read -r turns in_tok out_tok cached <<< "$sums" || return 0
-    [ "${turns:-0}" -eq 0 ] && return 0
 
     mkdir -p "$(dirname "$ledger")" 2>/dev/null || true
     jq -c -n \
@@ -227,6 +227,15 @@ record_usage() {
         --arg day      "$(date '+%Y-%m-%d')" \
         --arg thread   "${THREAD_KEY:-}" \
         --arg model    "${MODEL:-default}" \
+        --arg requested_effort "${EFFORT:-default}" \
+        --arg review_id "${CODEX_REVIEW_ID:-}" \
+        --arg work_unit "${CODEX_REVIEW_UNIT:-}" \
+        --argjson critical_count "$(awk '/^## CRITICAL/{f=1;next} /^## /{f=0} f && /^- /{n++} END{print n+0}' "$MSG_FILE")" \
+        --arg snapshot "${CODEX_REVIEW_SNAPSHOT:-}" \
+        --argjson round "${CODEX_REVIEW_ROUND:-0}" \
+        --argjson resumed "$RESUME" \
+        --argjson elapsed "$(( SECONDS - START_SECONDS ))" \
+        --arg verdict "$(sed -n 's/^VERDICT: \(APPROVED\|REVISE\)$/\1/p' "$MSG_FILE" | tail -n 1)" \
         --arg sandbox  "$SANDBOX" \
         --arg repo     "$repo" \
         --argjson status  "${STATUS:-0}" \
@@ -235,7 +244,10 @@ record_usage() {
         --argjson output  "${out_tok:-0}" \
         --argjson cached  "${cached:-0}" \
         '{ts:$ts, day:$day, thread_key:$thread, model:$model, sandbox:$sandbox,
-          repo:$repo, status:$status, turns:$turns,
+          repo:$repo, status:$status, turns:$turns, usage_reported:($turns > 0),
+          actual_model:null, requested_effort:$requested_effort,
+          review_id:$review_id, work_unit:$work_unit, critical_count:$critical_count, snapshot:$snapshot, round:$round, resumed:($resumed == 1),
+          elapsed_seconds:$elapsed, verdict:$verdict,
           input_tokens:$input, output_tokens:$output, cached_input_tokens:$cached,
           total_tokens:($input + $output)}' \
         >> "$ledger" 2>/dev/null || true
