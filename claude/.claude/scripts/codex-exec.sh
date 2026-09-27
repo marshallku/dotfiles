@@ -136,7 +136,8 @@ if [[ "$RESUME" -eq 1 ]]; then
     fi
 fi
 
-ARGS=(exec)
+# Keep hook environment scoped to this child, independent of a shared daemon.
+ARGS=(--no-daemon exec)
 if [[ -n "$RESUME_ID" ]]; then
     # `resume` takes the sandbox as a config override — it has no --sandbox flag.
     ARGS+=(resume "$RESUME_ID" -c "sandbox_mode=\"${SANDBOX}\"")
@@ -182,6 +183,13 @@ render_events() {
 }
 
 START_SECONDS=$SECONDS
+# Read-only review/consult children must not review themselves or replace the
+# implementer's handoff. The Codex adapter still runs shared safety hooks.
+if [[ "$WRITE" -eq 0 ]]; then
+    export HARNESS_READ_ONLY_CHILD=1
+else
+    unset HARNESS_READ_ONLY_CHILD
+fi
 set +e
 portable_timeout "$TIMEOUT" codex "${ARGS[@]}" < "$PROMPT_FILE" 2>"$ERR_FILE" \
     | tee "$EVENTS_FILE" \

@@ -1,5 +1,9 @@
 # Global AGENTS.md — Marshall's Coding Principles
 
+For implementation sessions, read `~/.codex/harness.md` for the shared Claude/Codex
+workflow, profile sources and skill adapters. Reviewer/consultant sessions answer
+their assigned task directly; never start a nested review/plan workflow.
+
 This file is auto-loaded by Codex CLI at the start of every session. It encodes the principles and style rules that must apply to all work for this user. Keep it short and strict — add rules only when the same mistake has happened twice.
 
 ---

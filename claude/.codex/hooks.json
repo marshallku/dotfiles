@@ -1,0 +1,11 @@
+{
+    "description": "Shared Claude harness policies, adapted for Codex. See ~/.codex/harness.md.",
+    "hooks": {
+        "SessionStart": [{"hooks": [{"type": "command", "command": "python3 \"$HOME/.claude/scripts/codex-harness/bridge.py\"", "timeout": 60}]}],
+        "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "python3 \"$HOME/.claude/scripts/codex-harness/bridge.py\"", "timeout": 30}]}],
+        "PreToolUse": [{"matcher": "Bash|apply_patch|update_plan", "hooks": [{"type": "command", "command": "python3 \"$HOME/.claude/scripts/codex-harness/bridge.py\"", "timeout": 120}]}],
+        "PostToolUse": [{"matcher": "Bash|apply_patch", "hooks": [{"type": "command", "command": "python3 \"$HOME/.claude/scripts/codex-harness/bridge.py\"", "timeout": 600}]}],
+        "PreCompact": [{"hooks": [{"type": "command", "command": "python3 \"$HOME/.claude/scripts/codex-harness/bridge.py\"", "timeout": 30}]}],
+        "Stop": [{"hooks": [{"type": "command", "command": "python3 \"$HOME/.claude/scripts/codex-harness/bridge.py\"", "timeout": 60}]}]
+    }
+}

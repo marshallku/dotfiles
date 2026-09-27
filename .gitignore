@@ -1,9 +1,13 @@
 nvim/.config/nvim/lazy-lock.json
 
 # Codex runtime state must live in a real ~/.codex, never inside the stow package.
-# Only AGENTS.md is managed by dotfiles; everything else is machine-local state.
+# Only authored instructions and hooks are managed; runtime state stays local.
 claude/.codex/*
 !claude/.codex/AGENTS.md
+!claude/.codex/harness.md
+!claude/.codex/hooks.json
+
+__pycache__/
 
 # MCP server dependencies — installed by install-claude.sh, not committed.
 claude/.claude/mcp/*/node_modules/
