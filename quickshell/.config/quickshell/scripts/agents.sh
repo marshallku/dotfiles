@@ -1,39 +1,58 @@
 #!/usr/bin/env bash
 # Desktop widget collector: live Claude/Codex agents + recent attention events.
 #
-# Read-only consumer — no classification of its own:
-#   - tmux panes:   `tmx agents --json` (the ecosystem's source of truth; its
-#                   status comes from Claude's own session file, with pane
-#                   capture as the codex fallback).
-#   - outside tmux: ~/.claude/sessions/<pid>.json for Claude processes tmx
-#                   cannot see (copad tabs, plain terminals). Status is mapped
-#                   exactly like tmx's resolve_status (busy/idle/waiting).
-#   - attention:    tmx's `attention[]`, shown as an event list only. It is
-#                   NOT used to derive state — notifications include idle
-#                   reminders and the queue is truncated.
+# Read-only consumer — no classification of its own. Three sources, each the
+# owner of the agents it can see:
+#   - comux panes: `comux list-agents --json` (status: working / ready /
+#                  blocked / idle, plus what the agent is doing right now).
+#   - tmux panes:  `tmx agents --json` (status from Claude's session file,
+#                  pane capture as the codex fallback; also background codex
+#                  jobs and the attention queue).
+#   - everything else: ~/.claude/sessions/<pid>.json — Claude in a copad tab or
+#                  a plain terminal. Status mapped exactly like tmx's
+#                  resolve_status (busy/idle/waiting).
+# A Claude session is attributed to a comux pane by its COPAD_MUX_PANE env
+# (comux rows carry no pid), to a tmux pane by pid, and to a copad tab by
+# COPAD_PANEL_ID — so each agent is listed once, where it actually runs.
+#
+# The attention queue is shown as an event list only; it is NOT used to
+# derive state (notifications include idle reminders and are truncated).
 #
 # Output: one JSON object with independent sections, each {ok, error?, items}.
-# A failing source marks its own section ok:false; the QML side keeps the
-# last good items and renders them as stale.
+# A source that is simply not running (no comux server, no tmx) contributes
+# nothing; a source that is running but fails marks the section ok:false, and
+# the QML side keeps the last good items and renders them as stale.
 
 set -u
 
 now_ms=$(( $(date +%s%N) / 1000000 ))
 sessions_dir="$HOME/.claude/sessions"
+errors=()
 
-tmx_json=""
-tmx_error=""
+# ── tmx (tmux) ─────────────────────────────────────────────────────────────
+tmx_json="null"
 if command -v tmx >/dev/null 2>&1; then
-    tmx_json=$(timeout 5 tmx agents --json 2>/dev/null) || tmx_error="tmx agents failed"
-    if [[ -z "$tmx_error" ]] && ! jq -e '.agents' >/dev/null 2>&1 <<<"$tmx_json"; then
-        tmx_error="tmx agents: malformed json"
-        tmx_json=""
+    out=$(timeout 5 tmx agents --json 2>/dev/null)
+    if jq -e '.agents' >/dev/null 2>&1 <<<"$out"; then
+        tmx_json=$out
+    else
+        errors+=("tmx agents failed")
     fi
-else
-    tmx_error="tmx not installed"
 fi
 
-# ── Process identity ───────────────────────────────────────────────────────
+# ── comux ──────────────────────────────────────────────────────────────────
+comux_json="null"
+comux_sock="${COPAD_MUX_SOCK:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/copad-mux-$(id -un)/sock}"
+if command -v comux >/dev/null 2>&1 && [[ -S "$comux_sock" ]]; then
+    out=$(timeout 5 comux list-agents --json 2>/dev/null)
+    if jq -e '.ok == true' >/dev/null 2>&1 <<<"$out"; then
+        comux_json=$out
+    else
+        errors+=("comux list-agents failed")
+    fi
+fi
+
+# ── Claude sessions: process identity ──────────────────────────────────────
 # A session file outlives its process on crash, and the pid can be reused.
 # Live iff: same machine + pid namespace (pidDomain), same start tick
 # (procStart == /proc/<pid>/stat field 22), started after this boot (a stale
@@ -56,6 +75,15 @@ session_live() {
     [[ "$tick" == "$proc_start" ]]
 }
 
+# Where a live session runs, from its own environment (readable: same user).
+session_env() {
+    local environ mux="" panel=""
+    environ=$(tr '\0' '\n' <"/proc/$1/environ" 2>/dev/null)
+    mux=$(sed -n 's/^COPAD_MUX_PANE=//p' <<<"$environ" | head -n1)
+    panel=$(sed -n 's/^COPAD_PANEL_ID=//p' <<<"$environ" | head -n1)
+    jq -n -c --arg mux "$mux" --arg panel "$panel" '{mux_token: $mux, copad_panel: $panel}'
+}
+
 sessions="[]"
 if [[ -d "$sessions_dir" ]]; then
     lines=()
@@ -65,23 +93,45 @@ if [[ -d "$sessions_dir" ]]; then
         IFS=$'\t' read -r pid domain proc_start started_at < <(
             jq -r '[.pid, .pidDomain // "", .procStart // "", .startedAt // 0] | @tsv' <<<"$row")
         session_live "$pid" "$domain" "$proc_start" "$started_at" || continue
-        lines+=("$row")
+        lines+=("$(jq -c --argjson env "$(session_env "$pid")" '. + $env' <<<"$row")")
     done
     (( ${#lines[@]} > 0 )) && sessions=$(printf '%s\n' "${lines[@]}" | jq -s -c '.')
 fi
 
+error=""
+(( ${#errors[@]} > 0 )) && error=$(IFS='; '; echo "${errors[*]}")
+
 jq -n -c \
     --argjson now "$now_ms" \
     --argjson sessions "$sessions" \
-    --arg tmx "$tmx_json" \
-    --arg tmx_error "$tmx_error" '
-    ($tmx | if . == "" then null else fromjson end) as $t
-    | ($sessions | map({key: (.pid | tostring), value: .}) | from_entries) as $by_pid
-
+    --argjson tmx "$tmx_json" \
+    --argjson comux "$comux_json" \
+    --arg error "$error" '
     # Same mapping as tmx collector.rs resolve_status. Unknown → null → dropped.
-    | def session_status: {busy: "working", idle: "ready", waiting: "awaiting-decision"}[.status];
+    def session_status: {busy: "working", idle: "ready", waiting: "awaiting-decision"}[.status];
+    # comux says "blocked" for what tmx calls "awaiting-decision".
+    def comux_status: if . == "blocked" then "awaiting-decision" else . end;
+    def basename: split("/") | last;
 
-    ([($t.agents // [])[]
+    ($sessions | map({key: (.pid | tostring), value: .}) | from_entries) as $by_pid
+    | ($sessions | map(select(.mux_token != "")) | map({key: .mux_token, value: .}) | from_entries) as $by_token
+
+    | ([($comux.agents // [])[]
+        | (if .token != "" then $by_token[.token] else null end) as $s
+        | {
+            id: "comux:\(if .token != "" then .token else .terminal end)",
+            kind: (if .tool == "claude" or .tool == "codex" then .tool else "custom" end),
+            status: (.status | comux_status),
+            name: ($s.name // .tool),
+            repo: (if $s then ($s.cwd | basename) else .space end),
+            location: "comux \(.space) · \(.title)",
+            detail: .detail,
+            pid: ($s.pid // null | if . then tostring else null end),
+            since_ms: ($now - .for_secs * 1000)
+          }
+    ]) as $comux_agents
+
+    | ([($tmx.agents // [])[]
         | select(.kind == "claude" or .kind == "codex" or .kind == "custom")
         # Background codex jobs carry "running • 10s ago", not "pid N" —
         # default to null rather than letting an empty capture drop the agent.
@@ -93,17 +143,20 @@ jq -n -c \
             status,
             name: ($s.name // .repo_name),
             repo: .repo_name,
-            cwd,
-            pid: ($pid // null),
             location: (if .pane then "tmux \(.pane.session):\(.pane.window).\(.pane.pane)" else "background" end),
-            tmux_target: (if .pane then "\(.pane.session):\(.pane.window).\(.pane.pane)" else null end),
+            detail: null,
+            pid: $pid,
             since_ms: ($s.statusUpdatedAt // null)
           }
     ]) as $tmux_agents
-    | ($tmux_agents | map(.pid) | map(select(. != null))) as $seen
+
+    | ([$comux_agents[], $tmux_agents[] | .pid | select(. != null)]) as $seen
 
     | ([$sessions[]
         | select((.pid | tostring) as $p | $seen | index($p) | not)
+        # A comux pane whose server did not list it (sweep lag) is still a
+        # comux agent — skip it rather than re-list it as a copad tab.
+        | select(.mux_token == "" or $comux == null)
         | (session_status) as $st
         | select($st != null)
         | {
@@ -111,28 +164,24 @@ jq -n -c \
             kind: "claude",
             status: $st,
             name,
-            repo: (.cwd | split("/") | last),
-            cwd,
+            repo: (.cwd | basename),
+            location: (if .copad_panel != "" then "copad tab" elif .mux_token != "" then "comux" else "terminal" end),
+            detail: null,
             pid: (.pid | tostring),
-            location: "outside tmux",
-            tmux_target: null,
             since_ms: (.statusUpdatedAt // null)
           }
-    ]) as $outside
+    ]) as $others
 
     | {
         generated_at: $now,
         agents: (
-            if $t == null and ($sessions | length) == 0 then
-                {ok: false, error: $tmx_error, items: []}
-            else
-                {ok: ($tmx_error == ""), error: (if $tmx_error == "" then null else $tmx_error end),
-                 items: ($tmux_agents + $outside)}
+            if $error == "" then {ok: true, items: ($comux_agents + $tmux_agents + $others)}
+            else {ok: false, error: $error, items: []}
             end
         ),
         attention: (
-            if $t == null then {ok: false, error: $tmx_error, items: []}
-            else {ok: true, items: [($t.attention // [])[:5][] | {ts, kind, source, title, body}]}
+            if $tmx == null then {ok: true, items: []}
+            else {ok: true, items: [($tmx.attention // [])[:5][] | {ts, kind, source, title, body}]}
             end
         )
       }

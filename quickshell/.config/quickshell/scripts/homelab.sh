@@ -105,16 +105,22 @@ collect_nodes() {
     done
     wait
 
-    if [[ ! -s "$work/q.cpu" && ! -s "$work/q.mem" ]]; then
-        error_json "failed to reach grafana"
+    # All four or nothing: a partial success would publish null metrics as a
+    # fresh reading and overwrite the last good ones on the widget.
+    local failed=()
+    for key in cpu mem disk uptime; do
+        jq -e '.status == "success"' "$work/q.$key" >/dev/null 2>&1 || failed+=("$key")
+    done
+    if (( ${#failed[@]} > 0 )); then
+        error_json "grafana query failed: ${failed[*]}"
         return
     fi
 
     jq -n -c \
-        --slurpfile cpu <(cat "$work/q.cpu" 2>/dev/null || echo null) \
-        --slurpfile mem <(cat "$work/q.mem" 2>/dev/null || echo null) \
-        --slurpfile disk <(cat "$work/q.disk" 2>/dev/null || echo null) \
-        --slurpfile up <(cat "$work/q.uptime" 2>/dev/null || echo null) '
+        --slurpfile cpu "$work/q.cpu" \
+        --slurpfile mem "$work/q.mem" \
+        --slurpfile disk "$work/q.disk" \
+        --slurpfile up "$work/q.uptime" '
         def by_node($r): ($r[0].data.result // [])
             | map({key: (.metric.node // "unknown"), value: (.value[1] | tonumber)})
             | from_entries;

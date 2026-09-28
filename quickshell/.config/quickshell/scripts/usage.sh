@@ -30,6 +30,11 @@ jq -n -c \
             if $l == null then {ok: false, error: "coctl usage --limits failed"}
             else {
                 ok: true,
+                # coctl marks a provider stale when it fell back to a cached
+                # reading; carry that through so the widget does not show it
+                # as live.
+                claude_stale: ($l.claude.stale // false),
+                codex_stale: ($l.codex.stale // false),
                 claude_5h: $l.claude.five_hour,
                 claude_5h_reset: $l.claude.five_hour_reset,
                 claude_week: $l.claude.seven_day,

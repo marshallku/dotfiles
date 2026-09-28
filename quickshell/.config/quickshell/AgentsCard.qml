@@ -68,17 +68,20 @@ Card {
                 {
                     name: "Claude 5h",
                     value: Data.limits.claude_5h,
-                    reset: Data.limits.claude_5h_reset
+                    reset: Data.limits.claude_5h_reset,
+                    cached: Data.limits.claude_stale
                 },
                 {
                     name: "Claude week",
                     value: Data.limits.claude_week,
-                    reset: Data.limits.claude_week_reset
+                    reset: Data.limits.claude_week_reset,
+                    cached: Data.limits.claude_stale
                 },
                 {
                     name: "Codex week",
                     value: Data.limits.codex_week,
-                    reset: Data.limits.codex_week_reset
+                    reset: Data.limits.codex_week_reset,
+                    cached: Data.limits.codex_stale
                 }
             ]
 
@@ -87,6 +90,8 @@ Card {
                 Layout.fillWidth: true
                 Layout.preferredWidth: 1
                 spacing: 4
+                // coctl fell back to a cached reading for this provider.
+                opacity: modelData.cached ? 0.5 : 1
 
                 RowLayout {
                     Layout.fillWidth: true
@@ -113,7 +118,7 @@ Card {
                     color: Theme.level(modelData.value)
                 }
                 Text {
-                    text: modelData.reset ? "resets in " + Theme.until(modelData.reset, Data.now) : ""
+                    text: modelData.cached ? "cached reading" : modelData.reset ? "resets in " + Theme.until(modelData.reset, Data.now) : ""
                     color: Theme.overlay0
                     font.family: Theme.mono
                     font.pixelSize: 9
@@ -246,6 +251,18 @@ Card {
                     font.family: Theme.mono
                     font.pixelSize: 10
                     elide: Text.ElideMiddle
+                }
+                // What the agent is doing right now (comux reads it from the
+                // tool's own log). Absent means "no reading", so just hide.
+                Text {
+                    Layout.fillWidth: true
+                    visible: !!row.live.detail
+                    text: row.live.detail || ""
+                    color: Theme.lavender
+                    font.family: Theme.mono
+                    font.pixelSize: 10
+                    font.italic: true
+                    elide: Text.ElideRight
                 }
             }
 
