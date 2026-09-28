@@ -1,5 +1,9 @@
 [global]
     monitor = 0
+    # tabd visual mode (V0 Q8): with more than one action dunst opens a chooser,
+    # so it needs a dmenu-compatible program. wofi is what the V4 approval UI
+    # plans to use anyway.
+    dmenu = /usr/bin/wofi --dmenu -p dunst
     follow = mouse
     width = 350
     height = 150
@@ -42,3 +46,11 @@
     foreground = "#f38ba8"
     frame_color = "#f38ba8"
     timeout = 0
+
+# Added for tabd visual mode (V0 Q8): dunst supports notification actions but
+# nothing could select one without a binding. Middle click runs the default
+# action, which is what an approve/deny prompt needs.
+[mouse]
+    mouse_left_click = do_action, close_current
+    mouse_middle_click = close_current
+    mouse_right_click = close_all
