@@ -45,6 +45,13 @@ blur = false
 [socket]
 # path = "/tmp/custerm.sock"
 
+# OSC 52 clipboard writes from inside a pane. Default is `deny` (matches VTE's
+# hardened default on Linux) — which also drops comux's drag-to-copy, since comux
+# hands the selection to its host terminal as OSC 52. `allow` lets any program in
+# any pane set the clipboard silently; clipboard READS are never answered either way.
+[security]
+osc52 = "allow"
+
 [theme]
 name = "catppuccin-mocha"
 #name = "dracula"
