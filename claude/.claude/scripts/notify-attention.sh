@@ -45,6 +45,31 @@ done
     exit 2
 }
 
+# --- comux fast path ---
+# Inside a comux pane, the mux is the better notifier: it knows WHICH pane raised this,
+# so its toast carries a click action that switches to that pane and raises the terminal
+# window — on Linux and macOS alike. The tmux path below can only ever switch a tmux
+# client, which is nothing here.
+#
+# The event is pushed rather than left to comux's own status sweep because a hook knows
+# the exact moment and the real message, where the sweep infers a transition at ~2 Hz;
+# comux marks (pane, agent pid, kind) as hook-owned, so once an agent has pushed a kind
+# the sweep stops inferring it and the two don't double-toast.
+#
+# Any failure — comux too old to know `notify`, dead socket, a token it can't resolve —
+# falls THROUGH to the tmux path instead of exiting, so a broken mux degrades to the
+# previous behavior rather than swallowing the notification.
+if [[ -n "${COPAD_MUX_PANE:-}" ]] && command -v comux >/dev/null 2>&1; then
+    case "$kind" in
+        notification) mux_kind="blocked" ;;  # permission prompt / idle: needs the user
+        *) mux_kind="done" ;;                # stop, codex-turn: the turn ended
+    esac
+    if comux notify --pane "$COPAD_MUX_PANE" --kind "$mux_kind" \
+        "${body:-attention}" >/dev/null 2>&1; then
+        exit 0
+    fi
+fi
+
 # --- tmux detection ---
 tmux_session=""
 tmux_window_idx=""
