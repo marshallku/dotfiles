@@ -25,6 +25,8 @@ return {
                 nginx = {"prettier"},
                 lua = {"stylua"},
                 rust = {"rustfmt"},
+                c = {"clang-format"},
+                cpp = {"clang-format"},
                 go = {"gofumpt"},
                 python = {"black"},
                 php = {"phpcbf"},
