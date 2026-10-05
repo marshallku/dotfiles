@@ -30,7 +30,12 @@
       "Glob",
       "Grep"
     ],
-    "defaultMode": "acceptEdits"
+    "defaultMode": "acceptEdits",
+    "deny": [
+      "Bash(security dump-keychain:*)",
+      "Bash(security export:*)",
+      "Bash(security find-generic-password:*)"
+    ]
   },
   "hooks": {
     "PreToolUse": [

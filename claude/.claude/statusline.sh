@@ -12,6 +12,7 @@ FIVE_H=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty'
 SEVEN_D=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
 LINES_ADD=$(echo "$input" | jq -r '.cost.total_lines_added // 0')
 LINES_DEL=$(echo "$input" | jq -r '.cost.total_lines_removed // 0')
+TRANSCRIPT=$(echo "$input" | jq -r '.transcript_path // empty')
 
 # --- Colors ---
 C_RESET='\033[0m'
@@ -112,3 +113,26 @@ LINE2="${BAR_COLOR}${BAR}${C_RESET} ${PCT}% ${C_DIM}|${C_RESET} ${C_YELLOW}${COS
 [ -n "$RATE_INFO" ] && LINE2="${LINE2} ${C_DIM}|${C_RESET} ${RATE_INFO}"
 
 printf '%b' "${LINE2}\n"
+
+# --- Line 3: session title + latest recap (pinned, like codex) ---
+# Claude Code writes `ai-title` and `system/away_summary` (recap) records into the
+# transcript but only shows the recap inline once; re-surface the latest of each here.
+# Cached by transcript size so the full-file grep runs only when the transcript grows.
+[ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ] || exit 0
+RECAP_CACHE="/tmp/claude-statusline-recap-$(printf '%s' "$TRANSCRIPT" | portable_md5)"
+SIZE=$(wc -c < "$TRANSCRIPT" | tr -d ' ')
+if [ ! -f "$RECAP_CACHE" ] || [ "$(head -n1 "$RECAP_CACHE")" != "$SIZE" ]; then
+    TITLE=$(grep -F '"type":"ai-title"' "$TRANSCRIPT" | tail -n1 | jq -r '.aiTitle // empty' 2>/dev/null)
+    RECAP=$(grep -F '"subtype":"away_summary"' "$TRANSCRIPT" | tail -n1 | jq -r '.content // empty' 2>/dev/null \
+        | sed 's/ *(disable recaps in \/config)$//' | tr '\n' ' ')
+    printf '%s\n%s\n%s\n' "$SIZE" "$TITLE" "$RECAP" > "$RECAP_CACHE"
+fi
+{ read -r _; read -r TITLE; read -r RECAP; } < "$RECAP_CACHE"
+[ -z "$TITLE" ] && [ -z "$RECAP" ] && exit 0
+
+RECAP_MAX=140
+[ "${#RECAP}" -gt "$RECAP_MAX" ] && RECAP="${RECAP:0:$RECAP_MAX}…"
+LINE3="${C_CYAN}◆${C_RESET}"
+[ -n "$TITLE" ] && LINE3="${LINE3} ${TITLE}"
+[ -n "$RECAP" ] && LINE3="${LINE3} ${C_DIM}— ${RECAP}${C_RESET}"
+printf '%b' "${LINE3}\n"
