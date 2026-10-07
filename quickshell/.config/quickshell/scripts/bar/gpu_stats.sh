@@ -1,11 +1,11 @@
 #!/bin/bash
-# GPU stats for waybar.
-# Optional config: ~/.config/waybar-gpu/config
+# GPU stats for the quickshell bar.
+# Optional config: ~/.config/gpu-stats/config
 #   GPU_TYPE=nvidia|amd|intel|none|auto   (default: auto)
 #   GPU_INDEX=0                           (nvidia multi-GPU)
-# Empty text → waybar hides the module.
+# Empty text → the bar hides the pill.
 
-CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/waybar-gpu/config"
+CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/gpu-stats/config"
 GPU_TYPE="auto"
 GPU_INDEX=0
 [ -f "$CONFIG" ] && source "$CONFIG"

@@ -63,7 +63,7 @@ width = 200
 
 # Bottom status bar re-enabled for the pomodoro countdown. It was off
 # because pilot/todo/presence are sparse and event-shaped — they leave the
-# bar empty most of the day, and ambient stats already live in waybar /
+# bar empty most of the day, and ambient stats already live in the quickshell bar /
 # tmux / the zsh prompt. The pomodoro timer is the opposite: a value that
 # changes every second and is useless as a notification, so it needs a
 # persistent surface. The sparse modules stay blank when idle (the bar does

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""GTK layer-shell control panel for the waybar YouTube Music module.
+"""GTK layer-shell control panel for the bar's YouTube Music pill.
 
 Shows album art, title/artist, a seekable progress bar with time, and
 previous / play-pause / next controls for the current MPRIS player.
@@ -28,8 +28,8 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 STATUS_SH = SCRIPT_DIR / "ytmusic_status.sh"
 ART_SIZE = 220
 PANEL_W = ART_SIZE + 36
-BAR_GAP = 6  # gap below waybar; its exclusive zone already reserves the bar height
-CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "waybar-ytmusic"
+BAR_GAP = 6  # gap below the bar; its exclusive zone already reserves the bar height
+CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "ytmusic-panel"
 
 CSS = b"""
 window { background-color: transparent; }
@@ -271,7 +271,7 @@ class Panel(Gtk.Window):
             dest = CACHE_DIR / (hashlib.md5(url.encode()).hexdigest() + ".img")
             if not dest.exists():
                 try:
-                    req = urllib.request.Request(url, headers={"User-Agent": "waybar-ytmusic"})
+                    req = urllib.request.Request(url, headers={"User-Agent": "ytmusic-panel"})
                     with urllib.request.urlopen(req, timeout=4) as r:
                         dest.write_bytes(r.read())
                 except Exception:

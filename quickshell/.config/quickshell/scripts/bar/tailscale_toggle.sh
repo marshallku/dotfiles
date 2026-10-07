@@ -22,5 +22,3 @@ else
   tailscale up >/dev/null 2>&1 || exit 0
   notify-send "Tailscale" "Connected"
 fi
-
-pkill -SIGRTMIN+11 waybar || true

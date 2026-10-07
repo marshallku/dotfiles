@@ -1,14 +1,14 @@
 #!/bin/bash
-# Waybar Grafana module - Fetches key metrics from Grafana API
+# Bar Grafana module - Fetches key metrics from Grafana API
 #
-# Config file: ~/.config/grafana-waybar/config (chmod 600)
+# Config file: ~/.config/grafana-homelab/config (chmod 600)
 # Required vars: GRAFANA_URL, GRAFANA_API_KEY, DATASOURCE_UID
 # Optional vars: GRAFANA_DASHBOARD_URL
 
-CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/grafana-waybar/config"
+CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/grafana-homelab/config"
 
 if [ ! -f "$CONFIG_FILE" ]; then
-  echo '{"text": "󱁤  Grafana", "tooltip": "Not configured.\nCreate ~/.config/grafana-waybar/config (chmod 600)", "class": "error"}'
+  echo '{"text": "󱁤  Grafana", "tooltip": "Not configured.\nCreate ~/.config/grafana-homelab/config (chmod 600)", "class": "error"}'
   exit 0
 fi
 

@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 
-// Homelab detail: what waybar compresses into server_health / grafana /
+// Homelab detail: what the bar compresses into server_health / grafana /
 // tailscale icons. Each section dims + badges independently when stale.
 Card {
     id: card

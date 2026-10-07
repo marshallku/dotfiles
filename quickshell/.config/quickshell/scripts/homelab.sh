@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# Desktop widget collector: homelab health in detail — what waybar squeezes
-# into three icons (server_health / grafana / tailscale).
+# Desktop widget collector: homelab health in detail — what the bar squeezes
+# into three pills (server_health / grafana / tailscale).
 #
 #   servers   : HTTP status + latency per server. The list is shared with
-#               waybar via ~/.config/waybar/scripts/servers.conf.
+#               the bar via scripts/bar/servers.conf.
 #   nodes     : per-node CPU / MEM / root-disk / uptime from Prometheus via the
 #               Grafana datasource proxy. Same config + auth handling as
-#               waybar's grafana_status.sh.
+#               the bar's grafana_status.sh.
 #   tailscale : backend state + every peer with online flag.
 #
 # Sections run concurrently and fail independently ({ok:false, error}); the
 # QML side keeps last-good data per section and marks it stale. Unlike
-# server_health.sh this never notifies or writes state — waybar owns alerts.
+# server_health.sh this never notifies or writes state — the bar owns alerts.
 
 set -u
 
-servers_conf="${XDG_CONFIG_HOME:-$HOME/.config}/waybar/scripts/servers.conf"
-grafana_conf="${XDG_CONFIG_HOME:-$HOME/.config}/grafana-waybar/config"
+servers_conf="$(dirname "$(readlink -f "$0")")/bar/servers.conf"
+grafana_conf="${XDG_CONFIG_HOME:-$HOME/.config}/grafana-homelab/config"
 now_ms=$(( $(date +%s%N) / 1000000 ))
 
 work=$(mktemp -d)

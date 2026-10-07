@@ -22,7 +22,7 @@ PanelWindow {
         top: true
         right: true
     }
-    // Tiled windows start at waybar's 44px reserve + gaps_out 20 + border 2
+    // Tiled windows start at the bar's 44px reserve + gaps_out 20 + border 2
     // (y=66, and 22px in from the right edge). Starting the cards inside
     // that edge keeps their tops from peeking through the gap above windows.
     margins {

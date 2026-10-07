@@ -1,5 +1,5 @@
 #!/bin/bash
-# Waybar OBS module — REC/LIVE indicator, visible only while OBS records or streams.
+# Bar OBS module — REC/LIVE indicator, visible only while OBS records or streams.
 #
 # Emits empty text (module hidden) when OBS is not running, websocket is off, or idle.
 # Connection info is read from OBS's own obs-websocket config so no secret is duplicated.

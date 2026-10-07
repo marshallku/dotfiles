@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # copad statusbar module: active (non-done) todo count from the copad todo
-# plugin — backlog state no external bar (waybar/tmux/zsh) can see. A `!`
+# plugin — backlog state no external bar (quickshell bar/tmux/zsh) can see. A `!`
 # is appended when any todo is blocked. Blank when nothing is open.
 #
 # coctl by absolute path (daemon PATH lacks ~/.local/bin).

@@ -10,7 +10,7 @@
 # DESIGN: this bar deliberately shows ONLY what copad's workflow runtime
 # knows and no other bar can — pilot agent jobs, todo backlog, presence.
 # Clock / CPU / disk / git / agent-counts were intentionally dropped:
-# waybar, tmux (incl. ~/.claude/scripts/tmux-agent-status.sh), and the
+# the quickshell bar, tmux (incl. ~/.claude/scripts/tmux-agent-status.sh), and the
 # zsh prompt already cover those, so duplicating them here is noise.
 #
 # PATH gotcha: the daemon (systemd user service / desktop-entry launch)
@@ -21,7 +21,7 @@
 name = "statusbar"
 title = "Status Bar Modules"
 version = "0.2.0"
-description = "copad-native workflow modules for the bottom bar: pilot agent jobs, todo backlog, presence. Deliberately excludes clock/cpu/disk/git which waybar/tmux/zsh already show."
+description = "copad-native workflow modules for the bottom bar: pilot agent jobs, todo backlog, presence. Deliberately excludes clock/cpu/disk/git which the quickshell bar/tmux/zsh already show."
 
 # ── pilot: in-flight agent queue jobs (+ ⏸ when one awaits a gate) ────
 [[modules]]

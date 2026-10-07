@@ -1,5 +1,5 @@
 #!/bin/bash
-# Waybar YouTube Music (MPRIS) module — now-playing indicator + panel launcher.
+# Bar YouTube Music (MPRIS) module — now-playing indicator + panel launcher.
 #
 # Player preference (best wins; Playing beats Paused within a tier):
 #   1. YouTube Music desktop app (th-ch/youtube-music) — richest MPRIS (art, position)

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Executable front end for hyprctl-compat.sh.
 #
-# Exists because several hyprctl call sites are not shell scripts — waybar's
-# config.jsonc, copad's config.toml, hypridle.conf — and so cannot source a
+# Exists because several hyprctl call sites are not shell scripts — copad's
+# config.toml, hypridle.conf, the quickshell bar — and so cannot source a
 # library. They run this instead:
 #
 #   ~/.config/hypr/scripts/hypr-do.sh workspace 3

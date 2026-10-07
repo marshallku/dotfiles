@@ -19,8 +19,8 @@
 #
 # hyprctl exits 0 even when it rejects a request, so they branch on its stdout.
 #
-# This file is a library. Call sites that are not shell scripts (waybar's
-# config.jsonc, copad's config.toml, hypridle.conf) go through the executable
+# This file is a library. Call sites that are not shell scripts (copad's
+# config.toml, hypridle.conf, the quickshell bar) go through the executable
 # dispatcher next to it:  hypr-do.sh workspace 3
 
 # Error replies that mean "wrong config manager, try the other form".

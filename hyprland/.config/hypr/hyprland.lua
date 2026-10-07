@@ -69,8 +69,7 @@ hl.on("hyprland.start", function()
 		"dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP HYPRLAND_INSTANCE_SIGNATURE"
 	)
 
-	hl.exec_cmd("waybar")
-	-- Desktop widget (agents + homelab) and the IPC power menu.
+	-- Quickshell: top bar, desktop widget (agents + homelab), IPC power menu.
 	hl.exec_cmd("qs")
 	-- Ensure the wallpaper symlink resolves before hyprpaper reads it (fresh stow).
 	hl.exec_cmd(scripts .. "/wallpaper.sh ensure && hyprpaper")
@@ -292,7 +291,7 @@ hl.bind(mainMod .. " + V", hl.dsp.window.float({ action = "toggle" }))
 hl.bind(mainMod .. " + SPACE", hl.dsp.exec_cmd(menu))
 hl.bind(mainMod .. " + P", hl.dsp.window.pseudo()) -- dwindle
 hl.bind(mainMod .. " + J", hl.dsp.layout("togglesplit")) -- dwindle
-hl.bind(mainMod .. " + R", hl.dsp.exec_cmd("~/.config/waybar/scripts/launch.sh"))
+hl.bind(mainMod .. " + R", hl.dsp.exec_cmd("qs kill; qs -d"))
 hl.bind(mainMod .. " + L", hl.dsp.exec_cmd("hyprlock"))
 hl.bind(mainMod .. " + W", hl.dsp.exec_cmd("qs ipc call power toggle"))
 
