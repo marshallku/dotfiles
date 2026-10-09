@@ -9,7 +9,7 @@ export const HOSTS = {
     k3s01: { target: "marshall@192.168.219.193", role: "Single-node k3s (ArgoCD-reconciled) + Prometheus:30090 / Grafana:30300" },
     app01: { target: "marshall@192.168.219.194", role: "Docker host — compose stacks with volumes (AdGuard main, n8n, blog, portainer, …)" },
     edge01: { target: "marshall@192.168.219.192", role: "Edge — Cloudflare tunnel + certs, stateless by design" },
-    storage01: { target: "marshall@192.168.219.191", role: "ZFS storage/NAS + GPU passthrough" },
+    storage01: { target: "marshall@10.20.0.41", role: "ZFS storage/NAS + GPU passthrough" },
     pi01: { target: "marshall@192.168.219.127", role: "Raspberry Pi — secondary AdGuard DNS + homelab-status" },
     pve02: { target: "root@192.168.219.199", role: "Proxmox hypervisor hosting the guests above" },
     macmini: { target: "macmini", role: "life-assistant launchd host" },
