@@ -1,6 +1,6 @@
 ---
 name: catchup
-description: 마지막 정리 시점부터 오늘까지의 ~/.claude + ~/.codex 대화 기록을 훑어서 ~/docs(daily/weekly/topics)에 작업/의사결정/배운 것을 정리. 마지막 일자는 ~/docs/.last-catchup에 저장됨.
+description: 마지막 정리 시점부터 오늘까지의 ~/.claude + ~/.codex 대화 기록을 훑어서 노트(daily/weekly/topics)에 작업/의사결정/배운 것을 정리. 쓰기는 AIDE(aidectl), 읽기는 ~/docs mirror. 마지막 일자는 ~/docs/.last-catchup에 저장됨.
 user-invocable: true
 allowed-tools: Bash,Read,Edit,Write,Glob,Grep
 effort: high
@@ -53,14 +53,26 @@ git -C <cwd> log --since="$SINCE" --pretty='format:%h %ad %s' --date=short 2>/de
 
 이 목록은 가이드일 뿐 — 새 패턴 보이면 판단해서 거르고, 사용자가 직접 타이핑한 걸로 보이는 건 무조건 보존.
 
-### 4. `~/docs` 업데이트
+### 4. 노트 업데이트 — AIDE로 쓰기
 
-`~/docs/CLAUDE.md`의 conventions 준수. 핵심:
+노트의 원본은 AIDE다. `~/docs`는 docs-sync가 1분 안팎으로 따라오는 **읽기 전용 mirror** — `~/docs/daily|weekly|topics/` 파일을 Edit/Write로 직접 고치지 마라(두 번째 writer가 되어 docs-sync 충돌을 만든다). 쓰기는 전부 `aidectl`(catchup 토큰):
 
-- **`daily/YYYY-MM-DD.md`** — 날짜별 작업 로그 / 배운 것 / 정리. 이미 있으면 `## Tasks` 섹션은 보존(사용자가 직접 쓴 것), 나머지만 보강. Notes 섹션 항목 사이는 `---` 구분.
-- **`topics/<cat>/<slug>.md`** — 관련 topic 업데이트. frontmatter `updated:` 날짜 갱신. 신규 topic은 명백히 새 주제일 때만, 사용자에게 확인 후.
-- **`weekly/YYYY-WNN.md`** — 주가 마무리됐으면 작성. 템플릿 필요하면 `EDITOR=cat ~/docs/scripts/dn weekly YYYY-WNN`.
-- **`topics/INDEX.md`** — 신규 topic 추가 시 해당 카테고리 섹션에 1줄 추가.
+```bash
+export AIDECTL_CONFIG=~/.config/aidectl/catchup   # daily·weekly·topics 쓰기, templates 읽기
+```
+
+- **덧붙이기** (Notes 항목, 로그 한 줄 등): 서버가 섹션 끝에 원자적으로 붙인다. 재실행해도 중복 없음.
+  `aidectl append topics/<cat>/<slug>.md --heading Notes --create-heading --if-absent --text "<항목>"`
+- **고쳐 쓰기** (기존 섹션 보강, frontmatter `updated:` 갱신 등):
+  1. `aidectl get <path> --json > /tmp/n.json` → `jq -r .body`를 임시 `.md`로, `jq .version`을 V로.
+  2. 임시 파일을 Edit로 수정.
+  3. `aidectl put <path> --base-version V --file <임시.md>` — exit 4면 그사이 바뀐 것: 1부터 다시(새 본문에 같은 수정을 다시 적용). 덮어쓰기는 이 경로로만.
+- **daily**: `aidectl daily YYYY-MM-DD --json`(없으면 템플릿으로 생성)으로 받고 위 절차. `## Tasks`와 `<!-- aide:slot … -->` 블록은 건드리지 마라(사용자·플러그인 소유).
+- **weekly**: 주가 끝났으면 `aidectl periodic weekly YYYY-WNN --json`으로 받고(없으면 템플릿 생성) 위 절차.
+- **topics**: 관련 topic 업데이트. 신규 topic은 명백히 새 주제일 때만, 사용자 확인 후 `aidectl put topics/<cat>/<slug>.md --create-only --file <임시.md>` (exit 3 = 이미 있음 → 내용 비교 후 판단).
+- **`topics/INDEX.md`**: 신규 topic이면 `aidectl append topics/INDEX.md --heading "<카테고리 이름, # 없이>" --create-heading --if-absent --text "<index_line>"`.
+- AIDE에 닿지 않으면(exit 1) **멈추고 보고**한다. 로컬 파일로 대신 쓰지 마라.
+- 읽기(관련 노트 찾기·Read)는 `~/docs` mirror나 `dn search`로 해도 된다. 방금 쓴 내용은 mirror에 1분쯤 늦게 보인다.
 
 ### 5. 마지막 일자 기록
 
@@ -91,6 +103,7 @@ date +%Y-%m-%d > ~/docs/.last-catchup
   } ] }
   ```
 
+- 기존 노트 쓰기는 위 4번과 같이 `aidectl`로 한다.
 - 스풀 파일이 이미 있으면 candidates 에 **append**. 한 스풀 안에서 같은 `target_path` 는 한 번만. (authoritative 큐와의 status 병합·중복 제거는 Go 가 처리하니, 이미 승인/반려된 항목인지까지 신경 쓸 필요 없다.)
 - `file_content` 는 `~/docs/CLAUDE.md` 컨벤션(frontmatter, Atomic Note, Related)을 지킨 **최종본** — 사람이 버튼 한 번 누르면 그대로 커밋된다.
 - `target_path` 는 반드시 `topics/` 하위 `.md`. (life-assistant 가 경로 순회를 거부)
@@ -100,8 +113,8 @@ date +%Y-%m-%d > ~/docs/.last-catchup
 ## 규칙
 
 - **한국어 작성**. `~/docs/CLAUDE.md` 컨벤션 준수.
-- **대화형 시작 시 큐 픽업**: `~/docs/.catchup-queue/*.json` 에 `status: pending` 후보가 있으면 정리 전에 먼저 사용자에게 보여주고, 승인하면 `file_content` 를 `target_path` 에 쓰고 INDEX 에 `index_line` 추가 후 해당 후보 `status`→`approved` 로 갱신(키보드 폴백).
-- **`dn` 호출은 항상 `EDITOR=cat`** (안 그러면 nvim이 떠서 블로킹).
+- **대화형 시작 시 큐 픽업**: `~/docs/.catchup-queue/*.json` 에 `status: pending` 후보가 있으면 정리 전에 먼저 사용자에게 보여주고, 승인하면 `file_content` 를 `aidectl put <target_path> --create-only` 로 만들고(exit 3 → `aidectl get` 해서 같은 내용이면 이미 된 것, 다르면 멈추고 보고), INDEX 에 `index_line` 을 `append --if-absent` 로 추가한 뒤에만 해당 후보 `status`→`approved` 로 갱신(키보드 폴백).
+- **`dn`/`aidectl` 호출은 항상 `EDITOR=cat`** (안 그러면 nvim이 떠서 블로킹). `aidectl … --edit`은 쓰지 마라 — 위 get/put 절차로.
 - **Notes 섹션 항목 사이 `---` 줄**.
 - **topic note Related 섹션 양방향 유지** (A→B 추가 시 B→A도).
 - **신규 topic 자동 생성 금지**. 사용자 확인 후만.
