@@ -28,7 +28,22 @@ if [ -f "$STATE_DIR/open-loops-surface-disabled" ]; then
     exit 0
 fi
 
-LOOPS_FILE="${OPEN_LOOPS_FILE:-$HOME/bots/Marshall Ku/memory/open-loops.json}"
+# The registry is the AIDE note loops/open (WU39), read from the local AIDE server (~/docs is a
+# working tree pulled by hand, so its mirror can be days old). OPEN_LOOPS_FILE overrides with a
+# file. Parsed by the shared grammar helper.
+LOOPS_HELPER="$HOME/.claude/scripts/open-loops.py"
+if [ -n "${OPEN_LOOPS_FILE:-}" ]; then
+    LOOPS_FILE="$OPEN_LOOPS_FILE"
+else
+    LOOPS_FILE=$(mktemp)
+    trap 'rm -f "$LOOPS_FILE"' EXIT
+    BOUND=()   # bound a hung server; localhost refusals fail fast anyway
+    if command -v timeout >/dev/null 2>&1; then BOUND=(timeout 5); elif command -v gtimeout >/dev/null 2>&1; then BOUND=(gtimeout 5); fi
+    if ! AIDECTL_CONFIG="$HOME/.config/aidectl/catchup" ${BOUND[@]+"${BOUND[@]}"} "$HOME/.local/bin/aidectl" get loops/open > "$LOOPS_FILE" 2>/dev/null; then
+        echo '{}'   # AIDE unreachable or no note: no nudge today, retried next session
+        exit 0
+    fi
+fi
 
 # Registry absent (e.g. different machine / bots repo not cloned) → no-op.
 if [ ! -f "$LOOPS_FILE" ]; then
@@ -57,16 +72,16 @@ fi
 #   stderr → human-readable nudge
 # Guard against a malformed registry breaking session start.
 set +e
-OUT=$(LOOPS_FILE="$LOOPS_FILE" TODAY="$TODAY" python3 - "$LOOPS_FILE" "$TODAY" <<'PY'
+OUT=$(LOOPS_FILE="$LOOPS_FILE" LOOPS_HELPER="$LOOPS_HELPER" TODAY="$TODAY" python3 - "$LOOPS_FILE" "$TODAY" <<'PY'
 import json, os, sys, datetime
 
 path, today_s = sys.argv[1], sys.argv[2]
 today = datetime.date.fromisoformat(today_s)
 
+import subprocess
 try:
-    with open(path, encoding="utf-8") as f:
-        data = json.load(f)
-    items = data.get("items", [])
+    parsed = subprocess.run([os.environ["LOOPS_HELPER"], "parse", path], capture_output=True, text=True, check=True)
+    items = json.loads(parsed.stdout).get("items", [])
 except Exception:
     print("{}")
     sys.exit(0)
