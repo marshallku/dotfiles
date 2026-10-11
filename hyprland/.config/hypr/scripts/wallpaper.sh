@@ -102,12 +102,35 @@ case "$cmd" in
     ensure)
         # First boot / fresh stow: configs reference .current, so make sure it
         # resolves to a real file before hyprpaper/hyprlock read it.
-        cur="$(current_target)"
-        if [ -z "$cur" ] || [ ! -f "$cur" ]; then
-            mapfile -t list < <(candidates)
-            [ "${#list[@]}" -gt 0 ] && ln -sfn "${list[0]}" "$CURRENT_LINK" \
-                && echo "wallpaper -> ${list[0]} (initialized)"
+        [ -f "$CURRENT_LINK" ] && exit 0
+        if [ -e "$CURRENT_LINK" ]; then
+            die "$CURRENT_LINK exists but is not an image file"
         fi
+        mkdir -p "$WALLPAPER_DIR"
+        mapfile -t list < <(candidates)
+        if [ "${#list[@]}" -eq 0 ]; then
+            # A neutral Catppuccin background without downloads or image tools.
+            python - "$WALLPAPER_DIR/.default.png" <<'PY'
+from pathlib import Path
+import struct
+import sys
+import zlib
+
+path = Path(sys.argv[1])
+def chunk(kind, data):
+    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+png = b"\x89PNG\r\n\x1a\n"
+png += chunk(b"IHDR", struct.pack(">IIBBBBB", 64, 64, 8, 2, 0, 0, 0))
+png += chunk(b"IDAT", zlib.compress((b"\0" + bytes((30, 30, 46)) * 64) * 64))
+png += chunk(b"IEND", b"")
+if not path.is_file():
+    with path.open("xb") as output:
+        output.write(png)
+PY
+            list=("$WALLPAPER_DIR/.default.png")
+        fi
+        ln -sfn "${list[0]}" "$CURRENT_LINK"
+        echo "wallpaper -> ${list[0]} (initialized)"
         ;;
     -h|--help|help) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//' ;;
     *)       img="$(resolve_name "$cmd")" && apply "$img" ;;

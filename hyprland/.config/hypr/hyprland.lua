@@ -47,7 +47,7 @@ end
 ---------------------
 
 -- Set programs that you use
-local terminal = "/home/marshall/.local/bin/copad"
+local terminal = "~/.config/hypr/scripts/terminal.sh"
 local fileManager = "dolphin"
 local menu = "qs ipc call launcher toggle"
 local browser = "firefox"
@@ -79,7 +79,7 @@ hl.on("hyprland.start", function()
 	-- copad GUI — keeps a registered GUI client attached to copadd at all
 	-- times, so remote control via web-bridge (Slice 3+) can reach
 	-- terminal.*/tab.list/session.list GUI-owned methods after WOL+SSH wake.
-	-- Absolute path because exec runs before user shell PATH resolves.
+	-- Use the home-relative wrapper; Kitty provides a terminal on fresh machines.
 	hl.exec_cmd(terminal)
 end)
 

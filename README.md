@@ -56,19 +56,44 @@ select a result, Enter runs it, and Escape closes the panel. Calculations accept
 arithmetic such as `12 * (8 + 3)`; Enter copies the result. Terminal applications
 use Kitty because the copad GUI has no command execution CLI flag.
 
-Dependencies: `quickshell`, `dunst`, `python`, `wl-clipboard`, `cliphist`,
-`hypridle`, `hyprlock`, `kitty`, `jq` and `comux`/`coctl` in `~/.local/bin`.
-Install cliphist with `sudo pacman -S cliphist`, or without root:
+For a new machine or after pulling desktop updates, use the installer from any
+clone directory (run as your desktop user, never with sudo):
 
 ```bash
-GOBIN="$HOME/.local/bin" go install go.senan.xyz/cliphist@v0.7.0
-stow --restow hyprland hypridle hyprlock quickshell dunst
-systemctl --user daemon-reload
+bash install-desktop.sh --install-packages  # install official Arch dependencies and deploy config
+# If dependencies are already installed:
+bash install-desktop.sh
+bash install-desktop.sh --check             # read-only checks, nonzero on missing requirements
 ```
 
-Hyprland imports the Wayland environment and starts the idle and clipboard
-services on login. For an existing session, stop the old standalone hypridle
-before `systemctl --user start hypridle.service clipboard-history.service`.
+Use an up-to-date Arch installation; this is a repeatable configuration installer,
+not a pinned OS image. Package installation uses `sudo pacman -S --needed` without
+refreshing repositories; perform your normal full system update first. It includes
+Nerd/CJK/emoji fonts, Korean input, screenshot/media tools, and the PyGObject/GTK
+libraries used by the music popup. The core desktop helper itself uses Python's
+standard library. `cliphist` can also be installed manually in `~/.local/bin`.
+
+All eight desktop packages are stowed together, including wallpaper, Kitty and
+fcitx5. A simulation checks conflicts first; existing regular config files are
+never adopted or overwritten. Move conflicting files aside yourself and retry.
+Machine-local `~/.config/hypr/monitors_local.lua` is preserved; absent layouts use
+preferred/auto outputs. Empty wallpaper folders get a neutral Catppuccin PNG;
+existing `.current` files and valid links are preserved. The clone can live outside
+`~/dotfiles`. These configs require the standard `~/.config` location.
+
+Log out and back into Hyprland after installation to activate everything. The
+installer reloads unit definitions when a user systemd manager is reachable, but
+never starts/stops services, restarts the shell, imports another session's
+environment, or locks the screen. Super+R only restarts Quickshell (needed when new
+QML types were added); it does not migrate idle or clipboard services. Installation
+checks and the optional current-session IPC check are reported separately.
+
+Private `copad`, `comux` and `coctl` binaries are optional: terminal shortcuts fall
+back to Kitty, and agent/usage readings may be unavailable. Pretendard and Bibata
+are optional; the shell uses Noto Sans CJK KR when Pretendard is absent. Grafana
+credentials, Tailscale/VPN login, display-manager setup, hardware drivers and a
+Polkit authentication agent remain host-specific setup. No credentials are copied.
+The system-wide `fonts/` package is deliberately excluded from home Stow.
 
 While locked, an additional hypridle service powers displays off after 30 seconds
 of inactivity, even if a browser inhibits idle. Input wakes the displays; unlock
@@ -94,6 +119,7 @@ Content marked sensitive by its source is skipped. `cliphist wipe` clears histor
 Checks:
 
 ```bash
+python -m unittest discover -s tests -v
 python -m unittest discover -s quickshell/.config/quickshell/scripts/__tests__
 python -m unittest discover -s hyprland/.config/hypr/scripts/__tests__
 node quickshell/.config/quickshell/__tests__/launcher-search.cjs

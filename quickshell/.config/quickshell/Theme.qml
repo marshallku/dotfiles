@@ -30,7 +30,7 @@ Singleton {
     readonly property color cardBorder: Qt.rgba(0.80, 0.65, 0.97, 0.18)
 
     readonly property string mono: "JetBrainsMono Nerd Font"
-    readonly property string sans: "Pretendard"
+    readonly property string sans: Qt.fontFamilies().includes("Pretendard") ? "Pretendard" : "Noto Sans CJK KR"
 
     readonly property int radius: 14
     readonly property int gap: 12

@@ -10,6 +10,9 @@ presence() {
 }
 
 case "${1:-}" in
+    away)
+        presence away
+        ;;
     request-lock)
         systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP HYPRLAND_INSTANCE_SIGNATURE \
             || printf 'Unable to import session environment\n' >&2
@@ -47,7 +50,7 @@ case "${1:-}" in
         fi
         ;;
     *)
-        printf 'Usage: %s request-lock|lock|locked|unlocked|resumed\n' "$0" >&2
+        printf 'Usage: %s request-lock|lock|locked|unlocked|away|resumed\n' "$0" >&2
         exit 64
         ;;
 esac
