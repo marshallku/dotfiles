@@ -2,6 +2,7 @@ pragma Singleton
 
 import QtQuick
 import Quickshell
+import Quickshell.Hyprland
 import Quickshell.Io
 import Quickshell.Wayland
 import "LauncherSearch.js" as Search
@@ -137,7 +138,14 @@ Singleton {
                 row.app.execute();
             }
         } else if (row.window) {
-            row.window.activate();
+            const address = row.window.HyprlandToplevel.address;
+            if (address) {
+                Quickshell.execDetached([
+                    Quickshell.env("HOME") + "/.config/hypr/scripts/hypr-do.sh",
+                    "focus-window",
+                    "address:" + (address.startsWith("0x") ? address : "0x" + address),
+                ]);
+            }
         } else if (row.clipboardId) {
             DesktopState.action(["clipboard-copy", row.clipboardId]);
         } else if (row.category === "Calculator") {
