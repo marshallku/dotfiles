@@ -1,0 +1,13 @@
+[Unit]
+Description=Wayland clipboard history for the desktop launcher
+PartOf=graphical-session.target
+ConditionEnvironment=WAYLAND_DISPLAY
+
+[Service]
+ExecStart=/usr/bin/wl-paste --watch %h/.config/quickshell/scripts/desktop.py clipboard-store
+Restart=on-failure
+RestartSec=2
+UMask=0077
+
+[Install]
+WantedBy=graphical-session.target

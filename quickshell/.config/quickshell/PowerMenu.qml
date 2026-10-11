@@ -30,7 +30,7 @@ Scope {
             label: "Lock",
             icon: "󰌾",
             confirm: false,
-            cmd: ["hyprlock"]
+            cmd: [Quickshell.env("HOME") + "/.config/hypr/scripts/session-control.sh", "request-lock"]
         },
         {
             key: "s",

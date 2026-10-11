@@ -18,4 +18,6 @@ ShellRoot {
     }
 
     PowerMenu {}
+    Sidebar {}
+    Launcher {}
 }

@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 
-// Agents + usage. Status values are tmx's (working / ready /
+// Agents + usage. Normalized comux/copad status values (working / ready /
 // awaiting-decision / idle / background) — rendered, never re-derived.
 Card {
     id: card

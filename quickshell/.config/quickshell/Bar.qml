@@ -101,7 +101,7 @@ PanelWindow {
             bold: true
             onClicked: button => {
                 if (button === Qt.LeftButton)
-                    BarData.exec("gsimplecal");
+                    DesktopState.showSidebar();
             }
 
             SystemClock {

@@ -1,0 +1,9 @@
+[Unit]
+Description=Blank displays after 30 seconds on the lock screen
+PartOf=hypridle.service graphical-session.target
+After=hypridle.service
+ConditionEnvironment=WAYLAND_DISPLAY
+
+[Service]
+ExecStart=/usr/bin/hypridle -c %h/.config/hypr/hypridle-locked.conf
+Restart=on-failure

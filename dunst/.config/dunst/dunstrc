@@ -5,6 +5,7 @@
     # plans to use anyway.
     dmenu = /usr/bin/wofi --dmenu -p dunst
     follow = mouse
+    history_length = 100
     width = 350
     height = 150
     origin = top-right

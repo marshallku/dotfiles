@@ -49,7 +49,7 @@ end
 -- Set programs that you use
 local terminal = "/home/marshall/.local/bin/copad"
 local fileManager = "dolphin"
-local menu = "wofi --show drun"
+local menu = "qs ipc call launcher toggle"
 local browser = "firefox"
 
 local scripts = "~/.config/hypr/scripts"
@@ -67,6 +67,8 @@ hl.on("hyprland.start", function()
 	hl.exec_cmd("systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP HYPRLAND_INSTANCE_SIGNATURE")
 	hl.exec_cmd(
 		"dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP HYPRLAND_INSTANCE_SIGNATURE"
+			.. "; systemctl --user start clipboard-history.service"
+			.. "; " .. scripts .. "/session-control.sh request-lock"
 	)
 
 	-- Quickshell: top bar, desktop widget (agents + homelab), IPC power menu.
@@ -74,8 +76,6 @@ hl.on("hyprland.start", function()
 	-- Ensure the wallpaper symlink resolves before hyprpaper reads it (fresh stow).
 	hl.exec_cmd(scripts .. "/wallpaper.sh ensure && hyprpaper")
 	hl.exec_cmd("fcitx5")
-	hl.exec_cmd("hypridle")
-	hl.exec_cmd("hyprlock")
 	-- copad GUI — keeps a registered GUI client attached to copadd at all
 	-- times, so remote control via web-bridge (Slice 3+) can reach
 	-- terminal.*/tab.list/session.list GUI-owned methods after WOL+SSH wake.
@@ -292,8 +292,10 @@ hl.bind(mainMod .. " + SPACE", hl.dsp.exec_cmd(menu))
 hl.bind(mainMod .. " + P", hl.dsp.window.pseudo()) -- dwindle
 hl.bind(mainMod .. " + J", hl.dsp.layout("togglesplit")) -- dwindle
 hl.bind(mainMod .. " + R", hl.dsp.exec_cmd("qs kill; qs -d"))
-hl.bind(mainMod .. " + L", hl.dsp.exec_cmd("hyprlock"))
+hl.bind(mainMod .. " + L", hl.dsp.exec_cmd(scripts .. "/session-control.sh request-lock"))
 hl.bind(mainMod .. " + W", hl.dsp.exec_cmd("qs ipc call power toggle"))
+hl.bind(mainMod .. " + N", hl.dsp.exec_cmd("qs ipc call sidebar toggle"))
+hl.bind(mainMod .. " + SHIFT + V", hl.dsp.exec_cmd("qs ipc call launcher clipboard"))
 
 -- Move focus with mainMod + arrow keys
 hl.bind(mainMod .. " + left", hl.dsp.focus({ direction = "left" }))
