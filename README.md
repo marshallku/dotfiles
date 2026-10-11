@@ -44,11 +44,14 @@ Hyprland uses the local Quickshell shell and comux/copad agent widgets.
 | --- | --- |
 | Super+Space | Search apps, open windows, calculations and desktop actions |
 | Super+Shift+V | Search clipboard history; Enter copies, then Ctrl+V pastes |
-| Super+N | Right sidebar with Widgets and Notifications tabs |
+| Super+N | Right sidebar with widgets and notifications together |
 | Super+L | Lock through the shared session controller |
 | Super+W | Power menu; its Lock action uses the same lock path |
 
-The clock also opens the sidebar. Launcher categories switch with Tab; Up/Down
+The clock also opens the sidebar. Clear history removes all archived notifications.
+Agents show at most three entries, prioritizing
+sessions that need attention or are working, with a count of additional agents.
+Launcher categories switch with Left/Right or Tab; Up/Down
 select a result, Enter runs it, and Escape closes the panel. Calculations accept
 arithmetic such as `12 * (8 + 3)`; Enter copies the result. Terminal applications
 use Kitty because the copad GUI has no command execution CLI flag.

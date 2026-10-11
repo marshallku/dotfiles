@@ -110,6 +110,8 @@ def main():
             run(["dunstctl", argument, sys.argv[3]])
         elif argument == "pause":
             run(["dunstctl", "set-paused", "toggle"])
+        elif argument == "history-clear" and len(sys.argv) == 3:
+            run(["dunstctl", "history-clear"])
         else:
             raise ValueError("Unknown notification action")
         return {}

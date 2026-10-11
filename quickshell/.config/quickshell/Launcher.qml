@@ -69,10 +69,29 @@ Scope {
                     RowLayout {
                         Layout.fillWidth: true
                         Layout.minimumHeight: 44
-                        Text {
-                            text: "⌕"
-                            color: Theme.mauve
-                            font.pixelSize: 30
+                        Item {
+                            Layout.preferredWidth: 26
+                            Layout.preferredHeight: 26
+                            Rectangle {
+                                x: 2
+                                y: 2
+                                width: 16
+                                height: 16
+                                radius: 8
+                                color: "transparent"
+                                border.color: Theme.mauve
+                                border.width: 2
+                            }
+                            Rectangle {
+                                x: 16
+                                y: 16
+                                width: 10
+                                height: 2
+                                radius: 1
+                                color: Theme.mauve
+                                rotation: 45
+                                transformOrigin: Item.TopLeft
+                            }
                         }
                         TextField {
                             id: search
@@ -99,9 +118,13 @@ Scope {
                                 } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                                     if (!event.isAutoRepeat)
                                         LauncherModel.activate(LauncherModel.selected);
-                                } else if (event.key === Qt.Key_Tab) {
+                                } else if (event.key === Qt.Key_Tab
+                                        || (event.modifiers === Qt.NoModifier
+                                            && (event.key === Qt.Key_Left || event.key === Qt.Key_Right))) {
                                     const categories = ["All", "Apps", "Windows", "Actions", "Clipboard"];
-                                    LauncherModel.scope = categories[(categories.indexOf(LauncherModel.scope) + 1) % categories.length];
+                                    const step = event.key === Qt.Key_Left ? -1 : 1;
+                                    LauncherModel.scope = categories[(categories.indexOf(LauncherModel.scope)
+                                            + step + categories.length) % categories.length];
                                 } else {
                                     return;
                                 }
@@ -224,7 +247,7 @@ Scope {
                     }
                     RowLayout {
                         Text {
-                            text: "↑↓ navigate   ↵ open / copy   Tab category"
+                            text: "↑↓ navigate   ↵ open / copy   ←→ / Tab category"
                             color: Theme.overlay1
                             font.family: Theme.mono
                             font.pixelSize: 10

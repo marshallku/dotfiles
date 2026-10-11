@@ -9,7 +9,6 @@ Scope {
         active: DesktopState.sidebarOpen
         PanelWindow {
             id: win
-            property bool showNotifications: false
             screen: DesktopState.focusedScreen()
             color: "transparent"
             anchors {
@@ -100,24 +99,6 @@ Scope {
                             onClicked: DesktopState.sidebarOpen = false
                         }
                     }
-                    RowLayout {
-                        ActionButton {
-                            text: "Widgets"
-                            active: !win.showNotifications
-                            onClicked: {
-                                win.showNotifications = false;
-                                scroll.contentY = 0;
-                            }
-                        }
-                        ActionButton {
-                            text: "Notifications  " + DesktopState.notifications.length
-                            active: win.showNotifications
-                            onClicked: {
-                                win.showNotifications = true;
-                                scroll.contentY = 0;
-                            }
-                        }
-                    }
                     Flickable {
                         id: scroll
                         Layout.fillWidth: true
@@ -133,15 +114,12 @@ Scope {
                             spacing: 14
                             AgentsCard {
                                 Layout.fillWidth: true
-                                visible: !win.showNotifications
                             }
                             HomelabCard {
                                 Layout.fillWidth: true
-                                visible: !win.showNotifications
                             }
                             NotificationCard {
                                 Layout.fillWidth: true
-                                visible: win.showNotifications
                             }
                         }
                     }

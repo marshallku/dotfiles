@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 SPEC = importlib.util.spec_from_file_location("desktop", Path(__file__).parents[1] / "desktop.py")
@@ -14,6 +15,17 @@ SPEC.loader.exec_module(desktop)
 
 
 class DesktopTests(unittest.TestCase):
+    def test_clear_history_dispatch_and_argument_validation(self):
+        with patch.object(desktop.sys, "argv", ["desktop.py", "notification-action", "history-clear"]):
+            with patch.object(desktop, "run", return_value=b"") as run:
+                self.assertEqual(desktop.main(), {})
+                run.assert_called_once_with(["dunstctl", "history-clear"])
+        with patch.object(desktop.sys, "argv", ["desktop.py", "notification-action", "history-clear", "extra"]):
+            with patch.object(desktop, "run") as run:
+                with self.assertRaises(ValueError):
+                    desktop.main()
+                run.assert_not_called()
+
     def test_arithmetic_precedence_and_negative_numbers(self):
         self.assertEqual(desktop.calculate("12 * (8 + 3)"), "132")
         self.assertEqual(desktop.calculate("-3 + 1 / 2"), "-2.5")

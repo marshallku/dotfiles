@@ -22,6 +22,12 @@ Card {
             font.family: Theme.sans
             font.pixelSize: 11
         }
+        ActionButton {
+            text: "Clear history"
+            enabled: DesktopState.notifications.length > 0
+            opacity: enabled ? 1 : 0.45
+            onClicked: DesktopState.action(["notification-action", "history-clear"])
+        }
     }
 
     Text {

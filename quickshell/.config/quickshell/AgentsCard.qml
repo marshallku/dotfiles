@@ -6,6 +6,7 @@ import Quickshell
 // awaiting-decision / idle / background) — rendered, never re-derived.
 Card {
     id: card
+    readonly property int maxVisibleAgents: 3
 
     title: "Agents"
     icon: "󰚩"
@@ -157,7 +158,7 @@ Card {
         // Keyed by id + status: a status change swaps the row (with the
         // row's intro animation) instead of mutating it in place.
         model: ScriptModel {
-            values: card.sorted.map(a => Object.assign({
+            values: card.sorted.slice(0, card.maxVisibleAgents).map(a => Object.assign({
                     key: a.id + "|" + a.status + "|" + a.name
                 }, a))
             objectProp: "key"
@@ -301,6 +302,14 @@ Card {
                 easing.type: Easing.OutCubic
             }
         }
+    }
+
+    Text {
+        visible: card.sorted.length > card.maxVisibleAgents
+        text: "+ " + (card.sorted.length - card.maxVisibleAgents) + " more agents"
+        color: Theme.overlay1
+        font.family: Theme.sans
+        font.pixelSize: 11
     }
 
     // ── recent attention events ──────────────────────────────────────────
