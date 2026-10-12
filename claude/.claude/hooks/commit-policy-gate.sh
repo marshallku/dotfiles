@@ -32,7 +32,7 @@ log() {
 
 # Quick filter: only commit-like commands. Mirrors pre-commit-gate.sh.
 case "$CMD" in
-    *save.sh*|*"git commit"*|*"git push"*) ;;
+    *save.sh*|*"git commit"*) ;;
     *) echo '{}'; exit 0 ;;
 esac
 

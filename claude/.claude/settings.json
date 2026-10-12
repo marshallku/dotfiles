@@ -1,4 +1,8 @@
 {
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
@@ -30,12 +34,12 @@
       "Glob",
       "Grep"
     ],
-    "defaultMode": "acceptEdits",
     "deny": [
       "Bash(security dump-keychain:*)",
       "Bash(security export:*)",
       "Bash(security find-generic-password:*)"
-    ]
+    ],
+    "defaultMode": "acceptEdits"
   },
   "hooks": {
     "PreToolUse": [

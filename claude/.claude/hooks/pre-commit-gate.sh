@@ -3,7 +3,8 @@
 # (a) run codex-review successfully for the current repo, and (b) captured a
 # valid intent file in ~/docs/sources/sessions/ (hard-gate mode only).
 #
-# Triggers on Bash commands that match: save.sh, git commit, git push.
+# Triggers on Bash commands that match: save.sh, git commit. A raw push only
+# publishes commits that already passed this gate via save.sh, so it is not gated.
 # Allows when:
 #   - ~/.claude/state/auto-review-disabled exists (global opt-out)
 #   - no implementation changes since the work-unit baseline
@@ -117,7 +118,7 @@ case "$CMD" in
     *save.sh*)
         COMMIT_LIKE=true
         ;;
-    *"git commit"*|*"git push"*)
+    *"git commit"*)
         COMMIT_LIKE=true
         ;;
 esac
