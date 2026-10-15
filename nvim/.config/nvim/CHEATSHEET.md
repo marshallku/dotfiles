@@ -20,7 +20,25 @@
 | `<S-l>` | Next buffer |
 | `gd` | Go to definition |
 | `gr` | Show references |
+| `gi` / `gt` | Go to implementation / type definition |
 | `K` | Show documentation |
+| `<C-o>` / `<C-i>` | Jump back / forward in jump history |
+| `]q` / `[q` | Next/previous quickfix item |
+
+### Code navigation (Cursor parity)
+| Key | Action | Cursor |
+|-----|--------|--------|
+| `<leader>fs` / `<leader>fS` | Document / workspace symbols | Ctrl+Shift+O / Ctrl+T |
+| `<leader>ci` / `<leader>co` | Incoming / outgoing calls | Call Hierarchy |
+| `<leader>pd` `pr` `pi` `pt` | Peek definition / references / implementations / type (glance) | Peek |
+| `<leader>xx` / `<leader>xX` | Project / buffer diagnostics (trouble) | Problems |
+| `<leader>xs` / `<leader>xl` | Symbol outline / LSP locations side panel | Outline |
+| `<leader>;` | Pick from the breadcrumb winbar (dropbar) | Breadcrumbs |
+| `[x` | Jump to the sticky function/class header (treesitter-context) | Sticky Scroll |
+| `[d` / `]d` | Previous / next diagnostic | F8 |
+
+The global `grn`/`grr`/`gra`/`gri`/`grt` defaults are removed so `gr` fires
+without waiting `timeoutlen` for a follow-up key.
 
 ### Editing
 | Key | Action |
@@ -36,8 +54,14 @@
 |-----|--------|
 | `<leader>gg` | Open lazygit |
 | `<leader>gn` | Neogit (magit-style) |
-| `<leader>gd` | Diffview open |
-| `<leader>gh` | File history |
+| `<leader>gd` | Review working tree changes (codediff) |
+| `<leader>gs` | Review staged changes (codediff) |
+| `<leader>gD` | Review branch changes since the default-branch merge-base (PR scope) |
+| `<leader>gf` | Diff current file against HEAD (codediff) |
+| `<leader>gl` | Review recent commits one by one (codediff history) |
+| `<leader>gL` | Review branch commits one by one (`<default>..HEAD`) |
+| `<leader>gc` | Pick a commit, review everything after it through the working tree |
+| `<leader>gh` | File history (diffview) |
 | `<leader>gx` | Diffview close |
 | `<leader>gB` | Blame buffer |
 | `]h` / `[h` | Next/previous hunk |
@@ -46,6 +70,12 @@
 | `<leader>tb` | Toggle inline blame |
 
 Inline blame (author, relative time, summary) is **on by default** at the end of the current line.
+
+Roles: lazygit stages and pushes, diffview shows file history, codediff reviews.
+codediff refreshes live while an agent edits files, and folds unchanged regions.
+Inside a codediff tab: `t` inline / side-by-side, `gc` compact, `]c`/`[c` hunk,
+`]f`/`[f` file, `-` stage file, `<leader>hs`/`<leader>hr` stage/discard hunk,
+`q` close, `g?` all keys. `:CodeDiff pr 512` reviews a PR without checking it out.
 
 ### Claude Code
 | Key | Action | Mode |
@@ -152,6 +182,35 @@ Prefix `gA` (uppercase, so built-in `ga` ASCII inspect is preserved). Examples: 
 3. **Use macros**: `qa` starts recording to register `a`, `q` stops, `@a` plays
 4. **Use marks**: `ma` sets mark `a`, `'a` jumps to it
 5. **Use clipboard**: Visual select + `"+y` to copy to system clipboard
+
+## Browser click-to-source (code-jumper)
+
+`marshallku/code-jumper` registers every nvim running in a tmux or comux pane.
+Dev-server inspectors call `$LAUNCH_EDITOR` (set in `.zshrc`), which opens the
+file in the nvim whose cwd contains it and focuses that pane (`comux jump` for
+comux). A local clone at `~/dev/code-jumper` or `~/workspace/code-jumper` takes
+precedence over the lazy.nvim checkout for both the plugin and the launcher.
+
+## Kotlin (kotlin-lsp)
+
+JetBrains' official `kotlin-lsp` (Alpha, IntelliJ-based, bundles its own JBR).
+JVM Gradle/Maven projects only; KMP is not supported yet. The config looks for
+the server in Mason, then `~/.local/share/kotlin-lsp/kotlin-lsp.sh`, then `PATH`.
+
+Mason's package 404s since JetBrains moved downloads to signed CDN URLs, so
+install it manually per machine:
+
+```sh
+# macOS
+brew install --cask kotlin-lsp
+
+# Linux: standalone archive from https://github.com/Kotlin/kotlin-lsp/releases
+# (verify the .sha256 next to it first)
+mkdir -p ~/.local/share/kotlin-lsp
+tar -xzf kotlin-server-<version>.tar.gz -C ~/.local/share/kotlin-lsp --strip-components=1
+```
+
+Formatting uses `ktlint` (installed by Mason).
 
 ## Per-project setup: Yarn PnP TypeScript
 

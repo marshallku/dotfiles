@@ -24,7 +24,6 @@ return {
         cond = function() return not vim.g.vscode end,
         cmd = { "DiffviewOpen", "DiffviewFileHistory", "DiffviewClose" },
         keys = {
-            { "<leader>gd", "<cmd>DiffviewOpen<cr>", desc = "Diffview open" },
             { "<leader>gh", "<cmd>DiffviewFileHistory %<cr>", desc = "File history" },
             { "<leader>gx", "<cmd>DiffviewClose<cr>", desc = "Diffview close" },
         },

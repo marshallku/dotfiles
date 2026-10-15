@@ -6,6 +6,14 @@ return {
         { "antosha417/nvim-lsp-file-operations", config = true },
     },
     config = function()
+        -- Drop the global gr* defaults (0.11+). With a buffer-local `gr` they
+        -- make `gr` wait timeoutlen for a follow-up key. Their actions live on
+        -- <leader>rn, <leader>ca, gi and gt.
+        for _, lhs in ipairs({ "grn", "grr", "gri", "grt", "grx" }) do
+            pcall(vim.keymap.del, "n", lhs)
+        end
+        pcall(vim.keymap.del, { "n", "x" }, "gra")
+
         -- LSP keymaps on attach
         vim.api.nvim_create_autocmd("LspAttach", {
             group = vim.api.nvim_create_augroup("lsp_attach_keymaps", { clear = true }),
@@ -28,6 +36,18 @@ return {
                 opts.desc = "Show LSP type definitions"
                 keymap.set("n", "gt", "<cmd>Telescope lsp_type_definitions<CR>", opts)
 
+                opts.desc = "Find document symbols"
+                keymap.set("n", "<leader>fs", "<cmd>Telescope lsp_document_symbols<CR>", opts)
+
+                opts.desc = "Find workspace symbols"
+                keymap.set("n", "<leader>fS", "<cmd>Telescope lsp_dynamic_workspace_symbols<CR>", opts)
+
+                opts.desc = "Incoming calls"
+                keymap.set("n", "<leader>ci", "<cmd>Telescope lsp_incoming_calls<CR>", opts)
+
+                opts.desc = "Outgoing calls"
+                keymap.set("n", "<leader>co", "<cmd>Telescope lsp_outgoing_calls<CR>", opts)
+
                 opts.desc = "Show available code actions"
                 keymap.set({ "n", "v" }, "<leader>ca", vim.lsp.buf.code_action, opts)
 
@@ -41,10 +61,10 @@ return {
                 keymap.set("n", "<leader>d", vim.diagnostic.open_float, opts)
 
                 opts.desc = "Go to previous diagnostic"
-                keymap.set("n", "[d", vim.diagnostic.goto_prev, opts)
+                keymap.set("n", "[d", function() vim.diagnostic.jump({ count = -1 }) end, opts)
 
                 opts.desc = "Go to next diagnostic"
-                keymap.set("n", "]d", vim.diagnostic.goto_next, opts)
+                keymap.set("n", "]d", function() vim.diagnostic.jump({ count = 1 }) end, opts)
 
                 opts.desc = "Show documentation"
                 keymap.set("n", "K", vim.lsp.buf.hover, opts)
@@ -81,7 +101,7 @@ return {
             },
             float = {
                 border = "rounded",
-                source = "always",
+                source = true,
                 header = "",
                 prefix = "",
             },
@@ -101,19 +121,24 @@ return {
         vim.api.nvim_create_autocmd("BufWritePre", {
             group = vim.api.nvim_create_augroup("lsp_add_imports", { clear = true }),
             pattern = { "*.ts", "*.tsx", "*.js", "*.jsx" },
-            callback = function()
-                local params = vim.lsp.util.make_range_params()
-                params.context = {
-                    only = { "source.addMissingImports" },
-                    diagnostics = {},
-                }
-                local result = vim.lsp.buf_request_sync(0, "textDocument/codeAction", params, 3000)
-                for _, res in pairs(result or {}) do
-                    for _, action in pairs(res.result or {}) do
+            callback = function(event)
+                local clients = vim.lsp.get_clients({ bufnr = event.buf, method = "textDocument/codeAction" })
+                for _, client in ipairs(clients) do
+                    local params = vim.lsp.util.make_range_params(0, client.offset_encoding)
+                    params.context = {
+                        only = { "source.addMissingImports" },
+                        diagnostics = {},
+                    }
+                    local response = client:request_sync("textDocument/codeAction", params, 3000, event.buf)
+                    for _, action in ipairs(response and response.result or {}) do
                         if action.edit then
-                            vim.lsp.util.apply_workspace_edit(action.edit, "utf-8")
-                        elseif action.command then
-                            vim.lsp.buf.execute_command(action.command)
+                            vim.lsp.util.apply_workspace_edit(action.edit, client.offset_encoding)
+                        end
+                        -- A CodeAction carries a Command table; a bare Command has a string `command`
+                        local command = type(action.command) == "table" and action.command
+                            or (type(action.command) == "string" and action)
+                        if command then
+                            client:exec_cmd(command, { bufnr = event.buf })
                         end
                     end
                 end
@@ -239,12 +264,32 @@ return {
             },
         })
 
+        -- Kotlin (JetBrains kotlin-lsp, Alpha; JVM Gradle/Maven only).
+        -- Mason's package 404s since JetBrains moved to signed CDN URLs, so look
+        -- in Mason first, then a manual install, then PATH (brew cask).
+        local function kotlin_lsp_cmd()
+            local candidates = {
+                vim.fn.stdpath("data") .. "/mason/bin/kotlin-lsp",
+                vim.fn.expand("~/.local/share/kotlin-lsp/kotlin-lsp.sh"),
+            }
+            for _, path in ipairs(candidates) do
+                if vim.fn.executable(path) == 1 then
+                    return { path, "--stdio" }
+                end
+            end
+            return { "kotlin-lsp", "--stdio" }
+        end
+
+        vim.lsp.config("kotlin_lsp", {
+            cmd = kotlin_lsp_cmd(),
+        })
+
         -- Enable all configured LSP servers
         vim.lsp.enable({
             "vtsls", "eslint", "rust_analyzer", "gopls",
             "pyright", "intelephense", "lua_ls",
             "html", "cssls", "tailwindcss", "jsonls",
-            "yamlls", "svelte",
+            "yamlls", "svelte", "kotlin_lsp",
         })
     end,
 }

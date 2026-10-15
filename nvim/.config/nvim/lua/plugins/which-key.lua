@@ -19,7 +19,8 @@ return {
             {"<leader>r", group = "Rename"}, {"<leader>h", group = "Git Hunk"},
             {"<leader>b", group = "Buffer"}, {"<leader>e", group = "Explorer"},
             {"<leader>m", group = "Format"}, {"<leader>g", group = "Git"},
-            {"<leader>a", group = "AI"}
+            {"<leader>a", group = "AI"}, {"<leader>x", group = "Trouble"},
+            {"<leader>p", group = "Peek"}
         })
     end
 }

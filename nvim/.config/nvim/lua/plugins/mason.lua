@@ -35,6 +35,11 @@ return {
                 "jsonls", -- JSON
                 "yamlls", -- YAML (k8s, GitHub Actions, docker-compose schemas)
                 "svelte" -- Svelte
+            },
+            -- vtsls handles TS/JS; an installed typescript-language-server
+            -- would otherwise attach as a second client
+            automatic_enable = {
+                exclude = { "ts_ls" }
             }
         })
 
@@ -46,7 +51,8 @@ return {
                 "black", -- Python formatter
                 "pylint", -- Python linter
                 "phpcs", -- PHP linter
-                "phpcbf" -- PHP formatter
+                "phpcbf", -- PHP formatter
+                "ktlint" -- Kotlin formatter
             }
         })
     end

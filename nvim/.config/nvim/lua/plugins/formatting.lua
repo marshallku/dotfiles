@@ -30,6 +30,7 @@ return {
                 go = {"gofumpt"},
                 python = {"black"},
                 php = {"phpcbf"},
+                kotlin = {"ktlint"},
                 ["docker-compose"] = {"prettier"},
                 ["yaml.docker-compose"] = {"prettier"},
                 ["yaml.github-actions"] = {"prettier"}

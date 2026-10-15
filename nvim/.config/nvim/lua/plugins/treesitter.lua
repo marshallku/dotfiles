@@ -13,7 +13,7 @@ return {
             "typescript", "tsx", "javascript", "rust", "go", "python",
             "php", "lua", "vim", "vimdoc", "html", "css", "scss", "json",
             "yaml", "toml", "markdown", "markdown_inline", "bash",
-            "dockerfile", "gitignore", "graphql"
+            "dockerfile", "gitignore", "graphql", "kotlin"
         })
 
         require("nvim-treesitter-textobjects").setup({

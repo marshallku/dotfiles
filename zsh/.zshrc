@@ -293,6 +293,16 @@ else
   export EDITOR='nvim'
 fi
 
+# Dev-server "open in editor" → running nvim's tmux/comux pane (marshallku/code-jumper).
+# Same lookup order as nvim/lua/plugins/code-jumper.lua, then lazy.nvim's checkout.
+for _cj in ~/dev/code-jumper ~/workspace/code-jumper ~/.local/share/nvim/lazy/code-jumper; do
+  if [[ -x $_cj/bin/code-jumper ]]; then
+    export LAUNCH_EDITOR=$_cj/bin/code-jumper
+    break
+  fi
+done
+unset _cj
+
 # Compilation flags
 # export ARCHFLAGS="-arch x86_64"
 
