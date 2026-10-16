@@ -39,7 +39,7 @@ t("ident rejects shell metachars, spaces, and option-injection", () => {
 });
 
 t("hostTarget enforces the allowlist", () => {
-    assert.equal(hostTarget("k3s01"), "marshall@192.168.219.193");
+    assert.equal(hostTarget("k3s01"), "marshall@10.20.0.20");
     assert.equal(hostTarget("app01"), "marshall@192.168.219.194");
     // Retired 2026-09 by the pve02 consolidation — must no longer resolve.
     ["prd01", "mgmt01", "dev01"].forEach((h) => assert.ok(throws(() => hostTarget(h)), `retired host should be gone: ${h}`));
