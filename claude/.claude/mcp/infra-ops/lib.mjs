@@ -7,7 +7,7 @@
 // with no ~/.ssh/config alias, hence user@ip targets.
 export const HOSTS = {
     k3s01: { target: "marshall@10.20.0.20", role: "Single-node k3s (ArgoCD-reconciled) + Prometheus:30090 / Grafana:30300" },
-    app01: { target: "marshall@192.168.219.194", role: "Docker host — compose stacks with volumes (AdGuard main, n8n, blog, portainer, …)" },
+    app01: { target: "marshall@10.20.0.21", role: "Docker host — compose stacks with volumes (AdGuard main, n8n, blog, portainer, …)" },
     edge01: { target: "marshall@10.20.0.10", role: "Edge — Cloudflare tunnel + certs, stateless by design" },
     storage01: { target: "marshall@10.20.0.41", role: "ZFS storage/NAS + GPU passthrough" },
     pi01: { target: "marshall@192.168.219.127", role: "Raspberry Pi — secondary AdGuard DNS + homelab-status" },
