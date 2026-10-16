@@ -76,6 +76,9 @@ codediff refreshes live while an agent edits files, and folds unchanged regions.
 Inside a codediff tab: `t` inline / side-by-side, `gc` compact, `]c`/`[c` hunk,
 `]f`/`[f` file, `-` stage file, `<leader>hs`/`<leader>hr` stage/discard hunk,
 `q` close, `g?` all keys. `:CodeDiff pr 512` reviews a PR without checking it out.
+In the `gl`/`gL` history panel, `O` on a commit (or any of its file lines) opens
+that commit alone in a new tab: its files in the left explorer, parent vs commit,
+`]f`/`[f` to walk them. `q` closes it and returns to the history tab.
 
 ### Claude Code
 | Key | Action | Mode |

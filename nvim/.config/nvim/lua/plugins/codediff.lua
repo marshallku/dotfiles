@@ -70,6 +70,69 @@ local function with_default_branch(fn)
     end)
 end
 
+-- Repo shown in the current codediff tab. The session knows it even before any
+-- file is open (internal API, so guarded); otherwise read it from the diff
+-- buffers' codediff://<root>///<rev>/<path> names.
+local function tab_repo_root()
+    local ok, lifecycle = pcall(require, "codediff.ui.lifecycle")
+    local context = ok and lifecycle.get_git_context and lifecycle.get_git_context(vim.api.nvim_get_current_tabpage())
+    if context and context.git_root then
+        return context.git_root
+    end
+
+    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        local name = vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(win))
+        local root = name:match("^codediff://(.-)///%x+/")
+        if root then
+            return root
+        end
+    end
+    return nil
+end
+
+-- Hash of the commit under the cursor, or of the commit owning the file line
+local function history_commit_at_cursor(bufnr)
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, vim.fn.line("."), false)
+    for i = #lines, 1, -1 do
+        local hash = lines[i]:match("| (%x%x%x%x%x%x%x+) ")
+        if hash then
+            return hash
+        end
+    end
+    return nil
+end
+
+-- Open one commit in its own explorer tab: only its files, nothing else listed
+local function open_commit(bufnr)
+    local root = tab_repo_root()
+    if not root then
+        vim.notify("Could not tell which repository this history belongs to", vim.log.levels.WARN)
+        return
+    end
+    local hash = history_commit_at_cursor(bufnr)
+    if not hash then
+        vim.notify("No commit under the cursor", vim.log.levels.WARN)
+        return
+    end
+
+    local function git(...)
+        return vim.system({ "git", "-C", root, ... }, { text = true }):wait()
+    end
+    local commit = git("rev-parse", "--verify", "--quiet", hash .. "^{commit}")
+    if commit.code ~= 0 then
+        vim.notify("Unknown commit " .. hash, vim.log.levels.WARN)
+        return
+    end
+    commit = vim.trim(commit.stdout)
+
+    -- Root commits have no parent; diff against the empty tree instead
+    local parent = git("rev-parse", "--verify", "--quiet", commit .. "^")
+    if parent.code ~= 0 then
+        parent = git("hash-object", "-t", "tree", "/dev/null")
+    end
+    codediff(root, vim.trim(parent.stdout), commit)
+end
+
 -- Pick a commit, then review everything after it up to the working tree in one
 -- diff ("since I last looked" for commits an agent stacked up)
 local function review_since_commit(root)
@@ -115,6 +178,18 @@ return {
         },
         { "<leader>gc", with_repo(review_since_commit), desc = "Review changes after a picked commit" },
     },
+    init = function()
+        vim.api.nvim_create_autocmd("FileType", {
+            pattern = "codediff-history",
+            callback = function(event)
+                vim.keymap.set("n", "O", function() open_commit(event.buf) end, {
+                    buffer = event.buf,
+                    nowait = true,
+                    desc = "Open commit in its own tab",
+                })
+            end,
+        })
+    end,
     opts = {
         diff = {
             compact = true,
