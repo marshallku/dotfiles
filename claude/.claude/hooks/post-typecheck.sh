@@ -159,6 +159,20 @@ case "$EXT" in
         [ -f "$PROJECT_ROOT/Cargo.toml" ] || { hook_event post-typecheck skip lang=rs reason=no_cargo_toml root="$PROJECT_ROOT"; clean; }
         command -v cargo >/dev/null 2>&1 || { hook_event post-typecheck skip lang=rs reason=no_cargo root="$PROJECT_ROOT"; clean; }
         LANG_LABEL="Rust"
+        # A crate whose -sys dependencies need system libraries this host lacks
+        # (the GTK client of a cross-platform repo, edited on macOS) can never be
+        # checked here. Remember that per manifest so every later edit skips
+        # instantly instead of re-running a doomed dependency build.
+        UNBUILDABLE_DIR="$HOME/.claude/state/post-typecheck-unbuildable"
+        # A workspace member's lockfile lives at the workspace root, not beside it.
+        WS_MANIFEST=$(cd "$PROJECT_ROOT" && cargo locate-project --workspace --message-format plain 2>/dev/null)
+        WS_ROOT=$(dirname "${WS_MANIFEST:-$PROJECT_ROOT/Cargo.toml}")
+        UNBUILDABLE_KEY=$(cat "$PROJECT_ROOT/Cargo.toml" "$WS_ROOT/Cargo.toml" "$WS_ROOT/Cargo.lock" 2>/dev/null | shasum 2>/dev/null | cut -c1-16)
+        UNBUILDABLE_MARK="$UNBUILDABLE_DIR/$(printf '%s' "$PROJECT_ROOT" | shasum 2>/dev/null | cut -c1-16)"
+        if [ -n "$UNBUILDABLE_KEY" ] && [ "$(cat "$UNBUILDABLE_MARK" 2>/dev/null)" = "$UNBUILDABLE_KEY" ]; then
+            hook_event post-typecheck skip lang=rs reason=host_unbuildable_cached root="$PROJECT_ROOT"
+            clean
+        fi
         # `cargo check --message-format short` emits two shapes:
         #   src/main.rs:1:27: error[E0308]: mismatched types...   <- the diagnostic
         #   error: could not compile `x` due to 1 previous error  <- cargo's summary
@@ -172,7 +186,11 @@ case "$EXT" in
         [ -f "$PROJECT_ROOT/go.mod" ] || { hook_event post-typecheck skip lang=go reason=no_go_mod root="$PROJECT_ROOT"; clean; }
         command -v go >/dev/null 2>&1 || { hook_event post-typecheck skip lang=go reason=no_go root="$PROJECT_ROOT"; clean; }
         LANG_LABEL="Go"
-        ERROR_RE='^[^[:space:]]+\.go:[0-9]+'
+        # `go vet` prefixes type errors with "vet: " (vet: internal/x/y.go:45:15:
+        # undefined: Foo). Without the optional prefix those lines never matched,
+        # so real compile errors were logged as checker_error and never reached
+        # Claude — the same silent false-clean as the 2026 outage above.
+        ERROR_RE='^(vet: )?[^[:space:]]+\.go:[0-9]+'
         run_checker go vet ./...
         ;;
 esac
@@ -197,7 +215,17 @@ if [ -z "$MATCHES" ]; then
     # Exit 0 with no matched lines is a genuine pass. A non-zero exit with no
     # matched lines means the checker itself failed (bad config, missing dep) —
     # that is a broken sensor, not clean code, so record it.
-    if [ "$RUN_STATUS" -ne 0 ]; then
+    if [ "$RUN_STATUS" -ne 0 ] && [ "$EXT" = rs ] \
+        && grep -qE 'failed to run custom build command for `[^`]+-sys ' "$CHECK_OUT" 2>/dev/null \
+        && grep -q 'pkg-config' "$CHECK_OUT" 2>/dev/null; then
+        # grep reads the file, not a pipe: `printf | grep -q` under pipefail turns an
+        # early match into SIGPIPE (141) and a false "no match" on large output.
+        # Missing host libraries, not a code problem and not a broken sensor.
+        mkdir -p "$UNBUILDABLE_DIR" 2>/dev/null && [ -n "$UNBUILDABLE_KEY" ] \
+            && printf '%s' "$UNBUILDABLE_KEY" >"$UNBUILDABLE_MARK" 2>/dev/null
+        hook_log post-typecheck "host lacks system libs for $PROJECT_ROOT; skipping until Cargo.toml/lock change"
+        hook_event post-typecheck skip lang=rs reason=host_unbuildable root="$PROJECT_ROOT"
+    elif [ "$RUN_STATUS" -ne 0 ]; then
         hook_log post-typecheck "checker exited $RUN_STATUS with no parsable errors: $LANG_LABEL in $PROJECT_ROOT"
         hook_event post-typecheck checker_error lang="$EXT" status="$RUN_STATUS" root="$PROJECT_ROOT" \
             head="$(printf '%s' "$OUTPUT" | head -c 300)"
