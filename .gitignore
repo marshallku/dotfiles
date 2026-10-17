@@ -18,6 +18,10 @@ copad/.config/copad/web-bridge-secrets.env
 *secrets*.env
 *.secret
 *.secret.env
+waybar/.config/grafana-waybar/config
+
+# Backups tools leave next to the configs they rewrite (e.g. dunstrc.bak-tabd).
+*.bak-*
 
 # Claude Code runtime state inside the stow package — generated, not authored.
 # .trash/ holds skills deleted through the UI; synced/ holds skills pulled from

@@ -610,3 +610,34 @@ if [[ "$(uname)" == "Darwin" ]]; then
   export PATH="/Users/marshallku/.rd/bin:$PATH"
   ### MANAGED BY RANCHER DESKTOP END (DO NOT EDIT)
 fi
+
+if [[ "$(uname)" != "Darwin" ]]; then
+    caffeinate() {
+        local reason="작업 중"
+
+        case "${1:-}" in
+            --why)
+                if (( $# < 2 )); then
+                    print -u2 -- "사용법: caffeinate [--why 이유] [--] [명령어 인자...]"
+                    return 2
+                fi
+                reason="$2"
+                shift 2
+                ;;
+            --why=*)
+                reason="${1#--why=}"
+                shift
+                ;;
+        esac
+
+        if [[ "${1:-}" == "--" ]]; then
+            shift
+        fi
+
+        if (( $# == 0 )); then
+            set -- sleep infinity
+        fi
+
+        command systemd-inhibit --what=idle --why="$reason" -- "$@"
+    }
+fi

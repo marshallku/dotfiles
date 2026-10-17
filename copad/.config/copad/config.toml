@@ -23,7 +23,7 @@ font_size = 11
 # which breaks all glyph icons). Linux/serde tolerates int→float; macOS
 # does not. See copad-macos Config.swift BackgroundSection.tint.
 tint = 0.3
-opacity = 0.3
+opacity = 0.21
 tint_color = "#000000"
 rotate_interval = 300  # native rotation (replaces copad-random-bg.sh daemon)
 
