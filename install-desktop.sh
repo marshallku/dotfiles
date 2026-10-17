@@ -74,10 +74,9 @@ if (( errors > 0 )); then
     exit 1
 fi
 # Without explicit defaults Dolphin picks whichever installed app ranks first (gimp, a browser, ...).
+# Only formats Arch's imv decodes (no FreeImage backend): Netpbm, TGA, ICO and svgz are left alone.
 image_types=(image/png image/jpeg image/pjpeg image/gif image/webp image/bmp image/x-bmp image/x-ms-bmp
-    image/tiff image/svg+xml image/svg+xml-compressed image/heic image/heif image/avif image/jxl image/qoi
-    image/x-qoi image/x-portable-anymap image/x-portable-bitmap image/x-portable-graymap
-    image/x-portable-pixmap image/x-tga image/vnd.microsoft.icon image/x-icon)
+    image/tiff image/svg+xml image/heic image/heif image/avif image/jxl image/qoi image/x-qoi)
 video_types=(video/mp4 video/x-matroska video/webm video/quicktime video/x-msvideo video/avi video/vnd.avi
     video/mpeg video/ogg video/x-flv video/x-ms-wmv video/3gpp video/3gpp2 video/mp2t video/x-m4v
     application/x-matroska)
