@@ -13,7 +13,8 @@ for arg in "$@"; do
             cat <<'HELP'
 Usage: bash install-desktop.sh [--check | --install-packages]
   Default: verify dependencies, safely stow desktop settings, initialize wallpaper,
-           reload user unit definitions if reachable. Log out/in to activate.
+           set imv/mpv as default image/video apps, reload user unit definitions
+           if reachable. Log out/in to activate.
   --check: read-only dependency/link/config checks; nonzero if setup is incomplete.
   --install-packages: install required official Arch packages with sudo pacman.
 Run as your desktop user, after a normal full Arch update. No AUR/private binaries
@@ -35,7 +36,7 @@ packages=(
     kitty jq curl libnotify dbus procps-ng util-linux iproute2 fontconfig
     ttf-jetbrains-mono-nerd noto-fonts-cjk noto-fonts-emoji inter-font adwaita-cursors
     grim slurp imagemagick brightnessctl playerctl libpulse pipewire pipewire-pulse wireplumber
-    pavucontrol htop dolphin firefox fcitx5 fcitx5-hangul fcitx5-gtk fcitx5-qt
+    pavucontrol htop dolphin imv mpv xdg-utils firefox fcitx5 fcitx5-hangul fcitx5-gtk fcitx5-qt
     python-gobject gtk3 gtk-layer-shell wofi qt5ct kvantum
 )
 if "$install_packages"; then
@@ -45,7 +46,7 @@ errors=0
 missing() { printf 'MISSING: %s\n' "$*"; errors=$((errors + 1)); }
 commands=(stow Hyprland hyprctl qs hypridle hyprlock hyprpaper dunstctl python wl-paste wl-copy
     kitty jq curl notify-send dbus-update-activation-environment pidof flock ip fc-match
-    grim slurp magick brightnessctl playerctl pactl pavucontrol htop dolphin firefox fcitx5 wofi)
+    grim slurp magick brightnessctl playerctl pactl pavucontrol htop dolphin imv mpv xdg-mime firefox fcitx5 wofi)
 for cmd in "${commands[@]}"; do
     command -v "$cmd" >/dev/null || missing "$cmd"
 done
@@ -72,12 +73,27 @@ if (( errors > 0 )); then
     printf '\nInstall missing dependencies using:\n  bash %q --install-packages\n' "$repo/install-desktop.sh"
     exit 1
 fi
+# Without explicit defaults Dolphin picks whichever installed app ranks first (gimp, a browser, ...).
+image_types=(image/png image/jpeg image/pjpeg image/gif image/webp image/bmp image/x-bmp image/x-ms-bmp
+    image/tiff image/svg+xml image/svg+xml-compressed image/heic image/heif image/avif image/jxl image/qoi
+    image/x-qoi image/x-portable-anymap image/x-portable-bitmap image/x-portable-graymap
+    image/x-portable-pixmap image/x-tga image/vnd.microsoft.icon image/x-icon)
+video_types=(video/mp4 video/x-matroska video/webm video/quicktime video/x-msvideo video/avi video/vnd.avi
+    video/mpeg video/ogg video/x-flv video/x-ms-wmv video/3gpp video/3gpp2 video/mp2t video/x-m4v
+    application/x-matroska)
+default_apps=("imv-dir.desktop|${image_types[*]}" "mpv.desktop|${video_types[*]}")
 stow_packages=(hyprland hypridle hyprlock hyprpaper quickshell dunst kitty fcitx5)
 stow_args=(--dir="$repo" --target="$HOME" --no-folding '--ignore=(^|/)(__tests__|__pycache__)(/|$)')
 # One simulation across every package: abort before creating any links on conflict.
 stow "${stow_args[@]}" --simulate "${stow_packages[@]}" || fail 'Stow conflict; move conflicting files aside manually and retry'
 if ! "$check"; then
     stow "${stow_args[@]}" "${stow_packages[@]}"
+    for pair in "${default_apps[@]}"; do
+        IFS='|' read -r app types <<< "$pair"
+        for type in $types; do
+            xdg-mime default "$app" "$type"
+        done
+    done
     WALLPAPER_DIR="$HOME/Pictures/Wallpapers" "$repo/hyprland/.config/hypr/scripts/wallpaper.sh" ensure
     if systemctl --user show-environment >/dev/null 2>&1; then
         systemctl --user daemon-reload
@@ -102,6 +118,14 @@ links=(
 for pair in "${links[@]}"; do
     IFS='|' read -r target source <<< "$pair"
     [[ -f "$HOME/.config/$target" && "$(readlink -f "$HOME/.config/$target")" == "$repo/$source" ]] || missing "link: ~/.config/$target"
+done
+for pair in "${default_apps[@]}"; do
+    IFS='|' read -r app types <<< "$pair"
+    wrong=()
+    for type in $types; do
+        [[ "$(xdg-mime query default "$type")" == "$app" ]] || wrong+=("$type")
+    done
+    (( ${#wrong[@]} == 0 )) || missing "default app $app for: ${wrong[*]}"
 done
 [[ ! -L "$HOME/.config/hypr" ]] || missing '~/.config/hypr must be a real directory for machine-local monitor settings'
 [[ -f "$HOME/Pictures/Wallpapers/.current" ]] || missing 'wallpaper: ~/Pictures/Wallpapers/.current'

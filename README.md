@@ -69,7 +69,7 @@ bash install-desktop.sh --check             # read-only checks, nonzero on missi
 Use an up-to-date Arch installation; this is a repeatable configuration installer,
 not a pinned OS image. Package installation uses `sudo pacman -S --needed` without
 refreshing repositories; perform your normal full system update first. It includes
-Nerd/CJK/emoji fonts, Korean input, screenshot/media tools, and the PyGObject/GTK
+Nerd/CJK/emoji fonts, Korean input, screenshot/media tools, imv/mpv, and the PyGObject/GTK
 libraries used by the music popup. The core desktop helper itself uses Python's
 standard library. `cliphist` can also be installed manually in `~/.local/bin`.
 
@@ -78,7 +78,10 @@ fcitx5. A simulation checks conflicts first; existing regular config files are
 never adopted or overwritten. Move conflicting files aside yourself and retry.
 Machine-local `~/.config/hypr/monitors_local.lua` is preserved; absent layouts use
 preferred/auto outputs. Empty wallpaper folders get a neutral Catppuccin PNG;
-existing `.current` files and valid links are preserved. The clone can live outside
+existing `.current` files and valid links are preserved. Dolphin double-click
+opens images in `imv-dir` (arrow keys browse the folder) and videos in `mpv`: the
+installer sets these as defaults in `~/.config/mimeapps.list`, replacing earlier
+choices for those types only. The clone can live outside
 `~/dotfiles`. These configs require the standard `~/.config` location.
 
 Log out and back into Hyprland after installation to activate everything. The

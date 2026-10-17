@@ -29,7 +29,7 @@ class DesktopInstallTests(unittest.TestCase):
                     "wl-paste", "wl-copy", "cliphist", "kitty", "jq", "curl", "notify-send",
                     "dbus-update-activation-environment", "pidof", "flock", "ip", "fc-match", "grim",
                     "slurp", "magick", "brightnessctl", "playerctl", "pactl", "pavucontrol", "htop",
-                    "dolphin", "firefox", "fcitx5", "wofi", "systemctl", "systemd-analyze", "sudo")
+                    "dolphin", "imv", "mpv", "firefox", "fcitx5", "wofi", "systemctl", "systemd-analyze", "sudo")
         for command in commands:
             self.stub(command, 'printf "%s %s\\n" "$(basename "$0")" "$*" >> "$TEST_LOG"\n')
         self.stub("pacman", '''
@@ -37,6 +37,13 @@ if [[ "$*" == "-Q hyprland" ]]; then echo 'hyprland 0.56.2-4';
 elif [[ "$*" == "-Q quickshell" ]]; then echo 'quickshell 0.3.2-1';
 elif [[ "$*" == "-Q hypridle" ]]; then echo 'hypridle 0.1.8-2';
 else exit 0; fi
+''')
+        # Stateful fake: defaults persist in the fixture home like the real mimeapps.list.
+        self.stub("xdg-mime", '''
+store="$HOME/.config/mimeapps.list"
+if [[ "$1" == default ]]; then mkdir -p "${store%/*}"; printf "%s=%s\\n" "$3" "$2" >> "$store";
+elif [[ "$1 $2" == "query default" && -f "$store" ]]; then grep "^$3=" "$store" | tail -1 | cut -d= -f2;
+fi
 ''')
         self.env = dict(os.environ, HOME=str(self.home), PATH=str(self.bin) + ":" + os.environ["PATH"],
                         TEST_LOG=str(self.log))
@@ -77,6 +84,18 @@ else exit 0; fi
         self.assertNotIn("daemon-reload", self.log.read_text())
         self.assertNotIn("start ", self.log.read_text())
         self.assertNotIn("qs ", self.log.read_text())
+
+    def test_default_media_apps_set_and_checked(self):
+        result = self.run_install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        defaults = (self.home / ".config/mimeapps.list").read_text()
+        for line in ("image/png=imv-dir.desktop", "image/heic=imv-dir.desktop", "video/mp4=mpv.desktop"):
+            self.assertIn(line, defaults)
+        with (self.home / ".config/mimeapps.list").open("a") as store:
+            store.write("video/webm=firefox.desktop\n")
+        checked = self.run_install("--check")
+        self.assertNotEqual(checked.returncode, 0)
+        self.assertIn("default app mpv.desktop for: video/webm", checked.stdout)
 
     def test_conflict_aborts_without_other_links_or_overwrite(self):
         path = self.home / ".config/dunst/dunstrc"
