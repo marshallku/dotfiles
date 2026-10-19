@@ -91,6 +91,44 @@ review_approval_valid() {
     review_index_matches "$repo" "$tree"
 }
 
+# Stop reminders. Commit is the hard gate; a Stop block is only a reminder, and each
+# one costs a full turn that re-reads the whole context. An orchestrator waiting on
+# subagents stops dozens of times per work unit (one session: 295 blocks in a week,
+# almost all answered "not yet"). So remind once per unreviewed snapshot, and at
+# most once per AUTO_REVIEW_STOP_COOLDOWN seconds (default 1200) while changes keep
+# landing. A new approval since the last reminder re-arms it for the next work unit.
+review_stop_state_path() {
+    printf '%s/.claude/state/review-stop-%s-%s' "$HOME" "$(repo_hash "$1")" \
+        "$(printf '%s' "$2" | portable_md5)"
+}
+
+# review_stop_suppressed <repo> <session> <tree> [grace-seconds]
+# A record younger than grace-seconds is ignored: notify-stop runs concurrently with
+# the Stop hook that may have just written it for this very Stop.
+review_stop_suppressed() {
+    local path seen at approval now
+    path=$(review_stop_state_path "$1" "$2")
+    [ -s "$path" ] || return 1
+    read -r seen at approval < "$path" || return 1
+    case "$at" in ''|*[!0-9]*) return 1 ;; esac
+    now=$(date +%s)
+    [ $(( now - at )) -ge "${4:-0}" ] || return 1
+    # Compare approval identity, not timestamps: an approval in the same second as
+    # the reminder must not count as "after" it.
+    [ "$approval" = "$(review_stop_approval_id "$1")" ] || return 1
+    [ "$seen" = "$3" ] && return 0
+    [ $(( now - at )) -lt "${AUTO_REVIEW_STOP_COOLDOWN:-1200}" ]
+}
+
+review_stop_approval_id() {
+    local marker="$HOME/.claude/state/reviewed-$(repo_hash "$1")"
+    if [ -s "$marker" ]; then portable_md5 < "$marker"; else printf 'none\n'; fi
+}
+
+review_stop_record() {
+    printf '%s %s %s\n' "$3" "$(date +%s)" "$(review_stop_approval_id "$1")" > "$(review_stop_state_path "$1" "$2")"
+}
+
 # What save.sh would publish when this session never captured a baseline for the
 # repo (a commit in a second repo): save.sh pushes to origin/<branch>, so the
 # merge-base with that ref bounds the outgoing changes. Eligibility only — the

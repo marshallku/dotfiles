@@ -281,6 +281,40 @@ print(json.dumps({"type":"result", "subtype":"success", "session_id":session,
         p.write_text("second = True\n")
         self.assertEqual(self.hook("auto-cross-review.sh")["decision"], "block")
 
+    def test_stop_reminds_once_per_snapshot_and_respects_cooldown(self):
+        p = self.repo / "code.py"
+        p.write_text("first = True\n")
+        self.assertEqual(self.hook("auto-cross-review.sh")["decision"], "block")
+        # Waiting on subagents: the same snapshot never re-blocks.
+        self.assertEqual(self.hook("auto-cross-review.sh"), {})
+        # New changes inside the cooldown are not re-blocked either; commit stays the hard gate.
+        p.write_text("second = True\n")
+        self.assertEqual(self.hook("auto-cross-review.sh"), {})
+        self.assertTrue(self.denied(self.gate()))
+        # Past the cooldown, a new snapshot is reminded again.
+        self.env["AUTO_REVIEW_STOP_COOLDOWN"] = "0"
+        self.assertEqual(self.hook("auto-cross-review.sh")["decision"], "block")
+        self.assertEqual(self.hook("auto-cross-review.sh"), {})
+
+    def test_stop_reminder_right_after_an_approval_still_deduplicates(self):
+        p = self.repo / "code.py"
+        p.write_text("first = True\n")
+        self.review("--session", "s1")
+        p.write_text("second = True\n")
+        # Same second as the approval: the reminder must still count as made after it.
+        self.assertEqual(self.hook("auto-cross-review.sh")["decision"], "block")
+        self.assertEqual(self.hook("auto-cross-review.sh"), {})
+
+    def test_stop_suppression_grace_ignores_a_reminder_from_this_stop(self):
+        (self.repo / "code.py").write_text("first = True\n")
+        self.assertEqual(self.hook("auto-cross-review.sh")["decision"], "block")
+        fresh = self.run_cmd(["bash", "-c", f'. "{ROOT}/hooks/_lib.sh"; '
+                              'review_stop_suppressed "$PWD" s1 "$(review_snapshot "$PWD")" 10'])
+        self.assertNotEqual(fresh.returncode, 0)
+        aged = self.run_cmd(["bash", "-c", f'. "{ROOT}/hooks/_lib.sh"; '
+                             'review_stop_suppressed "$PWD" s1 "$(review_snapshot "$PWD")" 0'])
+        self.assertEqual(aged.returncode, 0)
+
     def test_reminder_deduplicates_snapshot(self):
         p = self.repo / "code.py"
         p.write_text("first = True\n")
