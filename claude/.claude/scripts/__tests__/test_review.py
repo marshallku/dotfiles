@@ -191,6 +191,74 @@ print(json.dumps({"type":"result", "subtype":"success", "session_id":session,
         self.review("--session", "missing", status=2)
         self.review("--session", "missing", "--base", "HEAD")
 
+    def gate_cmd(self, command, cwd=None):
+        payload = json.dumps({"session_id":"s1", "cwd":str(cwd or self.repo), "tool_input":{"command":command}})
+        result = self.run_cmd(["bash", str(ROOT / "hooks/pre-commit-gate.sh")], input=payload)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout)
+
+    def denied(self, out):
+        return out.get("hookSpecificOutput", {}).get("permissionDecision") == "deny"
+
+    def published_repo(self, name):
+        """A second repository with origin/main, which this session has no baseline for."""
+        bare = self.root / f"{name}.git"
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True, env=self.env)
+        other = self.root / name
+        subprocess.run(["git", "clone", "-q", str(bare), str(other)], check=True, env=self.env, capture_output=True)
+        for args in (["config", "user.email", "t@example.invalid"], ["config", "user.name", "T"],
+                     ["checkout", "-q", "-b", "main"]):
+            subprocess.run(["git", "-C", str(other), *args], check=True, env=self.env)
+        (other / "app.py").write_text("x = 1\n")
+        subprocess.run(["git", "-C", str(other), "add", "."], check=True, env=self.env)
+        subprocess.run(["git", "-C", str(other), "commit", "-qm", "init"], check=True, env=self.env)
+        subprocess.run(["git", "-C", str(other), "push", "-q", "origin", "main"], check=True, env=self.env,
+                       capture_output=True)
+        return other
+
+    def test_gate_ignores_commands_that_only_mention_save_sh(self):
+        (self.repo / "code.py").write_text("changed = True\n")
+        self.assertEqual(self.gate_cmd("grep -n push ~/save.sh | head"), {})
+        self.assertEqual(self.gate_cmd("head -40 ~/save.sh"), {})
+        self.assertTrue(self.denied(self.gate_cmd('~/save.sh "fix: x"')))
+        self.assertTrue(self.denied(self.gate_cmd('env A=1 ~/save.sh "fix: x"')))
+        self.assertTrue(self.denied(self.gate_cmd("""bash -c '~/save.sh "fix: x"'""")))
+
+    def test_gate_judges_the_cd_target_repository(self):
+        other = self.published_repo("other docs")
+        (other / "notes.md").write_text("doc only\n")
+        (self.repo / "code.py").write_text("changed = True\n")
+        # Doc-only outgoing changes in a repo without a session baseline: judged against origin/main.
+        self.assertEqual(self.gate_cmd(f'cd "{other}" && ~/save.sh "doc: notes"'), {})
+        # `;` keeps the cwd repository in play, and it has unreviewed code.
+        self.assertTrue(self.denied(self.gate_cmd(f'cd "{other}"; ~/save.sh "doc: notes"')))
+        (other / "app.py").write_text("x = 2\n")
+        self.assertTrue(self.denied(self.gate_cmd(f'cd "{other}" && ~/save.sh "fix: x"')))
+
+    def test_gate_without_origin_ref_still_requires_review(self):
+        other = self.root / "local-only"
+        other.mkdir()
+        for args in (["init", "-q", "-b", "main"], ["config", "user.email", "t@example.invalid"],
+                     ["config", "user.name", "T"], ["commit", "-q", "--allow-empty", "-m", "init"]):
+            subprocess.run(["git", "-C", str(other), *args], check=True, env=self.env)
+        (other / "notes.md").write_text("doc only\n")
+        self.assertTrue(self.denied(self.gate_cmd(f'cd "{other}" && ~/save.sh "doc: notes"')))
+
+    def test_reviewignore_covers_data_but_not_itself_or_protected_paths(self):
+        (self.repo / ".reviewignore").write_text("# bot data\nmemory/*.json\n.claude/*\n")
+        self.git("add", ".reviewignore")
+        self.git("commit", "-qm", "ignore")
+        self.shell('rm -f "$HOME/.claude/state/review-base-"*; review_init_baseline "$PWD" s1')
+        (self.repo / "memory").mkdir()
+        (self.repo / "memory/state.json").write_text("{}\n")
+        self.assertEqual(self.gate(), {})
+        (self.repo / ".claude").mkdir()
+        (self.repo / ".claude/settings.json").write_text("{}\n")
+        self.assertTrue(self.denied(self.gate()))
+        (self.repo / ".claude/settings.json").unlink()
+        (self.repo / ".reviewignore").write_text("*\n")
+        self.assertTrue(self.denied(self.gate()))
+
     def test_documentation_skips_but_single_line_code_does_not(self):
         (self.repo / "README.md").write_text("Documentation\n")
         self.assertEqual(self.gate(), {})

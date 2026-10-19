@@ -91,6 +91,35 @@ review_approval_valid() {
     review_index_matches "$repo" "$tree"
 }
 
+# What save.sh would publish when this session never captured a baseline for the
+# repo (a commit in a second repo): save.sh pushes to origin/<branch>, so the
+# merge-base with that ref bounds the outgoing changes. Eligibility only — the
+# review itself still needs an explicit --base. No such ref -> no answer.
+review_publish_base() {
+    local branch
+    branch=$(git -C "$1" symbolic-ref --short HEAD 2>/dev/null) || return 1
+    git -C "$1" rev-parse --verify -q "refs/remotes/origin/$branch" >/dev/null || return 1
+    git -C "$1" merge-base "refs/remotes/origin/$branch" HEAD 2>/dev/null
+}
+
+# .reviewignore at the repo root: one bash glob per line (`*` crosses `/`),
+# `#` comments. Matching paths are data written by automation (bot memory,
+# sync metadata) and count like documentation. Protected paths are decided
+# before this is consulted, and .reviewignore itself always needs review.
+review_ignored() {
+    local repo="$1" path="$2" pattern
+    [ -f "$repo/.reviewignore" ] || return 1
+    while IFS= read -r pattern || [ -n "$pattern" ]; do
+        pattern="${pattern%%#*}"
+        pattern="${pattern#"${pattern%%[![:space:]]*}"}"
+        pattern="${pattern%"${pattern##*[![:space:]]}"}"
+        [ -n "$pattern" ] || continue
+        # shellcheck disable=SC2053
+        [[ "$path" == $pattern ]] && return 0
+    done < "$repo/.reviewignore"
+    return 1
+}
+
 # Repository changes, not tool calls or line counts, determine review eligibility.
 # Documentation-only work may skip; executable/config/dependency changes do not.
 review_required() {
@@ -103,15 +132,16 @@ review_required() {
         && ! review_has_provider "$marker" "$(review_expected_reviewer "$repo" "$session")"; then
         return 0
     fi
-    base=$(review_baseline "$repo" "$session" 2>/dev/null) || return 0
+    base=$(review_baseline "$repo" "$session" 2>/dev/null) \
+        || base=$(review_publish_base "$repo") || return 0
     git -C "$repo" cat-file -e "${base}^{tree}" 2>/dev/null || return 0
     tree=$(review_snapshot "$repo") || return 0
     review_index_matches "$repo" "$tree" || return 0
     while IFS= read -r -d '' path; do
         case "$path" in
-            */SKILL.md|AGENTS.md|*/AGENTS.md|CLAUDE.md|*/CLAUDE.md|.claude/*|.codex/*|*/.claude/*|*/.codex/*) return 0 ;;
+            */SKILL.md|AGENTS.md|*/AGENTS.md|CLAUDE.md|*/CLAUDE.md|.claude/*|.codex/*|*/.claude/*|*/.codex/*|.reviewignore) return 0 ;;
             *.md|*.rst|LICENSE|LICENSE.*) ;;
-            *) return 0 ;;
+            *) review_ignored "$repo" "$path" || return 0 ;;
         esac
     done < <(git -C "$repo" diff --name-only -z "$base" "$tree")
     return 1

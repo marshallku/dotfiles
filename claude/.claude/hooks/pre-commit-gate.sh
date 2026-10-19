@@ -3,7 +3,8 @@
 # (a) run codex-review successfully for the current repo, and (b) captured a
 # valid intent file in ~/docs/sources/sessions/ (hard-gate mode only).
 #
-# Triggers on Bash commands that match: save.sh, git commit. A raw push only
+# Triggers on Bash commands that run save.sh or git commit (see _commit_targets.py; a
+# mere mention, like `grep … save.sh`, does not count). A raw push only
 # publishes commits that already passed this gate via save.sh, so it is not gated.
 # Allows when:
 #   - ~/.claude/state/auto-review-disabled exists (global opt-out)
@@ -112,20 +113,44 @@ e2e_evidence_in_transcript() {
 # Global opt-out
 [ -f "$DISABLED" ] && { echo '{}'; exit 0; }
 
-# Detect commit-like commands
-COMMIT_LIKE=false
-case "$CMD" in
-    *save.sh*)
-        COMMIT_LIKE=true
-        ;;
-    *"git commit"*)
-        COMMIT_LIKE=true
-        ;;
-esac
-
-if [ "$COMMIT_LIKE" = false ]; then
-    echo '{}'
-    exit 0
+# Which repositories does this command commit in? _commit_targets.py answers
+# for the shapes it fully understands (`grep … ~/save.sh` commits nothing;
+# `cd ~/docs && ~/save.sh …` commits in ~/docs, not the session cwd) and falls
+# back to cwd + every literal cd target otherwise. If the helper itself cannot
+# run, the substring match below is the old behaviour, unchanged.
+if [ -n "${PRE_COMMIT_GATE_DIR:-}" ]; then
+    CWD="$PRE_COMMIT_GATE_DIR"
+else
+    TARGETS=$(printf '%s' "$CMD" | python3 "$(dirname "$0")/_commit_targets.py" "${CWD:-$PWD}" 2>/dev/null) || TARGETS=""
+    if [ -z "$TARGETS" ]; then
+        case "$CMD" in
+            *save.sh*|*"git commit"*) TARGETS="dir $CWD" ;;
+            *) TARGETS="none" ;;
+        esac
+    fi
+    if [ "$TARGETS" = "none" ]; then
+        echo '{}'
+        exit 0
+    fi
+    DIRS=()
+    while IFS= read -r line; do
+        [ -n "${line#dir }" ] && DIRS+=("${line#dir }")
+    done <<< "$TARGETS"
+    hook_event pre-commit-gate classify dirs="${#DIRS[@]}"
+    if [ "${#DIRS[@]}" -eq 1 ]; then
+        CWD="${DIRS[0]}"
+    else
+        # Several candidate repositories: every one must pass on its own.
+        for dir in "${DIRS[@]}"; do
+            OUT=$(printf '%s' "$INPUT" | PRE_COMMIT_GATE_DIR="$dir" bash "$0")
+            if printf '%s' "$OUT" | grep -q '"permissionDecision"'; then
+                printf '%s\n' "$OUT"
+                exit 0
+            fi
+        done
+        echo '{}'
+        exit 0
+    fi
 fi
 
 # Resolve the repository independently of Edit/Write tracking.
