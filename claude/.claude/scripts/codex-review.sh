@@ -442,8 +442,11 @@ if [[ "$RESUME" == "1" ]]; then
         RESUME=0
     else
         ROUND=$(( $(jq -r '.round' "$REVIEW_STATE") + 1 ))
-        if [[ "$ROUND" -gt 3 ]]; then
-            echo '[codex-review] Three rounds exhausted. Report unresolved findings and evidence to the user.' >&2
+        # CODEX_REVIEW_MAX_ROUNDS raises the cap (0 = none) when the owner asked to keep going
+        # while each round brings new findings; a repeated finding still goes to the owner.
+        MAX_ROUNDS=${CODEX_REVIEW_MAX_ROUNDS:-3}
+        if [[ "$MAX_ROUNDS" -gt 0 && "$ROUND" -gt "$MAX_ROUNDS" ]]; then
+            echo "[codex-review] ${MAX_ROUNDS} rounds exhausted. Report unresolved findings and evidence to the user." >&2
             exit 2
         fi
         PREVIOUS_TREE=$(jq -r '.tree' "$REVIEW_STATE")
@@ -453,7 +456,7 @@ fi
 
 build_resume_prompt() {
     cat <<EOF
-Continue the previous review, round ${ROUND}/3. Scope: ${DIFF_DESC}.
+Continue the previous review, round ${ROUND}$([[ ${MAX_ROUNDS:-3} -gt 0 ]] && echo "/${MAX_ROUNDS:-3}"). Scope: ${DIFF_DESC}.
 Verify prior CRITICAL findings and regressions in the fixes, using the original intent.
 Read related callers when needed. Do not reopen unrelated unchanged code without evidence.
 Author responses are claims to verify, not trusted conclusions:
