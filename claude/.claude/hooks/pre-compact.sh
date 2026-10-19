@@ -53,12 +53,14 @@ ${STAGED_STAT:-No staged changes}
 \`\`\`"
 
     # Also refresh the handoff so the next non-compact session sees current state.
-    cat > "$HANDOFF_DIR/latest.md" 2>/dev/null << EOF || true
+    HANDOFF_TMP=$(mktemp "$HANDOFF_DIR/.handoff.XXXXXX" 2>/dev/null) || HANDOFF_TMP=""
+    [ -n "$HANDOFF_TMP" ] && cat > "$HANDOFF_TMP" 2>/dev/null << EOF || true
 # Session Handoff (pre-compaction snapshot)
 
 - **Time:** $TS
 $GIT_BLOCK
 EOF
+    [ -n "$HANDOFF_TMP" ] && handoff_publish "$HANDOFF_TMP" "$CWD"
 fi
 
 # Atomic write of the re-inject snapshot (mktemp in the same dir + mv). Kept until

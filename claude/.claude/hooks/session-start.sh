@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SessionStart hook: 이전 세션 handoff 자동 로드
-# auto-handoff.sh가 저장한 latest.md를 읽어서 시스템 프롬프트에 주입
+# auto-handoff.sh가 저장한 handoff(repo 별 파일, repo 밖이면 latest.md)를 시스템 프롬프트에 주입
 
 set -euo pipefail
 
@@ -73,6 +73,20 @@ if [ "$SOURCE" = "compact" ] && [ -n "$SESSION" ] && [ -f "$REINJECT" ]; then
 fi
 
 HANDOFF_FILE="$HOME/.claude/handoffs/latest.md"
+
+# repo 안에서 시작한 세션은 그 repo 의 handoff 만 받는다. 전역 latest.md 는 마지막에
+# 끝난 아무 repo 의 상태라, 다른 repo 세션에 주입되면 무관한 컨텍스트일 뿐이다.
+# latest.md 는 Directory 가 이 repo 안을 가리킬 때만(손으로 쓴 narrative 포함) 쓴다.
+if REPO_HANDOFF=$(handoff_repo_path "$CWD"); then
+    LATEST="$HANDOFF_FILE"
+    HANDOFF_FILE="$REPO_HANDOFF"
+    HANDOFF_REPO=$(git -C "$CWD" rev-parse --show-toplevel)
+    LATEST_DIR=$(sed -n 's/^- \*\*Directory:\*\* //p' "$LATEST" 2>/dev/null | head -n1 || true)
+    if [ -n "$LATEST_DIR" ] && [ "$(git -C "$LATEST_DIR" rev-parse --show-toplevel 2>/dev/null || true)" = "$HANDOFF_REPO" ] \
+        && { [ ! -f "$HANDOFF_FILE" ] || [ "$(portable_mtime "$LATEST")" -gt "$(portable_mtime "$HANDOFF_FILE")" ]; }; then
+        HANDOFF_FILE="$LATEST"
+    fi
+fi
 
 # handoff 파일이 없으면 스킵
 if [ ! -f "$HANDOFF_FILE" ]; then

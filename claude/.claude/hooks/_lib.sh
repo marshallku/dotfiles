@@ -48,6 +48,29 @@ portable_fmtdate() {
     date -d "@$epoch" +"$fmt" 2>/dev/null || date -r "$epoch" +"$fmt" 2>/dev/null || echo ""
 }
 
+# Per-repository handoff file. One global latest.md meant a session in repo A was
+# handed repo B's state; writers now also keep handoffs/repo-<hash>.md, and the
+# reader injects only the one for its own repository. latest.md stays the place
+# for a hand-written narrative handoff and for sessions outside any repository.
+handoff_repo_path() {
+    local repo
+    repo=$(git -C "$1" rev-parse --show-toplevel 2>/dev/null) || return 1
+    printf '%s/.claude/handoffs/repo-%s.md\n' "$HOME" "$(repo_hash "$repo")"
+}
+
+# handoff_publish <written-temp-file> <cwd>
+# Install a writer's OWN content as its repo handoff and as latest.md, each by an
+# atomic rename. (Copying back from the shared latest.md let a concurrent session
+# in another repo land in this repo's file.) Best-effort; always returns 0.
+handoff_publish() {
+    local tmp="$1" repo_file
+    if repo_file=$(handoff_repo_path "$2"); then
+        cp "$tmp" "$repo_file.$$" 2>/dev/null && mv -f "$repo_file.$$" "$repo_file" 2>/dev/null
+    fi
+    mv -f "$tmp" "$HOME/.claude/handoffs/latest.md" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+    return 0
+}
+
 # Review state helpers share one policy across Stop, prompt and commit hooks.
 . "$(dirname "${BASH_SOURCE[0]}")/_review-state.sh"
 

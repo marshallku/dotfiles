@@ -390,7 +390,7 @@ The full collaboration surface, mapped to where they belong in the workflow:
 All four user-facing skills (`/ask-codex`, `/codex-plan`, `/codex-delegate`, `/cross-review`) route through `~/.claude/scripts/codex-exec.sh`, a thin runner over `codex exec --json`. Its contract: **stdout = the final assistant message only** (safe to parse for `VERDICT:`), **stderr = rendered progress** (`🧵 thread` / `🟢 turn started` / `▶ command` / `✓ exit N` / `💬 message` / `🔵 turn completed`), so codex is not a black box. Exit codes: `0` ok · `2` error · `3` resume unavailable · `124` timeout.
 
 - **Thread resume is by explicit id.** `--thread-key KEY` persists the thread id under `~/.claude/state/codex-threads/<key>`; `--resume` continues exactly that thread. Keys are `plan-<repo_hash>` and `review-<repo_hash>-<session_hash>`, so an `/ask-codex` between VERDICT rounds can no longer hijack a resume — the failure mode of the old workspace-wide `--resume-last`. A missing or GC'd thread exits `3` and the wrapper degrades to a fresh round instead of failing.
-- **Delegate jobs are plain files** at `~/.claude/state/codex-jobs/<repo-hash>/<id>.{meta,log,out,prompt}`. A background job is its own process group (`setsid`), so `--cancel` takes down codex and its tool commands together; liveness is verified against the recorded process start time, so a recycled pid can't fake a running job.
+- **Delegate jobs are plain files** at `~/.claude/state/codex-jobs/<repo-hash>/<id>.{meta,log,out,prompt}`. A background job is its own process group (`setsid`, or perl `POSIX::setsid` on macOS; the job confirms startup before the parent hands over the active lock), so `--cancel` takes down codex and its tool commands together; liveness is verified against the recorded process start time, so a recycled pid can't fake a running job.
 - **Notifications are native again.** `codex exec` invokes the `notify` program from `~/.codex/config.toml`, so a finished turn pings the user by itself. Wrappers call `notify_codex_done` only for outcomes codex never reports (empty diff, timeout, spawn failure) — adding it to a success path double-pings.
 
 > Migrated 2026-08-02 from the @openai/codex-plugin-cc app-server runtime (`~/dev/codex-plugin-cc` + `codex-companion.sh`). It was never installed as a Claude Code plugin (only its `codex-companion.mjs` was used, as a node CLI), its background job manager had 11 uses total — all on setup day — and its broker daemon had no idle timeout, leaking an 85–290 MB process pair per workspace until reboot. That leak was the sole reason `reap-codex-brokers.sh` + a launchd timer existed; both are gone.
@@ -420,8 +420,18 @@ A missing baseline requires an explicit known `--base`; never silently substitut
 
 The commit, Stop and prompt hooks share content-based eligibility. Documentation-only changes
 may skip; single-file implementation, configuration and dependency changes still require review.
-The prompt reminder is emitted once per unreviewed snapshot. Stop avoids recursive hook loops,
-but a new user turn or new work unit can trigger review again. Commit remains a hard gate.
+A repo-root `.reviewignore` (bash globs, `*` crosses `/`) marks automation-written data (bot
+memory, sync metadata) as doc-like; protected paths (`SKILL.md`, `AGENTS.md`, `CLAUDE.md`,
+`.claude/*`, `.codex/*`, `.reviewignore` itself) always require review. A repo with no session
+baseline (a second repo touched mid-session) is judged by what `save.sh` would publish: the diff
+from `merge-base(origin/<branch>, HEAD)`; no such ref → review required.
+The prompt and Stop reminders fire once per unreviewed snapshot; Stop additionally at most once
+per `AUTO_REVIEW_STOP_COOLDOWN` (20 min) while changes keep landing, and a new approval re-arms
+it — an orchestrator waiting on subagents used to burn a full turn on every stop (574/week).
+Commit remains the hard gate. `pre-commit-gate` judges the repository each command really commits
+in (`hooks/_commit_targets.py`): reading `save.sh` (`grep`/`head`/`cat`) is not a commit, and
+`cd ~/docs && ~/save.sh` is judged in `~/docs`; any shape it cannot fully parse falls back to the
+old substring match.
 
 Approval is bound to repository, session and the full reviewed tree. Staging and committing the
 same content reuse it. Changes by any tool invalidate it. Partial staging of an intermediate
@@ -475,12 +485,12 @@ inline-brief mode, which covers most of the value.
 | `track-edit.sh` | PostToolUse | Edit/Write | Append edited file path to `~/.claude/state/dirty-<session>.log`; review validity is checked from Git content |
 | `ssot-check-mark.sh` | PostToolUse | Bash | Detect `dn search`/`tag`/`related` and touch `ssot-checked-<session>`; this is what clears `plan-ssot-gate.sh` |
 | `post-typecheck.sh` | PostToolUse | Edit/Write | **The computational sensor.** Runs the project's `tsc --noEmit` / `cargo check` / `go vet ./...` once per edit and feeds errors back as `additionalContext`. Requires a *local* `tsc` (walks up for workspace hoisting) — bare `npx tsc` resolves to an unrelated binary and silently reports clean. Logs every outcome (pass/fail/skip/timeout/checker_error) to the event ledger. **Was silently dead 2026-04-21 → 2026-08-31**: `set -e` + an unguarded pipefail pipeline killed it on the error path only. Runs without `set -e` now — do not re-add it. Opt-out: `post-typecheck-disabled` |
-| `session-start.sh` | SessionStart | — | Load last handoff into systemPrompt; GC stale state files (incl. `intent-active-*` older than 7d); rotate `hooks-debug.log` + the two JSONL ledgers |
+| `session-start.sh` | SessionStart | — | Load this repo's handoff (`handoffs/repo-<hash>.md`; `latest.md` only outside a repo or when it points into this repo) into systemPrompt; GC stale state files (incl. `intent-active-*` older than 7d); rotate `hooks-debug.log` + the two JSONL ledgers |
 | `remind-cross-review.sh` | UserPromptSubmit | — | Inject additionalContext reminding Claude to run codex-review before concluding |
 | `contract-inject.sh` | UserPromptSubmit | — | On `/goal`·`/loop` activation, inject the per-work-unit autonomous-loop contract as additionalContext so the user need not retype it (non-blocking). Opt-out: `contract-inject-disabled` |
 | `verification-gate.sh` | Stop | — | Block stop once/session when code changed but no test/e2e/run/deploy command was actually executed this session (scans executed Bash commands, not output text; excludes build/typecheck). Single-shot, so a genuinely-N/A change is handled by stating the reason once. Sibling to auto-cross-review (did *you* run it? vs. did a reviewer see it?). Opt-out: `verify-gate-disabled` |
-| `auto-cross-review.sh` | Stop | — | Block for unreviewed implementation snapshots, avoiding recursive Stop hooks |
-| `auto-handoff.sh` | Stop | — | Capture git status + branch + recent log to `~/.claude/handoffs/latest.md` for next session |
+| `auto-cross-review.sh` | Stop | — | Remind (block once) per unreviewed implementation snapshot, at most once per 20-min cooldown; avoids recursive Stop hooks |
+| `auto-handoff.sh` | Stop | — | Capture git status + branch + recent log to `~/.claude/handoffs/latest.md` and `repo-<hash>.md` for the next session in that repo |
 | `harness-report.sh --tripwire` | SessionStart | — | Trip wires over the two ledgers: codex spend >2x the 6-day mean, a sensor erroring/timing out, or a component that used to emit events going silent for 7d. Silent unless something trips. Opt-out: `tripwire-disabled` |
 
 ### Observability — the two ledgers

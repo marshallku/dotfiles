@@ -315,6 +315,20 @@ print(json.dumps({"type":"result", "subtype":"success", "session_id":session,
                              'review_stop_suppressed "$PWD" s1 "$(review_snapshot "$PWD")" 0'])
         self.assertEqual(aged.returncode, 0)
 
+    def test_session_start_injects_only_its_own_repositorys_handoff(self):
+        other = self.published_repo("other")
+        self.hook("auto-handoff.sh")
+        start = {"source": "resume", "session_id": "s2"}
+        own = self.hook("session-start.sh", **start)
+        self.assertIn(f"**Directory:** {self.repo}", own["hookSpecificOutput"]["additionalContext"])
+        # latest.md now describes self.repo; a session in another repository must not receive it.
+        self.assertEqual(self.hook("session-start.sh", cwd=str(other), **start), {})
+        # A hand-written narrative in latest.md for this repository still wins when it is newer.
+        time.sleep(1.1)
+        (self.home / ".claude/handoffs/latest.md").write_text(f"# Narrative\n\n- **Directory:** {self.repo}\n")
+        own = self.hook("session-start.sh", **start)
+        self.assertIn("# Narrative", own["hookSpecificOutput"]["additionalContext"])
+
     def test_reminder_deduplicates_snapshot(self):
         p = self.repo / "code.py"
         p.write_text("first = True\n")

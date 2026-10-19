@@ -134,8 +134,16 @@ fi
 echo
 echo "-- Gate activity, last 7d (blocks) --"
 if [ -f "$HOME/.claude/hooks-debug.log" ]; then
+    # String compare on the "[YYYY-MM-DD" prefix; it used to count the whole log.
+    WEEK_DAY="${WEEK_AGO%%T*}"
     grep -hoE '^\[[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]+\] [a-z-]+: (BLOCK|INJECT|TRIPPED)' \
         "$HOME/.claude/hooks-debug.log" 2>/dev/null \
-        | awk '{print "  " $3 " " $4}' | sort | uniq -c | sort -rn | head -10
-    echo "  (only date-stamped lines count; pre-2026-08-31 lines lack a date)"
+        | awk -v since="[$WEEK_DAY" '$1 >= since {print "  " $3 " " $4}' | sort | uniq -c | sort -rn | head -10
+fi
+if [ -f "$EVENTS" ]; then
+    # Stop reminders that cost a turn vs. ones deduplicated away (since 2026-10-20).
+    jq -s -r --arg since "$WEEK_AGO" '
+        [.[] | select(.ts >= $since and .component == "auto-cross-review")] | group_by(.event)
+        | map("  auto-cross-review \(.[0].event): \(length)") | .[]
+    ' "$EVENTS" 2>/dev/null || true
 fi

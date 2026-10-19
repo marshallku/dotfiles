@@ -4,6 +4,8 @@
 
 set -euo pipefail
 
+. "$(dirname "$0")/_lib.sh"
+
 HANDOFF_DIR="$HOME/.claude/handoffs"
 mkdir -p "$HANDOFF_DIR"
 
@@ -24,7 +26,8 @@ RECENT_LOG=$(git -C "$CWD" log --oneline -5 2>/dev/null)
 REPO_NAME=$(basename "$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null)")
 TIMESTAMP=$(date +"%Y-%m-%d %H:%M")
 
-cat > "$HANDOFF_DIR/latest.md" << EOF
+HANDOFF_TMP=$(mktemp "$HANDOFF_DIR/.handoff.XXXXXX")
+cat > "$HANDOFF_TMP" << EOF
 # Session Handoff
 
 - **Time:** $TIMESTAMP
@@ -48,5 +51,8 @@ ${DIFF_STAT:-No unstaged changes}
 ${STAGED_STAT:-No staged changes}
 \`\`\`
 EOF
+
+# 같은 내용을 repo 별 파일에도 둔다 — 다음 세션은 자기 repo 것만 주입받는다.
+handoff_publish "$HANDOFF_TMP" "$CWD"
 
 echo '{}'
