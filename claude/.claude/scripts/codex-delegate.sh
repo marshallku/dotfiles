@@ -267,7 +267,7 @@ fi
 DELEGATE_ACTIVE=""
 ACTIVE_OWNED=0
 PUBLISH_OWNED=0
-trap 'if [[ "$ACTIVE_OWNED" == 1 ]]; then rmdir "$DELEGATE_ACTIVE"; fi; if [[ "$PUBLISH_OWNED" == 1 ]]; then rmdir "$PUBLISH_LOCK"; fi' EXIT
+trap 'if [[ "$ACTIVE_OWNED" == 1 ]]; then rmdir "$DELEGATE_ACTIVE" 2>/dev/null || true; fi; if [[ "$PUBLISH_OWNED" == 1 ]]; then rmdir "$PUBLISH_LOCK"; fi' EXIT
 if [[ "$WRITE" -eq 1 && -n "$REPO_ROOT" ]]; then
     STATE_DIR="$HOME/.claude/state"
     mkdir -p "$STATE_DIR"
@@ -334,22 +334,54 @@ fi
 # stdout, so a caller doing `JOB=$(codex-delegate.sh …)` blocks in command
 # substitution until the whole job finishes — the exact opposite of "returns a
 # job id immediately".
+#
+# macOS ships no setsid(1); perl's POSIX::setsid does the same in place, then
+# exec keeps the pid. The job writes pgid/started itself once it really leads
+# its own session — the parent querying ps right after launch could record its
+# OWN group (setsid not yet run), which --cancel would then signal.
+if command -v setsid >/dev/null 2>&1; then
+    SETSID=(setsid)
+else
+    SETSID=(perl -MPOSIX -e 'POSIX::setsid() != -1 or die "setsid: $!\n"; exec @ARGV or die "exec: $!\n"')
+fi
 HARNESS_DELEGATE_CHILD=1 CODEX_JOB_OUT="$OUT" CODEX_JOB_LOG="$LOG" CODEX_JOB_META="$META" CODEX_DELEGATE_ACTIVE="$DELEGATE_ACTIVE" \
-setsid bash -c '
+"${SETSID[@]}" bash -c '
+    [[ -n "${CODEX_DELEGATE_TEST_START_DELAY:-}" ]] && sleep "$CODEX_DELEGATE_TEST_START_DELAY"
+    printf "pgid=%s\nstarted=1\n" "$$" >> "$CODEX_JOB_META"
     trap '\''if [[ -n "$CODEX_DELEGATE_ACTIVE" ]]; then rmdir "$CODEX_DELEGATE_ACTIVE"; fi'\'' EXIT
     "$@" > "$CODEX_JOB_OUT" 2> "$CODEX_JOB_LOG"
     printf "exit_status=%s\nfinished_at=%s\n" "$?" "$(date +%Y-%m-%dT%H:%M:%S%z)" >> "$CODEX_JOB_META"
 ' codex-delegate-job "$RUNNER" ${RUN_ARGS[@]+"${RUN_ARGS[@]}"} </dev/null >/dev/null 2>&1 &
 JOB_PID=$!
-ACTIVE_OWNED=0
-
-# Record identity for liveness checks. `ps -o lstart=` pins the process start
-# time so a recycled pid cannot impersonate this job.
+# Record identity for liveness checks (exec keeps the pid and its start time).
+# `ps -o lstart=` pins the start time so a recycled pid cannot impersonate this job.
 {
     printf 'pid=%s\n' "$JOB_PID"
-    printf 'pgid=%s\n' "$(ps -o pgid= -p "$JOB_PID" 2>/dev/null | tr -d ' ' || echo "$JOB_PID")"
     printf 'start_marker=%s\n' "$(ps -o lstart= -p "$JOB_PID" 2>/dev/null | tr -s ' ' | sed 's/^ *//;s/ *$//')"
 } >> "$META"
+
+# The active lock stays ours until the job confirms it started; the job only
+# installs its own releasing trap after confirming. If it dies or stalls first,
+# take it down and reap it BEFORE our EXIT trap releases the lock, so a
+# late-starting job can never edit the repo unlocked.
+START_WAIT="${CODEX_DELEGATE_START_TIMEOUT:-5}"
+deadline=$(( SECONDS + START_WAIT ))
+while [[ "$(meta_get "$META" started)" != 1 ]]; do
+    if ! kill -0 "$JOB_PID" 2>/dev/null || (( SECONDS >= deadline )); then
+        kill -TERM "-$JOB_PID" "$JOB_PID" 2>/dev/null || true
+        sleep 0.2
+        kill -KILL "-$JOB_PID" "$JOB_PID" 2>/dev/null || true
+        wait "$JOB_PID" 2>/dev/null || true
+        # Confirmed between our last check and the kill: the job owned the lock
+        # by then. Leave it to the job — at worst it stays behind (fails closed).
+        [[ "$(meta_get "$META" started)" == 1 ]] && ACTIVE_OWNED=0
+        printf 'exit_status=%s\nfinished_at=%s\n' "launch_failed" "$(date +%Y-%m-%dT%H:%M:%S%z)" >> "$META"
+        echo "[codex-delegate] job $JOB_ID failed to start (no session within ${START_WAIT}s)" >&2
+        exit 2
+    fi
+    sleep 0.05
+done
+ACTIVE_OWNED=0
 
 echo "$JOB_ID"
 echo "[codex-delegate] started in background — follow with: $0 --tail $JOB_ID" >&2

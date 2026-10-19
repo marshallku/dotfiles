@@ -227,7 +227,7 @@ print(json.dumps({"type":"result", "subtype":"success", "session_id":session,
         for _ in range(3):
             self.review("--session", "s1", status=1)
         result = self.review("--session", "s1", status=2)
-        self.assertIn("Three rounds exhausted", result.stderr)
+        self.assertIn("3 rounds exhausted", result.stderr)
 
     def test_concurrent_change_cannot_publish_approval(self):
         (self.repo / "code.py").write_text("feature = True\n")
@@ -453,6 +453,31 @@ print(json.dumps({"type":"result", "subtype":"success", "session_id":session,
         self.assertIn("+claude_followup = True", (self.root / "prompt").read_text())
         self.assertNotIn("+claude_before = True", (self.root / "prompt").read_text())
         self.assertEqual(self.gate(), {})
+
+    def test_background_delegate_launch_timeout_reaps_job_and_releases_lock(self):
+        (self.repo / "code.py").write_text("claude_before = True\n")
+        self.env["CODEX_DELEGATE_START_TIMEOUT"] = "1"
+        self.env["CODEX_DELEGATE_TEST_START_DELAY"] = "3"
+        result = self.run_cmd(["bash", str(ROOT / "scripts/codex-delegate.sh"), "--background", "Inspect task"])
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("failed to start", result.stderr)
+        state = self.home / ".claude/state"
+        self.assertFalse(list(state.glob("codex-delegate-active-*")))
+        time.sleep(3)
+        # The stalled job was reaped: it never confirmed, never ran codex, never touched the repo.
+        meta = next(state.glob("codex-jobs/*/*.meta")).read_text()
+        self.assertNotIn("started=1", meta)
+        self.assertIn("exit_status=launch_failed", meta)
+        self.assertEqual((self.repo / "code.py").read_text(), "claude_before = True\n")
+
+    def test_background_delegate_records_own_process_group(self):
+        self.env["FAKE_CODEX_SLEEP"] = "1"
+        result = self.run_cmd(["bash", str(ROOT / "scripts/codex-delegate.sh"), "--background", "Inspect task"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        meta_path = next((self.home / ".claude/state").glob("codex-jobs/*/*.meta"))
+        fields = dict(line.split("=", 1) for line in meta_path.read_text().splitlines() if "=" in line)
+        self.assertEqual(fields["pgid"], fields["pid"])
+        self.assertNotEqual(fields["pgid"], str(os.getpgid(0)))
 
 
 if __name__ == "__main__":

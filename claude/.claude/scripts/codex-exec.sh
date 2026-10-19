@@ -243,7 +243,7 @@ record_usage() {
         --argjson round "${CODEX_REVIEW_ROUND:-0}" \
         --argjson resumed "$RESUME" \
         --argjson elapsed "$(( SECONDS - START_SECONDS ))" \
-        --arg verdict "$(sed -n 's/^VERDICT: \(APPROVED\|REVISE\)$/\1/p' "$MSG_FILE" | tail -n 1)" \
+        --arg verdict "$(sed -nE 's/^VERDICT: (APPROVED|REVISE)$/\1/p' "$MSG_FILE" | tail -n 1)" \
         --arg sandbox  "$SANDBOX" \
         --arg repo     "$repo" \
         --argjson status  "${STATUS:-0}" \
