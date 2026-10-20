@@ -30,9 +30,22 @@ fi
 QUESTION="$*"
 TIMEOUT="${CODEX_ASK_TIMEOUT:-180}"
 
+# Piped context is optional. A non-tty stdin that never sends EOF (an agent
+# harness's inherited pipe) made a bare `cat` block forever, before codex even
+# started: two consults in one session sat in `cat` for 5-10 minutes. So wait
+# for the first byte only CODEX_ASK_STDIN_WAIT seconds; a real pipe has data or
+# EOF by then. CODEX_ASK_STDIN_WAIT=0 skips stdin entirely.
 STDIN_CONTEXT=""
-if ! [[ -t 0 ]]; then
-    STDIN_CONTEXT=$(cat)
+STDIN_WAIT="${CODEX_ASK_STDIN_WAIT:-2}"
+if ! [[ -t 0 ]] && [[ "$STDIN_WAIT" != 0 ]]; then
+    FIRST=""
+    READ_STATUS=0
+    IFS= read -r -t "$STDIN_WAIT" FIRST || READ_STATUS=$?
+    if [[ "$READ_STATUS" -eq 0 ]]; then
+        STDIN_CONTEXT="$FIRST"$'\n'"$(cat)"
+    elif [[ "$READ_STATUS" -eq 1 && -n "$FIRST" ]]; then
+        STDIN_CONTEXT="$FIRST"    # EOF after a line without a trailing newline
+    fi                            # >128: timed out; any partial line is dropped
 fi
 
 MODEL_ARGS=()

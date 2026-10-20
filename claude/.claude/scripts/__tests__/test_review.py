@@ -337,6 +337,41 @@ print(json.dumps({"type":"result", "subtype":"success", "session_id":session,
         self.assertLess(time.monotonic() - start, 10)
         self.assertIn("rc=124", result.stdout)
 
+    def test_codex_ask_does_not_wait_on_a_stdin_that_never_closes(self):
+        ask = ["bash", str(ROOT / "scripts/codex-ask.sh"), "Which option?"]
+        r, w = os.pipe()   # write end held open: no data, no EOF
+        try:
+            start = time.monotonic()
+            result = subprocess.run(ask, cwd=self.repo, env=self.env, stdin=r, text=True, capture_output=True,
+                                    timeout=30)
+            self.assertLess(time.monotonic() - start, 15)
+        finally:
+            os.close(r)
+            os.close(w)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Question: Which option?", (self.root / "prompt").read_text())
+
+    def test_codex_ask_drops_a_partial_line_on_timeout(self):
+        r, w = os.pipe()
+        os.write(w, b"partial-without-newline")
+        try:
+            result = subprocess.run(["bash", str(ROOT / "scripts/codex-ask.sh"), "Which option?"], cwd=self.repo,
+                                    env=self.env, stdin=r, text=True, capture_output=True, timeout=30)
+        finally:
+            os.close(r)
+            os.close(w)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("partial-without-newline", (self.root / "prompt").read_text())
+
+    def test_codex_ask_still_reads_piped_context(self):
+        ask = ["bash", str(ROOT / "scripts/codex-ask.sh"), "Which option?"]
+        for piped in ("line one\nline two\n", "no trailing newline"):
+            result = self.run_cmd(ask, input=piped)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            prompt = (self.root / "prompt").read_text()
+            for line in piped.strip().splitlines():
+                self.assertIn(line, prompt)
+
     def test_reminder_deduplicates_snapshot(self):
         p = self.repo / "code.py"
         p.write_text("first = True\n")
