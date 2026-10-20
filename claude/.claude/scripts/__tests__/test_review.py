@@ -372,6 +372,19 @@ print(json.dumps({"type":"result", "subtype":"success", "session_id":session,
             for line in piped.strip().splitlines():
                 self.assertIn(line, prompt)
 
+    def verify_gate(self, command, session):
+        transcript = self.root / f"{session}.jsonl"
+        transcript.write_text(json.dumps({"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": "t", "name": "Bash", "input": {"command": command}}]}}) + "\n")
+        (self.home / f".claude/state/dirty-{session}.log").write_text("/r/a.py\n/r/b.py\n")
+        return self.hook("verification-gate.sh", session_id=session, transcript_path=str(transcript))
+
+    def test_verify_gate_counts_python_test_runners_behind_timeout(self):
+        for i, command in enumerate(("cd ~/x && timeout 400 python3 -m unittest __tests__.test_review",
+                                     "timeout -k 5 60 python -m pytest -q", "python3 -m pytest")):
+            self.assertEqual(self.verify_gate(command, f"v{i}"), {}, command)
+        self.assertEqual(self.verify_gate("python3 -m http.server", "v9")["decision"], "block")
+
     def test_reminder_deduplicates_snapshot(self):
         p = self.repo / "code.py"
         p.write_text("first = True\n")

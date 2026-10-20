@@ -104,6 +104,8 @@ if [ -f "$TRANSCRIPT" ]; then
                 if (sub(/^[[:space:]]+/, "", seg)) changed = 1
                 if (sub(/^[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+/, "", seg)) changed = 1
                 if (sub(/^(sudo|env|time|nice|stdbuf|xvfb-run|command|nohup|setsid)[[:space:]]+/, "", seg)) changed = 1
+                # `timeout [-k N] 400 pytest …` — the duration is not the program.
+                if (sub(/^g?timeout([[:space:]]+-[^[:space:]]+([[:space:]]+[0-9.]+[smhd]?)?)*[[:space:]]+[0-9.]+[smhd]?[[:space:]]+/, "", seg)) changed = 1
                 if (sub(/^-{1,2}[A-Za-z][^[:space:]]*[[:space:]]+/, "", seg)) changed = 1
             }
             n = split(seg, a, /[[:space:]]+/)
@@ -115,6 +117,7 @@ if [ -f "$TRANSCRIPT" ]; then
                 for (i=1;i<=en;i++) if (t1 == ea[i]) return 1 }
             if (t1 ~ /^(pytest|vitest|jest|mocha|cypress|playwright|ava|tox|nextest)$/) return 1
             if (t1 == "deploy-remote") return 1
+            if (t1 ~ /^python(3(\.[0-9]+)?)?$/ && t2 == "-m" && t3 ~ /^(unittest|pytest)$/) return 1
             if (t1 == "cargo" && t2 ~ /^(test|nextest|run)$/) return 1
             if (t1 == "go"    && t2 ~ /^(test|run)$/) return 1
             if (t1 == "npx"   && t2 ~ /^(playwright|vitest|jest|cypress|mocha|ava)$/) return 1
