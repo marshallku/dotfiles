@@ -24,16 +24,25 @@ repo_hash() {
 # Portable timeout — runs a command with a wall-clock limit.
 # Linux: timeout; macOS: gtimeout (coreutils). Returns 127 if neither exists
 # so callers can distinguish "missing binary" from "command failed".
+# A command that survives SIGTERM (a codex turn blocked in a tool call did: a
+# 180s /ask-codex ran past 10 minutes) is SIGKILLed PORTABLE_TIMEOUT_KILL_AFTER
+# seconds later, so a wall-clock limit really is one.
 portable_timeout() {
     local secs="$1"; shift
+    local grace="${PORTABLE_TIMEOUT_KILL_AFTER:-15}" bin rc
     if command -v timeout >/dev/null 2>&1; then
-        timeout "$secs" "$@"
+        bin=timeout
     elif command -v gtimeout >/dev/null 2>&1; then
-        gtimeout "$secs" "$@"
+        bin=gtimeout
     else
         echo "[_lib] no timeout binary found (install coreutils: 'brew install coreutils')" >&2
         return 127
     fi
+    rc=0
+    "$bin" -k "$grace" "$secs" "$@" || rc=$?
+    # The kill-after path exits 137; callers read 124 as "timed out", so keep that contract.
+    [ "$rc" -eq 137 ] && rc=124
+    return "$rc"
 }
 
 # Portable mtime — prints file modification time as unix epoch.

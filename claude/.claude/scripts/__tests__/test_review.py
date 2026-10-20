@@ -329,6 +329,14 @@ print(json.dumps({"type":"result", "subtype":"success", "session_id":session,
         own = self.hook("session-start.sh", **start)
         self.assertIn("# Narrative", own["hookSpecificOutput"]["additionalContext"])
 
+    def test_portable_timeout_kills_a_command_that_ignores_term(self):
+        self.env["PORTABLE_TIMEOUT_KILL_AFTER"] = "1"
+        start = time.monotonic()
+        result = self.run_cmd(["bash", "-c", f'. "{ROOT}/hooks/_lib.sh"; '
+                               'portable_timeout 1 bash -c "trap \\"\\" TERM; sleep 20"; echo "rc=$?"'])
+        self.assertLess(time.monotonic() - start, 10)
+        self.assertIn("rc=124", result.stdout)
+
     def test_reminder_deduplicates_snapshot(self):
         p = self.repo / "code.py"
         p.write_text("first = True\n")
