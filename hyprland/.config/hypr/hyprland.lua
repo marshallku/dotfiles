@@ -275,6 +275,14 @@ hl.device({
 	sensitivity = -0.5,
 })
 
+-- Wacom Intuos S (CTH-490, 152x95mm): pin the pen to the ultrawide and crop the area to 21:9
+hl.device({
+	name = "wacom-intuos-pt-s-2-pen",
+	output = "DP-1",
+	active_area_size = { 152, 63.6 }, -- mm; 152 / (3440 / 1440)
+	active_area_position = { 0, 15.7 }, -- mm; vertically centered, (95 - 63.6) / 2
+})
+
 ---------------------
 ---- KEYBINDINGS ----
 ---------------------
@@ -296,6 +304,7 @@ hl.bind(mainMod .. " + L", hl.dsp.exec_cmd(scripts .. "/session-control.sh reque
 hl.bind(mainMod .. " + W", hl.dsp.exec_cmd("qs ipc call power toggle"))
 hl.bind(mainMod .. " + N", hl.dsp.exec_cmd("qs ipc call sidebar toggle"))
 hl.bind(mainMod .. " + SHIFT + V", hl.dsp.exec_cmd("qs ipc call launcher clipboard"))
+hl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.fullscreen({ mode = "fullscreen" }))
 
 -- Move focus with mainMod + arrow keys
 hl.bind(mainMod .. " + left", hl.dsp.focus({ direction = "left" }))
