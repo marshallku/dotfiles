@@ -563,21 +563,6 @@ eval "$(mise activate zsh)"
 command -v tmx >/dev/null && eval "$(tmx shell-init zsh)"
 alias tms='tmx switch'
 
-# SSH 로그인 셸은 곧장 comux에 붙는다 (서버 없으면 spawn). 정상 detach하면 세션 종료.
-# exec 대신 실행 후 판단: 실패하거나 2초 안에 끝나면(attach 실패) "Connection closed"만
-# 남기고 끊기는 대신 셸로 떨어진다. 일반 셸이 필요하면: ssh -t <host> 'NO_COMUX=1 zsh -l'
-if [[ -o interactive && -n "$SSH_TTY" && -z "$COPAD_MUX_PANE" && -z "$TMUX" && -z "$NO_COMUX" ]] \
-    && command -v comux >/dev/null; then
-    zmodload -F zsh/datetime p:EPOCHREALTIME
-    _comux_start=$EPOCHREALTIME
-    comux
-    _comux_rc=$?
-    (( _comux_rc == 0 && EPOCHREALTIME - _comux_start >= 2 )) && exit
-    printf "comux exited with %d after %.1fs — staying in a plain shell (\`comux doctor\` to diagnose)\n" \
-        $_comux_rc $(( EPOCHREALTIME - _comux_start )) >&2
-    unset _comux_start _comux_rc
-fi
-
 # bun completions
 [ -s "/home/marshall/.bun/_bun" ] && source "/home/marshall/.bun/_bun"
 
