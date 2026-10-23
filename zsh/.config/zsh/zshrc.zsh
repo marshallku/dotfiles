@@ -563,6 +563,13 @@ eval "$(mise activate zsh)"
 command -v tmx >/dev/null && eval "$(tmx shell-init zsh)"
 alias tms='tmx switch'
 
+# SSH 로그인 셸은 곧장 comux에 붙는다 (서버 없으면 spawn). detach하면 세션 종료.
+# 일반 셸이 필요하면: ssh -t <host> 'NO_COMUX=1 zsh -l'
+if [[ -o interactive && -n "$SSH_TTY" && -z "$COPAD_MUX_PANE" && -z "$TMUX" && -z "$NO_COMUX" ]] \
+    && command -v comux >/dev/null; then
+    exec comux
+fi
+
 # bun completions
 [ -s "/home/marshall/.bun/_bun" ] && source "/home/marshall/.bun/_bun"
 
@@ -606,9 +613,6 @@ esac
 # directories that do not exist here).
 if [[ "$(uname)" == "Darwin" ]]; then
   PATH="/opt/homebrew/opt/coreutils/libexec/gnubin:$PATH"
-  ### MANAGED BY RANCHER DESKTOP START (DO NOT EDIT)
-  export PATH="/Users/marshallku/.rd/bin:$PATH"
-  ### MANAGED BY RANCHER DESKTOP END (DO NOT EDIT)
 fi
 
 if [[ "$(uname)" != "Darwin" ]]; then
