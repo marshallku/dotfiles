@@ -68,6 +68,9 @@ hl.on("hyprland.start", function()
 	hl.exec_cmd(
 		"dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP HYPRLAND_INSTANCE_SIGNATURE"
 			.. "; systemctl --user start clipboard-history.service"
+			-- restart, not start: a deskd left over from the previous
+			-- Hyprland instance would watch a dead HYPRLAND_INSTANCE_SIGNATURE.
+			.. "; systemctl --user restart deskd.service"
 			.. "; " .. scripts .. "/session-control.sh request-lock"
 	)
 
