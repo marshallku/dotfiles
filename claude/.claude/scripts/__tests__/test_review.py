@@ -305,6 +305,65 @@ print(json.dumps({"type":"result", "subtype":"success", "session_id":session,
         self.assertEqual(self.hook("auto-cross-review.sh")["decision"], "block")
         self.assertEqual(self.hook("auto-cross-review.sh"), {})
 
+    def log_edit(self, session, path):
+        with open(self.home / f".claude/state/dirty-{session}.log", "a") as log:
+            log.write(f"{path}\n")
+
+    def test_changes_uncommitted_before_session_start_are_not_its_work(self):
+        (self.repo / "code.py").write_text("dirty_before_start = True\n")
+        self.shell('rm "$(review_state_path "$PWD" s1)"')
+        self.hook("session-start.sh", source="startup")
+        self.assertEqual(self.hook("auto-cross-review.sh"), {})
+        self.assertEqual(self.gate(), {})
+        (self.repo / "code.py").write_text("session_edit = True\n")
+        self.assertEqual(self.hook("auto-cross-review.sh")["decision"], "block")
+
+    def test_reminders_ignore_files_only_another_session_edited(self):
+        other = self.repo / "other.py"
+        other.write_text("by_other_session = True\n")
+        self.log_edit("s2", other)
+        self.assertEqual(self.hook("auto-cross-review.sh"), {})
+        self.assertEqual(self.hook("remind-cross-review.sh"), {})
+        # Commit stays strict: Bash edits leave no log, so it judges every change.
+        self.assertTrue(self.denied(self.gate()))
+        # A file both sessions edited is this session's work too.
+        self.log_edit("s1", other)
+        self.assertEqual(self.hook("auto-cross-review.sh")["decision"], "block")
+
+    def test_reminders_follow_the_repository_the_session_edited(self):
+        other = self.published_repo("other")
+        (self.repo / "code.py").write_text("by_other_session = True\n")
+        self.log_edit("s2", self.repo / "code.py")
+        (other / "untouched.py").write_text("dirty_but_not_ours = True\n")
+        self.assertEqual(self.hook("auto-cross-review.sh"), {})
+        (other / "app.py").write_text("x = 2\n")
+        self.log_edit("s1", other / "app.py")
+        out = self.hook("auto-cross-review.sh")
+        self.assertEqual(out["decision"], "block")
+        self.assertIn(f"in {other.resolve()}", out["reason"])
+        self.assertIn(str(other.resolve()), self.hook("remind-cross-review.sh")
+                      ["hookSpecificOutput"]["additionalContext"])
+
+    def test_a_repository_already_reminded_does_not_hide_the_next(self):
+        other = self.published_repo("other")
+        (self.repo / "code.py").write_text("first = True\n")
+        self.assertEqual(self.hook("auto-cross-review.sh")["decision"], "block")
+        self.assertIn("hookSpecificOutput", self.hook("remind-cross-review.sh"))
+        (other / "app.py").write_text("x = 2\n")
+        self.log_edit("s1", other / "app.py")
+        self.assertIn(str(other.resolve()), self.hook("auto-cross-review.sh")["reason"])
+        self.assertIn(str(other.resolve()), self.hook("remind-cross-review.sh")
+                      ["hookSpecificOutput"]["additionalContext"])
+
+    def test_portable_realpath_resolves_symlinks_and_missing_tails(self):
+        link = self.root / "link"
+        link.symlink_to(self.repo)
+        (self.repo / "target.py").write_text("t = 1\n")
+        (self.root / "file-link.py").symlink_to(self.repo / "target.py")
+        real = str(self.repo.resolve())
+        self.assertEqual(self.shell(f'_review_realpath "{link}/gone/new.py"'), f"{real}/gone/new.py")
+        self.assertEqual(self.shell(f'_review_realpath "{self.root}/file-link.py"'), f"{real}/target.py")
+
     def test_stop_suppression_grace_ignores_a_reminder_from_this_stop(self):
         (self.repo / "code.py").write_text("first = True\n")
         self.assertEqual(self.hook("auto-cross-review.sh")["decision"], "block")

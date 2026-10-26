@@ -26,12 +26,16 @@ review_state_path() {
         "$(printf '%s' "$2" | portable_md5)"
 }
 
+# The baseline is the working tree at session start, not HEAD: changes that were
+# already uncommitted when the session opened are not this session's work.
 review_init_baseline() {
-    local path
+    local path tree
     path=$(review_state_path "$1" "$2")
     mkdir -p "$(dirname "$path")"
+    [ -s "$path" ] && return 0
+    tree=$(review_snapshot "$1") || return 1
     # noclobber preserves the original baseline on resume/compact.
-    (set -o noclobber; review_head_tree "$1" > "$path") 2>/dev/null || [ -s "$path" ]
+    (set -o noclobber; printf '%s\n' "$tree" > "$path") 2>/dev/null || [ -s "$path" ]
 }
 
 review_baseline() {
@@ -158,10 +162,80 @@ review_ignored() {
     return 1
 }
 
+# review_session_paths <repo> <session> [mine|foreign]
+# Repo-relative paths from Edit/Write logs (dirty-<session>.log): `mine` lists this
+# session's, `foreign` lists other sessions' that this session never touched.
+review_session_paths() {
+    local repo="$1" session="$2" kind="${3:-mine}" state="$HOME/.claude/state" log
+    local -a logs=()
+    for log in "$state"/dirty-*.log; do
+        [ -f "$log" ] || continue
+        if [ "$log" = "$state/dirty-$session.log" ]; then
+            [ "$kind" = mine ] && logs+=("$log")
+        else
+            [ "$kind" = foreign ] && logs+=("$log")
+        fi
+    done
+    [ ${#logs[@]} -gt 0 ] || return 0
+    if [ "$kind" = foreign ]; then
+        LC_ALL=C comm -23 <(_review_resolve "$repo" "${logs[@]}") \
+            <(_review_resolve "$repo" "$state/dirty-$session.log")
+    else
+        _review_resolve "$repo" "${logs[@]}"
+    fi
+}
+
+# Logged paths may go through symlinks (~/.claude -> dotfiles); Git reports the
+# physical toplevel, so resolve before stripping the repository prefix.
+_review_resolve() {
+    local repo="$1" path
+    shift
+    cat "$@" 2>/dev/null | LC_ALL=C sort -u | while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        path=$(realpath -m -- "$path" 2>/dev/null || _review_realpath "$path")
+        case "$path" in "$repo"/*) printf '%s\n' "${path#"$repo"/}" ;; esac
+    done | LC_ALL=C sort -u
+}
+
+# Portable `realpath -m` (macOS realpath has no -m): follows a symlinked file,
+# then resolves the nearest existing ancestor and keeps the missing tail.
+_review_realpath() {
+    local path="$1" link dir tail="" hops=0
+    while [ -L "$path" ] && [ $hops -lt 40 ]; do
+        link=$(readlink "$path") || break
+        case "$link" in /*) path="$link" ;; *) path="$(dirname -- "$path")/$link" ;; esac
+        hops=$((hops + 1))
+    done
+    dir=$(dirname -- "$path")
+    while [ ! -d "$dir" ] && [ "$dir" != / ]; do
+        tail="/$(basename -- "$dir")$tail"
+        dir=$(dirname -- "$dir")
+    done
+    dir=$(cd -P -- "$dir" 2>/dev/null && pwd -P) || { printf '%s' "$1"; return; }
+    printf '%s%s/%s' "${dir%/}" "$tail" "$(basename -- "$path")"
+}
+
+# Repositories this session wrote to through Edit/Write, plus its cwd repository.
+review_session_repos() {
+    local session="$1" cwd="$2" path dir
+    {
+        git -C "$cwd" rev-parse --show-toplevel 2>/dev/null
+        LC_ALL=C sort -u "$HOME/.claude/state/dirty-$session.log" 2>/dev/null | while IFS= read -r path; do
+            dir=$(dirname -- "$path")
+            while [ ! -d "$dir" ] && [ "$dir" != / ]; do dir=$(dirname -- "$dir"); done
+            git -C "$dir" rev-parse --show-toplevel 2>/dev/null
+        done
+    } | awk 'NF && !seen[$0]++'
+}
+
 # Repository changes, not tool calls or line counts, determine review eligibility.
 # Documentation-only work may skip; executable/config/dependency changes do not.
+# Scope `session` (Stop and prompt reminders) narrows that to this session's work:
+# with a baseline, it drops files only other sessions edited; without one (a repo
+# other than the session's cwd), it keeps only files this session edited. The
+# commit gate uses the full scope: Bash edits leave no log, so commit stays strict.
 review_required() {
-    local repo="$1" session="$2" base tree path marker
+    local repo="$1" session="$2" scope="${3:-full}" base tree path marker filter=""
     marker="$HOME/.claude/state/reviewed-$(repo_hash "$repo")"
     [ ! -f "$HOME/.claude/state/codex-delegate-pending-$(repo_hash "$repo")" ] || return 0
     # An approval from the wrong family must not disappear behind its advanced baseline.
@@ -170,12 +244,24 @@ review_required() {
         && ! review_has_provider "$marker" "$(review_expected_reviewer "$repo" "$session")"; then
         return 0
     fi
-    base=$(review_baseline "$repo" "$session" 2>/dev/null) \
-        || base=$(review_publish_base "$repo") || return 0
+    if base=$(review_baseline "$repo" "$session" 2>/dev/null); then
+        [ "$scope" = session ] && filter=foreign
+    elif [ "$scope" = session ]; then
+        filter=mine
+        base=$(review_publish_base "$repo") || base=$(review_head_tree "$repo") || return 0
+    else
+        base=$(review_publish_base "$repo") || return 0
+    fi
     git -C "$repo" cat-file -e "${base}^{tree}" 2>/dev/null || return 0
     tree=$(review_snapshot "$repo") || return 0
-    review_index_matches "$repo" "$tree" || return 0
+    [ "$scope" = session ] || review_index_matches "$repo" "$tree" || return 0
+    local listed=$'\n'
+    [ -z "$filter" ] || listed+="$(review_session_paths "$repo" "$session" "$filter")"$'\n'
     while IFS= read -r -d '' path; do
+        case "$filter" in
+            foreign) [[ "$listed" != *$'\n'"$path"$'\n'* ]] || continue ;;
+            mine) [[ "$listed" == *$'\n'"$path"$'\n'* ]] || continue ;;
+        esac
         case "$path" in
             */SKILL.md|AGENTS.md|*/AGENTS.md|CLAUDE.md|*/CLAUDE.md|.claude/*|.codex/*|*/.claude/*|*/.codex/*|.reviewignore) return 0 ;;
             *.md|*.rst|LICENSE|LICENSE.*) ;;

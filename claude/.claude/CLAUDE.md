@@ -414,7 +414,8 @@ The one thing that makes foreground "look broken": the Bash tool's **default tim
 ### Auto-review — work-unit approval
 
 Run `/cross-review` after relevant tests pass, once per completed implementation work unit.
-SessionStart captures a baseline tree; approval advances it to the reviewed snapshot.
+SessionStart captures the working tree (not HEAD) as the baseline, so changes already uncommitted
+when the session opened are not its work; approval advances it to the reviewed snapshot.
 `--session` includes all repository changes since that baseline, whether committed or not.
 A missing baseline requires an explicit known `--base`; never silently substitute HEAD.
 
@@ -425,7 +426,11 @@ memory, sync metadata) as doc-like; protected paths (`SKILL.md`, `AGENTS.md`, `C
 `.claude/*`, `.codex/*`, `.reviewignore` itself) always require review. A repo with no session
 baseline (a second repo touched mid-session) is judged by what `save.sh` would publish: the diff
 from `merge-base(origin/<branch>, HEAD)`; no such ref → review required.
-The prompt and Stop reminders fire once per unreviewed snapshot; Stop additionally at most once
+The prompt and Stop reminders judge only this session's work: every repo it edited through
+Edit/Write (`dirty-<session>.log`) plus its cwd repo, so a session opened in A and editing B is
+reminded about B. With a baseline they drop files only *other* sessions' logs name; without one
+(a second repo) they keep only files this session edited. Commit stays strict on the whole tree,
+because Bash edits leave no log. The reminders fire once per unreviewed snapshot; Stop additionally at most once
 per `AUTO_REVIEW_STOP_COOLDOWN` (20 min) while changes keep landing, and a new approval re-arms
 it — an orchestrator waiting on subagents used to burn a full turn on every stop (574/week).
 Commit remains the hard gate. `pre-commit-gate` judges the repository each command really commits

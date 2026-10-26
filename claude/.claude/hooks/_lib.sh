@@ -89,12 +89,22 @@ reviewed_marker_valid() {
     review_approval_valid "$marker" "$session" "$repo"
 }
 
-auto_review_would_block() {
-    local session="${1:-default}" cwd="${2:-}" transcript="${3:-}" repo
+# auto_review_pending_repos <session> <cwd>
+# Print every repository holding this session's unreviewed work: the cwd repo or
+# any repo the session edited, so a session opened in A and editing B is judged by
+# B, and other sessions' edits in A do not count (review_required session scope).
+# All of them, not the first: a repo already reminded about must not hide the next.
+auto_review_pending_repos() {
+    local session="${1:-default}" cwd="${2:-}" repo found=1
     [ -f "$HOME/.claude/state/auto-review-disabled" ] && return 1
-    repo=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || return 1
-    reviewed_marker_valid "$HOME/.claude/state/reviewed-$(repo_hash "$repo")" "$session" "$repo" && return 1
-    review_required "$repo" "$session"
+    while IFS= read -r repo; do
+        reviewed_marker_valid "$HOME/.claude/state/reviewed-$(repo_hash "$repo")" "$session" "$repo" && continue
+        if review_required "$repo" "$session" session; then
+            printf '%s\n' "$repo"
+            found=0
+        fi
+    done < <(review_session_repos "$session" "$cwd")
+    return $found
 }
 
 # Path to notify-codex.sh. Anchored to the deployed ~/.claude/hooks location

@@ -22,11 +22,10 @@ stop_active=$(echo "$input" | jq -r '.stop_hook_active // false' 2>/dev/null)
 # skips because it already reminded (dedup/cooldown), the turn really ends, so
 # notify. Its record from THIS Stop may already exist (the hooks run concurrently),
 # hence the 10s grace: only an older reminder counts as "already reminded".
-if [[ "$stop_active" != "true" ]] && auto_review_would_block "$session" "$hook_cwd" "$transcript"; then
-    repo=$(git -C "$hook_cwd" rev-parse --show-toplevel 2>/dev/null)
-    if ! review_stop_suppressed "$repo" "$session" "$(review_snapshot "$repo")" 10; then
-        exit 0
-    fi
+if [[ "$stop_active" != "true" ]] && pending=$(auto_review_pending_repos "$session" "$hook_cwd"); then
+    while IFS= read -r repo; do
+        review_stop_suppressed "$repo" "$session" "$(review_snapshot "$repo")" 10 || exit 0
+    done <<< "$pending"
 fi
 
 cwd_name=$(basename "${hook_cwd:-$PWD}")
