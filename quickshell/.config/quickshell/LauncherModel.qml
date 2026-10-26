@@ -29,7 +29,7 @@ Singleton {
         },
         {
             title: "Lock screen",
-            subtitle: "Lock now · display off after 30s idle",
+            subtitle: "Lock now · display off after 10s idle",
             icon: "󰌾",
             action: "lock"
         },

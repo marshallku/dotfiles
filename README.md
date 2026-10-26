@@ -98,7 +98,7 @@ credentials, Tailscale/VPN login, display-manager setup, hardware drivers and a
 Polkit authentication agent remain host-specific setup. No credentials are copied.
 The system-wide `fonts/` package is deliberately excluded from home Stow.
 
-While locked, an additional hypridle service powers displays off after 30 seconds
+While locked, an additional hypridle service powers displays off after 10 seconds
 of inactivity, even if a browser inhibits idle. Input wakes the displays; unlock
 stops that service and marks copad presence active. The lock controller starts
 hyprlock directly so a slow or failed hypridle startup cannot lose the lock request;
