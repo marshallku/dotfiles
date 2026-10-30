@@ -779,6 +779,59 @@ print(json.dumps({"type":"result", "subtype":"success", "session_id":session,
         self.assertFalse(self.policy("commit-policy-gate.sh", '~/save.sh "Add y"'))
         self.assertFalse(self.policy("commit-policy-gate.sh", f"grep -n {trailer}: ~/save.sh"))
 
+    def test_commit_policy_guards_github_side_merge_messages(self):
+        trailer = "Co-Authored-By"
+        gate = "commit-policy-gate.sh"
+        # GitHub's default squash message appends co-author trailers, so a body is required.
+        self.assertTrue(self.policy(gate, "gh pr merge 7 --squash --delete-branch 2>&1 | tail -2"))
+        self.assertTrue(self.policy(gate, "cd x && gh pr merge 7 -sd"))
+        self.assertTrue(self.policy(gate, "gh pr merge --merge"))
+        self.assertFalse(self.policy(gate, 'gh pr merge 7 --squash -d --body ""'))
+        self.assertFalse(self.policy(gate, "gh pr merge 7 -sdb 'Summary of the change'"))
+        self.assertFalse(self.policy(gate, "gh pr merge 7 --rebase"))
+        self.assertTrue(self.policy(gate, f'gh pr merge 7 --squash --body "Fix x\n\n{trailer}: Jane <j@x>"'))
+        body = self.repo / "body.md"
+        body.write_text("Summary\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n")
+        self.assertTrue(self.policy(gate, "gh pr merge 7 --squash --body-file body.md"))
+        self.assertTrue(self.policy(gate, "gh pr create --title t -F body.md"))
+        self.assertTrue(self.policy(gate, f'gh pr create --title t --body "x\n\n{trailer}: Bot <b@x>"'))
+        self.assertFalse(self.policy(gate, 'gh pr create --title t --body "Adds y"'))
+        # Direct API merges follow the same rule.
+        self.assertTrue(self.policy(gate, "gh api -X PUT repos/o/r/pulls/7/merge -f merge_method=squash"))
+        self.assertFalse(self.policy(gate, "gh api -X PUT repos/o/r/pulls/7/merge -f merge_method=squash -f commit_message=Summary"))
+        self.assertFalse(self.policy(gate, "gh api -X PUT repos/o/r/pulls/7/merge -f merge_method=rebase"))
+        # Review round 1: separate lines, leading global flags, unreadable files, `@file` fields.
+        self.assertTrue(self.policy(gate, "gh pr merge 7 --squash\necho --body clean"))
+        self.assertFalse(self.policy(gate, "gh pr merge 7 \\\n  --squash --body 'Summary'"))
+        self.assertTrue(self.policy(gate, "gh -R o/r pr merge 7 --squash"))
+        self.assertTrue(self.policy(gate, "printf x | gh pr merge 7 --squash --body-file -"))
+        (self.repo / "sub").mkdir()
+        (self.repo / "sub/body.md").write_text(f"x\n\n{trailer}: Bot <b@x>\n")
+        self.assertTrue(self.policy(gate, "cd sub && gh pr merge 7 --squash -F body.md"))
+        self.assertTrue(self.policy(gate, "gh pr merge 7 --squash -F missing.md"))
+        self.assertTrue(self.policy(gate, "gh api -X PUT repos/o/r/pulls/7/merge -F commit_message=@sub/body.md"))
+        # Review round 2: quoted empty/operator args, joined continuations, subshell `cd`.
+        self.assertTrue(self.policy(gate, f'gh pr merge 7 --squash --body "" --subject "{trailer}: Bot <b@x>"'))
+        self.assertTrue(self.policy(gate, f'gh pr merge 7 --squash --body ";" --subject "{trailer}: Bot <b@x>"'))
+        self.assertTrue(self.policy(gate, "gh pr mer\\\nge 7 --squash"))
+        (self.repo / "clean.md").write_text("Summary\n")
+        (self.repo / "sub/clean.md").write_text("Summary\n")
+        self.assertTrue(self.policy(gate, "(cd sub); gh pr merge 7 --squash -F body.md"))
+        self.assertTrue(self.policy(gate, "cd sub | gh pr merge 7 --squash -F body.md"))
+        self.assertFalse(self.policy(gate, "(cd sub && gh pr merge 7 --squash -F clean.md)"))
+        # Review round 3: ANSI-C quoting expands escapes before GitHub sees the text.
+        self.assertTrue(self.policy(gate, f"gh pr merge 7 --squash --body $'Summary\\n\\n{trailer}: Bot <b@x>'"))
+        self.assertFalse(self.policy(gate, "gh pr merge 7 --squash --body $'Summary\\nmore'"))
+        # Review round 4: bash's variable-width escapes; undecodable gh text fails closed.
+        self.assertTrue(self.policy(gate, f"gh pr merge 7 --squash --body $'Summary\\xA\\n{trailer}: Bot <b@x>'"))
+        self.assertTrue(self.policy(gate, f"gh pr merge 7 --squash --body $'Summary\\012{trailer}: Bot <b@x>'"))
+        self.assertTrue(self.policy(gate, "gh pr merge 7 --squash --body $'x\\U7FFFFFFF'"))
+        self.assertTrue(self.policy(gate, "gh pr merge 7 --squash --body 'unterminated"))
+        self.assertFalse(self.policy(gate, "echo 'unterminated"))
+        # Reading PRs is not a merge.
+        self.assertFalse(self.policy(gate, "gh pr view 7 --json body"))
+        self.assertFalse(self.policy(gate, "gh pr list"))
+
     def test_raw_git_commit_is_denied_in_the_hook_output_format(self):
         self.assertTrue(self.policy("block-raw-git.sh", "cd /tmp && git commit -m x"))
         self.assertFalse(self.policy("block-raw-git.sh", '~/save.sh "Fix git commit wording"'))

@@ -448,6 +448,12 @@ old substring match. Empty/legacy `reviewed-*` markers are not approvals. Global
 and the global `commit-msg` hook all reject a message line that starts with a co-author trailer
 (anyone, not only AI) or the Claude Code "Generated with" line; the hook also catches the
 `--trailer` / separate `-m` forms. Mid-line mentions (docs about the policy) pass.
+GitHub writes merge commits server-side, past every git hook: its default squash message
+(`COMMIT_MESSAGES`) appends `Co-authored-by:` for other authors and for trailers in the branch
+commits. So the hook (`hooks/_gh_merge_policy.py`) denies `gh pr merge` (squash/merge) and
+`gh api .../pulls/N/merge` without an explicit `--body` / `commit_message`. Pass a short summary,
+or `--body ""` for the title only. `--rebase` replays commits under their own authors and passes.
+It also checks `gh pr create|edit|merge` titles, bodies and `--body-file` for the same lines.
 Hook denials must use `hookSpecificOutput.permissionDecision`: the old top-level
 `{permissionDecision}` shape was silently ignored, so `commit-policy-gate` and `block-raw-git`
 were log-only until 2026-10-30. Both now really deny; `block-raw-git` also matches a heredoc
@@ -495,7 +501,7 @@ inline-brief mode, which covers most of the value.
 | `protect-secrets.sh` | PreToolUse | Edit/Write | Deny writes to `.env`, `.secrets`, `credentials`, `*.pem`, `*.key`, `id_rsa*` |
 | `intent-capture.sh` | PreToolUse | Edit/Write | **DISABLED 2026-06-30** (unregistered from settings.json — 7713 fires/wk for ~2 intent files; soft-gate produced ~58% of hook noise with near-zero output). Script kept; re-register the Edit\|Write block to revive. Capture user intent (SourceItem in `~/docs/sources/sessions/`) before non-trivial sessions accumulate drift |
 | `pre-commit-gate.sh` | PreToolUse | Bash | Block `save.sh`/`git commit` until the staged diff (HEAD → index) has a matching `reviewed-<repo>-<tree>` approval AND (hard-gate mode) acked intent file |
-| `commit-policy-gate.sh` | PreToolUse | Bash | Deny commits whose message has a line starting with a co-author trailer (anyone) or the "Generated with Claude Code" line. Opt-out: `commit-policy-disabled` |
+| `commit-policy-gate.sh` | PreToolUse | Bash | Deny commits whose message has a line starting with a co-author trailer (anyone) or the "Generated with Claude Code" line; deny `gh pr merge`/API merges without an explicit body (GitHub's default squash message adds co-authors) and attribution in PR text. Opt-out: `commit-policy-disabled` |
 | `block-raw-git.sh` | PreToolUse | Bash | UNCONDITIONALLY deny raw `git commit` (incl. `-C`/composed forms); allows save.sh and every other git subcommand (push, tag, …). Forces all commits through `~/save.sh`. Opt-out: `raw-git-block-disabled` |
 | `plan-ssot-gate.sh` | PreToolUse | ExitPlanMode | Block presenting a plan until the session has consulted ~/docs (a `dn search`/`tag`/`related` query → `ssot-checked-<session>` marker). Per-session: one consult clears the gate for the session. No-op when `dn`/`~/docs` absent. Opt-out: `ssot-gate-disabled` |
 | `track-edit.sh` | PostToolUse | Edit/Write | Append edited file path to `~/.claude/state/dirty-<session>.log`; review validity is checked from Git content |

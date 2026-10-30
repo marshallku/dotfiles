@@ -8,7 +8,8 @@
 #
 # This is the layer that catches commits Claude/codex issues directly via
 # Bash — the dominant case. save.sh validation and the global git
-# commit-msg hook cover the remaining paths.
+# commit-msg hook cover the remaining paths. GitHub-side merge commits, which no
+# git hook sees, are checked by _gh_merge_policy.py.
 
 set -euo pipefail
 
@@ -16,6 +17,8 @@ set -euo pipefail
 
 INPUT=$(cat)
 CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
+CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
+[ -d "$CWD" ] || CWD=$PWD
 
 [ -z "$CMD" ] && { echo '{}'; exit 0; }
 
@@ -35,13 +38,30 @@ log() {
 # Global opt-out marker — touch the file, run one commit, remove it.
 [ -f "$DISABLED" ] && { echo '{}'; exit 0; }
 
+# GitHub-side commits: `gh pr merge` (GitHub writes the squash message and appends
+# co-author trailers unless a body is given), PR text, and `gh api .../merge`.
+case "$CMD" in
+    *gh*)
+        GH_REASON=$(printf '%s' "$CMD" | python3 "$(dirname "$0")/_gh_merge_policy.py" "$CWD" 2>/dev/null) || GH_REASON=""
+        if [ -n "$GH_REASON" ]; then
+            log "BLOCK: gh attribution/default merge message"
+            jq -n --arg msg "[commit-policy-gate] $GH_REASON
+
+Co-author / AI attribution is forbidden by user policy, including in GitHub merge commits.
+Bypass (only if the user explicitly asks): touch ~/.claude/state/commit-policy-disabled" \
+                '{hookSpecificOutput:{hookEventName:"PreToolUse", permissionDecision:"deny", permissionDecisionReason:$msg}}'
+            exit 0
+        fi
+        ;;
+esac
+
 # Quick filter: only commands that really commit. Same classifier as
 # pre-commit-gate.sh, so `grep Co-Authored-By ~/save.sh` is not a commit.
 case "$CMD" in
     *save.sh*|*"git commit"*) ;;
     *) echo '{}'; exit 0 ;;
 esac
-TARGETS=$(printf '%s' "$CMD" | python3 "$(dirname "$0")/_commit_targets.py" "$PWD" 2>/dev/null) || TARGETS=""
+TARGETS=$(printf '%s' "$CMD" | python3 "$(dirname "$0")/_commit_targets.py" "$CWD" 2>/dev/null) || TARGETS=""
 [ "$TARGETS" = "none" ] && { echo '{}'; exit 0; }
 
 # Detect attribution in -m inline messages, heredocs and `--trailer`. A message
