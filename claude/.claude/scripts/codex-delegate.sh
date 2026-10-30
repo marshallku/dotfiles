@@ -253,10 +253,10 @@ fi
 
 # Two safety actions when delegating with write access. Codex edits files
 # outside Claude's Edit/Write tools, so track-edit.sh never fires — without
-# these, pre-commit-gate.sh would let a stale `reviewed-<repo-hash>` marker
+# these, pre-commit-gate.sh would let a stale `reviewed-<repo-hash>-<tree>` approval
 # through after codex made changes, AND its file-count early-exit would
 # allow commits when Claude itself touched 0 files this session.
-# 1. Invalidate `reviewed-<repo-hash>` marker — forces re-review even if
+# 1. Invalidate `reviewed-<repo-hash>-*` approvals — forces re-review even if
 #    Claude's own edits already passed cross-review earlier.
 # 2. Touch `codex-delegate-pending-<repo-hash>` marker — pre-commit-gate
 #    treats this as proof the change is non-trivial, bypassing the
@@ -282,7 +282,7 @@ if [[ "$WRITE" -eq 1 && -n "$REPO_ROOT" ]]; then
         exit 2
     fi
     ACTIVE_OWNED=1
-    rm -f "$STATE_DIR/reviewed-$JOB_SCOPE"
+    rm -f "$STATE_DIR/reviewed-$JOB_SCOPE"-*
     touch "$STATE_DIR/codex-delegate-pending-$JOB_SCOPE"
     rmdir "$PUBLISH_LOCK"
     PUBLISH_OWNED=0

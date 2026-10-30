@@ -15,13 +15,14 @@ if [[ "$(git config --get commit.skipGlobalHook 2>/dev/null)" == "true" ]]; then
     exit 0
 fi
 
-# Block AI co-author trailers anywhere in the message.
-if grep -qiE 'Co-Authored-By:.*(Claude|Anthropic|noreply@anthropic\.com|GPT-|Codex|ChatGPT|OpenAI)' "$msg_file"; then
+# Block co-author trailers and AI attribution lines anywhere in the message.
+# Same regex as ~/save.sh and the Claude commit-policy-gate hook.
+if grep -qiE '^[^[:alnum:]]*(Co-Authored-By[[:space:]]*:|Generated with \[?Claude)' "$msg_file"; then
     cat >&2 <<'EOF'
-✗ commit-msg: AI co-author attribution is disabled by user policy.
+✗ commit-msg: co-author / AI attribution is disabled by user policy.
 
-  Remove the `Co-Authored-By: ...` line(s) referring to Claude / Anthropic /
-  Codex / GPT / OpenAI from the commit message and retry.
+  Remove the `Co-Authored-By: ...` and "Generated with Claude Code" line(s)
+  from the commit message and retry.
 
   Per-commit bypass:    git commit --no-verify
   Per-repo opt-out:     git config commit.skipGlobalHook true

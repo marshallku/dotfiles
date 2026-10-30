@@ -89,7 +89,9 @@ Do this instead:
 
 If you genuinely need a raw git commit (rare — ask the user first):
   touch ~/.claude/state/raw-git-block-disabled   # then run it, then rm the marker'
-    jq -n --arg msg "$REASON" '{permissionDecision: "deny", message: $msg}'
+    # Top-level {permissionDecision, message} is not a PreToolUse decision: Claude Code
+    # ignored it and ran the command (both gates were log-only until 2026-10-30).
+    jq -n --arg msg "$REASON" '{hookSpecificOutput:{hookEventName:"PreToolUse", permissionDecision:"deny", permissionDecisionReason:$msg}}'
     exit 0
 fi
 

@@ -13,11 +13,11 @@ fi
 
 msg="$1"
 
-# Reject AI co-author trailers — defense-in-depth alongside the Claude
-# commit-policy-gate hook and the global git commit-msg hook.
-if printf '%s' "$msg" | grep -qiE 'Co-Authored-By:.*(Claude|Anthropic|noreply@anthropic\.com|GPT-|Codex|ChatGPT|OpenAI)'; then
-    echo "Error: commit message contains an AI co-author trailer." >&2
-    echo "       Remove the 'Co-Authored-By: ...' line and try again." >&2
+# Reject co-author / AI attribution lines — defense-in-depth alongside the
+# Claude commit-policy-gate hook and the global git commit-msg hook (same regex).
+if printf '%s' "$msg" | grep -qiE '^[^[:alnum:]]*(Co-Authored-By[[:space:]]*:|Generated with \[?Claude)'; then
+    echo "Error: commit message contains a co-author / attribution line." >&2
+    echo "       Remove the 'Co-Authored-By: ...' / 'Generated with Claude Code' line and try again." >&2
     exit 1
 fi
 

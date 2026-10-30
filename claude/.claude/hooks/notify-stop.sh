@@ -24,7 +24,7 @@ stop_active=$(echo "$input" | jq -r '.stop_hook_active // false' 2>/dev/null)
 # hence the 10s grace: only an older reminder counts as "already reminded".
 if [[ "$stop_active" != "true" ]] && pending=$(auto_review_pending_repos "$session" "$hook_cwd"); then
     while IFS= read -r repo; do
-        review_stop_suppressed "$repo" "$session" "$(review_snapshot "$repo")" 10 || exit 0
+        review_stop_suppressed "$repo" "$session" "$(review_session_fingerprint "$repo" "$session")" 10 || exit 0
     done <<< "$pending"
 fi
 

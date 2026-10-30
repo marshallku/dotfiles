@@ -156,10 +156,10 @@ Sandbox: workspace-write
 - **위임 = 책임 위임이 아님**. 결과는 본인이 review + verify 한다. codex가 "테스트 통과" 했다고 자동 트러스트 금지.
 - **위임 후 양쪽 cross-review**. 부모와 위임자의 코드가 섞일 수 있으므로 위임 완료 후
   `/cross-review`에서 `--reviewer claude`와 `--reviewer codex`를 각각 실행한다.
-  같은 전체 스냅샷에 양쪽 APPROVED가 있어야 커밋할 수 있다.
+  같은 스테이징 tree에 양쪽 APPROVED가 있어야 커밋할 수 있다.
 - **Background 기본, foreground는 예외**. 1분 안에 끝날 trivial한 작업만 foreground. 그 외엔 background로 띄우고 본인은 다른 작업 진행.
 - **위임 시 cross-review 게이트 자동 강제 (--write 모드만)**. codex가 파일을 직접 편집하니까 Claude의 Edit/Write hook을 우회 → track-edit.sh가 안 발동 → dirty-log undercount + reviewed marker 그대로 유지. 그래서 codex-delegate.sh가 launch 시점에 두 가지를 함:
-  1. `~/.claude/state/reviewed-<repo-hash>` 삭제 (이미 통과한 review를 무효화)
+  1. `~/.claude/state/reviewed-<repo-hash>-*` 삭제 (이미 통과한 review를 무효화)
   2. `~/.claude/state/codex-delegate-pending-<repo-hash>` touch (pre-commit-gate가 file-count early-exit를 우회하도록 신호)
 
   결과: 위임 이후 commit/push은 양쪽 `/cross-review` APPROVED 전까지 차단된다.

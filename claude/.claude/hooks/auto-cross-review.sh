@@ -23,7 +23,7 @@ fi
 # Once per unreviewed snapshot, at most once per cooldown (see review_stop_suppressed).
 REPO=""
 while IFS= read -r CANDIDATE; do
-    TREE=$(review_snapshot "$CANDIDATE")
+    TREE=$(review_session_fingerprint "$CANDIDATE" "$SESSION")
     if review_stop_suppressed "$CANDIDATE" "$SESSION" "$TREE"; then
         hook_event auto-cross-review skip reason=already_reminded repo="$CANDIDATE"
         continue
@@ -36,7 +36,7 @@ if [[ -z "$REPO" ]]; then
     exit 0
 fi
 review_stop_record "$REPO" "$SESSION" "$TREE"
-hook_log auto-cross-review "BLOCK: unreviewed snapshot in $REPO"
+hook_log auto-cross-review "BLOCK: unreviewed session edits in $REPO"
 hook_event auto-cross-review block repo="$REPO"
-REASON="[auto-review] Before completing this work unit, run /cross-review for session $SESSION in $REPO after relevant tests pass. Follow the skill's evidence-first triage, response-file and three-round limit. Reuse approval only for unchanged reviewed content. If the baseline is missing, establish the starting commit explicitly with --base. Report errors or unresolved findings; do not claim approval."
+REASON="[auto-review] Files this session edited in $REPO are unreviewed. After relevant tests pass, stage exactly this work unit (git add <paths>) and run /cross-review for session $SESSION; it reviews the staged diff only. Follow the skill's evidence-first triage, response-file and three-round limit. Report errors or unresolved findings; do not claim approval."
 jq -n --arg reason "$REASON" '{decision:"block", reason:$reason}'

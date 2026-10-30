@@ -413,45 +413,55 @@ The one thing that makes foreground "look broken": the Bash tool's **default tim
 
 ### Auto-review — work-unit approval
 
-Run `/cross-review` after relevant tests pass, once per completed implementation work unit.
-SessionStart captures the working tree (not HEAD) as the baseline, so changes already uncommitted
-when the session opened are not its work; approval advances it to the reviewed snapshot.
-`--session` includes all repository changes since that baseline, whether committed or not.
-A missing baseline requires an explicit known `--base`; never silently substitute HEAD.
+**The work unit is the staged index.** `save.sh` commits the index only, so the commit gate and
+the review both judge exactly that: `HEAD -> index`. Stage this work unit (`git add <paths>`), then
+`/cross-review` (`codex-review.sh --session <id>`); unstaged and untracked files — another
+session's edits in the same directory included — are in neither the review nor the gate. Nothing
+staged → the review exits 2 instead of approving. `--base` does not apply; no baseline is needed.
 
-The commit, Stop and prompt hooks share content-based eligibility. Documentation-only changes
-may skip; single-file implementation, configuration and dependency changes still require review.
-A repo-root `.reviewignore` (bash globs, `*` crosses `/`) marks automation-written data (bot
-memory, sync metadata) as doc-like; protected paths (`SKILL.md`, `AGENTS.md`, `CLAUDE.md`,
-`.claude/*`, `.codex/*`, `.reviewignore` itself) always require review. A repo with no session
-baseline (a second repo touched mid-session) is judged by what `save.sh` would publish: the diff
-from `merge-base(origin/<branch>, HEAD)`; no such ref → review required.
-The prompt and Stop reminders judge only this session's work: every repo it edited through
-Edit/Write (`dirty-<session>.log`) plus its cwd repo, so a session opened in A and editing B is
-reminded about B. With a baseline they drop files only *other* sessions' logs name; without one
-(a second repo) they keep only files this session edited. Commit stays strict on the whole tree,
-because Bash edits leave no log. The reminders fire once per unreviewed snapshot; Stop additionally at most once
-per `AUTO_REVIEW_STOP_COOLDOWN` (20 min) while changes keep landing, and a new approval re-arms
-it — an orchestrator waiting on subagents used to burn a full turn on every stop (574/week).
-Commit remains the hard gate. `pre-commit-gate` judges the repository each command really commits
-in (`hooks/_commit_targets.py`): reading `save.sh` (`grep`/`head`/`cat`) is not a commit, and
+Approval is content-addressed: `reviewed-<repo-hash>-<index-tree>` records the HEAD tree it was
+reviewed against and the reviewer set. It is not bound to a session, so sessions never overwrite
+each other's approval and any session may commit a reviewed tree. Further `git add`, or HEAD
+moving, makes the pair stop matching. Unstaged edits never invalidate it. `--files`, `--focus`,
+`--uncommitted` and branch mode are advisory and never approve. Markers older than 7 days are
+GC'd by `session-start.sh`.
+
+The commit, Stop and prompt hooks share path eligibility. Documentation-only changes may skip;
+single-file implementation, configuration and dependency changes still require review. A
+repo-root `.reviewignore` (bash globs, `*` crosses `/`) marks automation-written data (bot memory,
+sync metadata) as doc-like; protected paths (`SKILL.md`, `AGENTS.md`, `CLAUDE.md`, `.claude/*`,
+`.codex/*`, `.reviewignore` itself) always require review.
+The commit gate counts every staged path, whoever wrote it (Bash edits leave no log). The prompt
+and Stop reminders count only files **this session** wrote through Edit/Write
+(`dirty-<session>.log`) that changed since its baseline (working tree at SessionStart, advanced
+to the approved staged tree on approval), in every repo it edited plus its cwd repo. They
+de-duplicate on the fingerprint of that session-own diff, so another session editing the same
+repo neither triggers nor re-arms them. Stop additionally fires at most once per
+`AUTO_REVIEW_STOP_COOLDOWN` (20 min) while changes keep landing; a new approval re-arms it.
+`pre-commit-gate` judges the repository each command really commits in
+(`hooks/_commit_targets.py`): reading `save.sh` (`grep`/`head`/`cat`) is not a commit, and
 `cd ~/docs && ~/save.sh` is judged in `~/docs`; any shape it cannot fully parse falls back to the
-old substring match.
-
-Approval is bound to repository, session and the full reviewed tree. Staging and committing the
-same content reuse it. Changes by any tool invalidate it. Partial staging of an intermediate
-unreviewed version is rejected. `--files` and `--focus` do not grant full approval.
-Empty/legacy `reviewed-*` markers are not approvals. Global opt-out remains
+old substring match. Empty/legacy `reviewed-*` markers are not approvals. Global opt-out remains
 `~/.claude/state/auto-review-disabled`, only when requested by the user.
+
+**Attribution is blocked at commit time** in three layers: `commit-policy-gate.sh`, `~/save.sh`
+and the global `commit-msg` hook all reject a message line that starts with a co-author trailer
+(anyone, not only AI) or the Claude Code "Generated with" line; the hook also catches the
+`--trailer` / separate `-m` forms. Mid-line mentions (docs about the policy) pass.
+Hook denials must use `hookSpecificOutput.permissionDecision`: the old top-level
+`{permissionDecision}` shape was silently ignored, so `commit-policy-gate` and `block-raw-git`
+were log-only until 2026-10-30. Both now really deny; `block-raw-git` also matches a heredoc
+that merely contains the words, so write such content with Edit/Write, not a Bash heredoc.
 
 For REVISE, verify each finding before accepting it, make minimal fixes, run relevant tests,
 and send dispositions/evidence using `--resume --response-file`. Resume sends only the delta
 from the prior snapshot. Stop after three rounds or a repeated unresolved finding; present both
 sides' evidence. The skill defines this workflow for automatic and manual calls alike.
 
-Snapshots use a temporary Git index and create unreferenced Git tree/blob objects; the user's
-index and branches are unchanged. They follow normal Git object retention. If Git pruning removes
-a baseline, select a known starting commit explicitly. Do not prune objects during an active review.
+Snapshots (and the index tree, written through a copy of the index) create unreferenced Git
+tree/blob objects; the user's index file and branches are unchanged. They follow normal Git object retention. If Git pruning removes
+a reminder baseline, that session's reminders go quiet (the commit gate needs none). Do not prune
+objects during an active review.
 Usage telemetry records round, snapshot, resume, verdict, elapsed time and cached tokens; missing
 usage is explicitly marked. The actual model remains unknown unless reported by the CLI.
 
@@ -484,7 +494,8 @@ inline-brief mode, which covers most of the value.
 | `freeze.sh` | PreToolUse | Edit/Write | Block edits outside `~/.claude/freeze-dir.txt` scope (night-agent sandbox) |
 | `protect-secrets.sh` | PreToolUse | Edit/Write | Deny writes to `.env`, `.secrets`, `credentials`, `*.pem`, `*.key`, `id_rsa*` |
 | `intent-capture.sh` | PreToolUse | Edit/Write | **DISABLED 2026-06-30** (unregistered from settings.json — 7713 fires/wk for ~2 intent files; soft-gate produced ~58% of hook noise with near-zero output). Script kept; re-register the Edit\|Write block to revive. Capture user intent (SourceItem in `~/docs/sources/sessions/`) before non-trivial sessions accumulate drift |
-| `pre-commit-gate.sh` | PreToolUse | Bash | Block `save.sh`/`git commit` until session has a fresh codex-review marker AND (hard-gate mode) acked intent file |
+| `pre-commit-gate.sh` | PreToolUse | Bash | Block `save.sh`/`git commit` until the staged diff (HEAD → index) has a matching `reviewed-<repo>-<tree>` approval AND (hard-gate mode) acked intent file |
+| `commit-policy-gate.sh` | PreToolUse | Bash | Deny commits whose message has a line starting with a co-author trailer (anyone) or the "Generated with Claude Code" line. Opt-out: `commit-policy-disabled` |
 | `block-raw-git.sh` | PreToolUse | Bash | UNCONDITIONALLY deny raw `git commit` (incl. `-C`/composed forms); allows save.sh and every other git subcommand (push, tag, …). Forces all commits through `~/save.sh`. Opt-out: `raw-git-block-disabled` |
 | `plan-ssot-gate.sh` | PreToolUse | ExitPlanMode | Block presenting a plan until the session has consulted ~/docs (a `dn search`/`tag`/`related` query → `ssot-checked-<session>` marker). Per-session: one consult clears the gate for the session. No-op when `dn`/`~/docs` absent. Opt-out: `ssot-gate-disabled` |
 | `track-edit.sh` | PostToolUse | Edit/Write | Append edited file path to `~/.claude/state/dirty-<session>.log`; review validity is checked from Git content |
@@ -494,7 +505,7 @@ inline-brief mode, which covers most of the value.
 | `remind-cross-review.sh` | UserPromptSubmit | — | Inject additionalContext reminding Claude to run codex-review before concluding |
 | `contract-inject.sh` | UserPromptSubmit | — | On `/goal`·`/loop` activation, inject the per-work-unit autonomous-loop contract as additionalContext so the user need not retype it (non-blocking). Opt-out: `contract-inject-disabled` |
 | `verification-gate.sh` | Stop | — | Block stop once/session when code changed but no test/e2e/run/deploy command was actually executed this session (scans executed Bash commands, not output text; excludes build/typecheck). Single-shot, so a genuinely-N/A change is handled by stating the reason once. Sibling to auto-cross-review (did *you* run it? vs. did a reviewer see it?). Opt-out: `verify-gate-disabled` |
-| `auto-cross-review.sh` | Stop | — | Remind (block once) per unreviewed implementation snapshot, at most once per 20-min cooldown; avoids recursive Stop hooks |
+| `auto-cross-review.sh` | Stop | — | Remind (block once) per state of this session's own unreviewed Edit/Write files, at most once per 20-min cooldown; avoids recursive Stop hooks |
 | `auto-handoff.sh` | Stop | — | Capture git status + branch + recent log to `~/.claude/handoffs/latest.md` and `repo-<hash>.md` for the next session in that repo |
 | `harness-report.sh --tripwire` | SessionStart | — | Trip wires over the two ledgers: codex spend >2x the 6-day mean, a sensor erroring/timing out, or a component that used to emit events going silent for 7d. Silent unless something trips. Opt-out: `tripwire-disabled` |
 

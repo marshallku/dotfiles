@@ -83,12 +83,6 @@ handoff_publish() {
 # Review state helpers share one policy across Stop, prompt and commit hooks.
 . "$(dirname "${BASH_SOURCE[0]}")/_review-state.sh"
 
-reviewed_marker_valid() {
-    local marker="$1" session="${2:-}" repo="${3:-}"
-    [ -n "$repo" ] || repo=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
-    review_approval_valid "$marker" "$session" "$repo"
-}
-
 # auto_review_pending_repos <session> <cwd>
 # Print every repository holding this session's unreviewed work: the cwd repo or
 # any repo the session edited, so a session opened in A and editing B is judged by
@@ -98,7 +92,6 @@ auto_review_pending_repos() {
     local session="${1:-default}" cwd="${2:-}" repo found=1
     [ -f "$HOME/.claude/state/auto-review-disabled" ] && return 1
     while IFS= read -r repo; do
-        reviewed_marker_valid "$HOME/.claude/state/reviewed-$(repo_hash "$repo")" "$session" "$repo" && continue
         if review_required "$repo" "$session" session; then
             printf '%s\n' "$repo"
             found=0

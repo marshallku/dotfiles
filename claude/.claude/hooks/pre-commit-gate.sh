@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
-# PreToolUse Bash hook — blocks commit/push commands until this session has
-# (a) run codex-review successfully for the current repo, and (b) captured a
-# valid intent file in ~/docs/sources/sessions/ (hard-gate mode only).
+# PreToolUse Bash hook — blocks commit commands until (a) the staged diff that
+# save.sh will commit (HEAD -> index) has a cross-review approval, and (b) this
+# session captured a valid intent file in ~/docs/sources/sessions/ (hard-gate
+# mode only). Unstaged edits — this session's or anyone else's — never count.
 #
 # Triggers on Bash commands that run save.sh or git commit (see _commit_targets.py; a
 # mere mention, like `grep … save.sh`, does not count). A raw push only
 # publishes commits that already passed this gate via save.sh, so it is not gated.
 # Allows when:
 #   - ~/.claude/state/auto-review-disabled exists (global opt-out)
-#   - no implementation changes since the work-unit baseline
-#   - a reviewed-<repo-hash> marker exists AND intent gate passes
+#   - nothing staged needs review (documentation only, or nothing staged)
+#   - reviewed-<repo-hash>-<index-tree> approves this HEAD/index pair AND the
+#     intent gate passes
 #
 # Intent gate (hard-gate mode only, AUTO_INTENT_SOFT_GATE=0):
 #   - intent-active-<session>-<repo>.path marker exists
@@ -132,6 +134,25 @@ else
         echo '{}'
         exit 0
     fi
+    # The gate judges the index as it is now, before this command runs, so a commit
+    # must not share a command with anything that rewrites the index or HEAD
+    # (`git add x && ~/save.sh …` would commit an index the gate never saw).
+    git_opts='([[:space:]]+-[^[:space:]]+([[:space:]]+("[^"]*"|'\''[^'\'']*'\''|[^-[:space:]][^[:space:]]*))?)*'
+    index_re="\\bgit\\b${git_opts}[[:space:]]+(add|rm|mv|stage|reset|restore|checkout|switch|apply|update-index|read-tree|stash|merge|pull|rebase|cherry-pick|revert|am)([[:space:]]|[;&|\"']|\$)"
+    # save.sh's quoted message is data, wherever save.sh sits (`cd x && ~/save.sh "Fix git add"`).
+    # Only those arguments are dropped, so `bash -c "git add x" && ~/save.sh …` is still seen.
+    SCAN=$(printf '%s' "$CMD" | sed -E 's/(save\.sh)([[:space:]]+("[^"]*"|'\''[^'\'']*'\''))+/\1/g')
+    if printf '%s' "$SCAN" | grep -qE "$index_re"; then
+        log "BLOCK: commit combined with an index/HEAD change -> $CMD"
+        REASON="[pre-commit-gate] Run staging and the commit as separate Bash calls.
+The gate checks the staged diff before this command runs, so it cannot judge an index that a
+git add/rm/restore/reset/checkout/... earlier in the same command would produce.
+  1) git add <paths>          (its own call)
+  2) /cross-review if needed   (reviews exactly that index)
+  3) ~/save.sh \"<message>\"     (its own call)"
+        jq -n --arg msg "$REASON" '{hookSpecificOutput:{hookEventName:"PreToolUse", permissionDecision:"deny", permissionDecisionReason:$msg}}'
+        exit 0
+    fi
     DIRS=()
     while IFS= read -r line; do
         [ -n "${line#dir }" ] && DIRS+=("${line#dir }")
@@ -167,12 +188,11 @@ if ! REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null); then
 fi
 
 REPO_HASH=$(repo_hash "$REPO_ROOT")
-MARKER="$STATE_DIR/reviewed-$REPO_HASH"
 DELEGATE_PENDING="$STATE_DIR/codex-delegate-pending-$REPO_HASH"
 
-# Fresh, session-owned, non-expired review marker → check intent gate before
-# allowing. reviewed_marker_valid rejects changed-content/legacy/cross-session markers.
-if reviewed_marker_valid "$MARKER" "$SESSION" "$REPO_ROOT"; then
+# Approval bound to the exact staged content → check intent gate before allowing.
+# Whichever session reviewed it, the same HEAD/index pair is the same commit.
+if review_approval_valid "$REPO_ROOT"; then
     # Intent gate is a no-op in soft-gate or globally-disabled mode. The
     # review marker alone is the gate, same as before this hook was extended.
     if [ "$INTENT_SOFT_GATE" = "1" ] || [ -f "$INTENT_DISABLED" ]; then
@@ -270,19 +290,18 @@ Edit the file and re-run intent-finalize.sh.'
 fi
 
 if ! review_required "$REPO_ROOT" "$SESSION" && [ ! -f "$DELEGATE_PENDING" ]; then
-    log "allow: no implementation changes in this work unit"
+    log "allow: nothing staged needs review"
     echo '{}'
     exit 0
 fi
 
-log "BLOCK: $CMD — no review marker for $REPO_ROOT"
+log "BLOCK: $CMD — staged diff in $REPO_ROOT is unreviewed"
 
 # shellcheck disable=SC2016
-REASON="[pre-commit-gate] This work unit has no approval matching the current repository and staged content.
-Run /cross-review for session $SESSION in $REPO_ROOT. Use its evidence-first triage and maximum three rounds.
-If no session baseline exists, identify the actual starting commit and pass --base <commit>; do not guess.
-After fixes, run relevant tests and re-review with --resume --response-file <finding dispositions and test results>.
-Only a full review grants approval. Stage the reviewed file versions; partial intermediate staging requires review.
+REASON="[pre-commit-gate] The staged diff in $REPO_ROOT (HEAD -> index, exactly what save.sh commits) has no review approval.
+Stage only this work unit (git add <paths>; unstage others with git restore --staged <paths>), then run /cross-review for session $SESSION.
+It reviews the staged diff only; unstaged edits from any session are ignored. Use its evidence-first triage and maximum three rounds.
+After fixes, re-stage, run relevant tests and re-review with --resume --response-file <finding dispositions and test results>.
 On error or unresolved disagreement, report the evidence. Never fabricate an approval marker."
 
 # COPAD_HOOK_PUBLISH: claude.commit_blocked $(jq -n --arg c "$CMD" '{reason:"missing-review",command:$c}')

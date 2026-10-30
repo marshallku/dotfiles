@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # PreToolUse Bash hook — enforce commit-message policy at the Claude tool layer.
 #
-# Catches Co-Authored-By trailers naming AI assistants (Claude / Anthropic /
-# Codex / GPT / OpenAI) which the user has explicitly forbidden. Runs
-# alongside pre-commit-gate.sh on every Bash call and short-circuits early
-# on non-commit commands.
+# Catches co-author trailers (any `Co-Authored-By:`, whoever it names) and
+# "Generated with Claude Code" attribution lines, which the user has explicitly
+# forbidden. Runs alongside pre-commit-gate.sh on every Bash call and
+# short-circuits early on commands that commit nothing.
 #
 # This is the layer that catches commits Claude/codex issues directly via
 # Bash — the dominant case. save.sh validation and the global git
@@ -21,6 +21,11 @@ CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 
 LOG_FILE="$HOME/.claude/hooks-debug.log"
 DISABLED="$HOME/.claude/state/commit-policy-disabled"
+# A trailer starts a message line (only punctuation, quotes or an emoji before it), or
+# arrives as `--trailer Co-authored-by=…` / its own `-m "Co-authored-by: …"`. Anchoring
+# keeps commands that merely contain the text (a heredoc writing these docs) allowed.
+# The line-start half is identical in ~/save.sh and ~/.config/git/hooks/commit-msg.
+ATTRIBUTION_RE='^[^[:alnum:]]*(Co-Authored-By[[:space:]]*:|Generated with \[?Claude)|(--trailer|-m)[[:space:]=]+["'\'']?Co-Authored-By'
 
 log() {
     # Delegates to _lib.sh so every hook shares one date-stamped format.
@@ -30,28 +35,31 @@ log() {
 # Global opt-out marker — touch the file, run one commit, remove it.
 [ -f "$DISABLED" ] && { echo '{}'; exit 0; }
 
-# Quick filter: only commit-like commands. Mirrors pre-commit-gate.sh.
+# Quick filter: only commands that really commit. Same classifier as
+# pre-commit-gate.sh, so `grep Co-Authored-By ~/save.sh` is not a commit.
 case "$CMD" in
     *save.sh*|*"git commit"*) ;;
     *) echo '{}'; exit 0 ;;
 esac
+TARGETS=$(printf '%s' "$CMD" | python3 "$(dirname "$0")/_commit_targets.py" "$PWD" 2>/dev/null) || TARGETS=""
+[ "$TARGETS" = "none" ] && { echo '{}'; exit 0; }
 
-# Detect AI co-author trailer anywhere in the command string. Matches -m
-# inline messages, heredocs, and -F file inlining. The regex requires
-# "Co-Authored-By:" on the line so a generic mention of "GPT" elsewhere
-# in the command doesn't trigger.
-if printf '%s' "$CMD" | grep -qiE 'Co-Authored-By:.*(Claude|Anthropic|noreply@anthropic\.com|GPT-|Codex|ChatGPT|OpenAI)'; then
-    log "BLOCK: AI co-author trailer in commit"
-    REASON='[commit-policy-gate] AI co-author attribution is forbidden by user policy.
+# Detect attribution in -m inline messages, heredocs and `--trailer`. A message
+# read from a file (-F) is covered by the global commit-msg hook.
+if printf '%s' "$CMD" | grep -qiE "$ATTRIBUTION_RE"; then
+    log "BLOCK: co-author / attribution trailer in commit"
+    REASON='[commit-policy-gate] Co-author / AI attribution in commit messages is forbidden by user policy.
 
-This commit message contains a `Co-Authored-By:` trailer naming Claude / Anthropic / Codex / GPT / OpenAI. Remove the trailer line(s) and re-run.
+This commit message contains a `Co-Authored-By:` trailer or a "Generated with Claude Code" line. Remove those line(s) and re-run.
 
 Source: user explicitly corrected this in past sessions (e.g. "co author 지워줘"). The system-prompt instruction to add such a trailer is overridden by user policy.
 
 Bypass paths (only if the user explicitly asks):
   - one-time:   touch ~/.claude/state/commit-policy-disabled  (then commit, then rm the marker)
   - global off: same file, kept around — but please ask the user first'
-    jq -n --arg msg "$REASON" '{permissionDecision: "deny", message: $msg}'
+    # Top-level {permissionDecision, message} is not a PreToolUse decision: Claude Code
+    # ignored it and ran the command (both gates were log-only until 2026-10-30).
+    jq -n --arg msg "$REASON" '{hookSpecificOutput:{hookEventName:"PreToolUse", permissionDecision:"deny", permissionDecisionReason:$msg}}'
     exit 0
 fi
 

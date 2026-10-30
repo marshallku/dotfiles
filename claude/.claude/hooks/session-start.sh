@@ -31,6 +31,11 @@ if [ -d "$STATE_DIR" ]; then
     # 장기 세션의 진짜 마커를 지우지 않기 위해서다.
     find "$STATE_DIR" -maxdepth 1 -type f -name "intent-active-*" \
         -mtime +7 -delete 2>/dev/null || true
+
+    # 승인은 스테이징된 tree마다 하나씩 쌓인다 (reviewed-<repo>-<tree>).
+    # 커밋되면 쓸모없어지므로 7일 지난 것은 지운다. 미커밋 승인이 지워져도 재리뷰면 된다.
+    find "$STATE_DIR" -maxdepth 1 -type f -name "reviewed-*" \
+        -mtime +7 -delete 2>/dev/null || true
 fi
 
 # 부수 작업: 관측 원장 로테이션. hooks-debug.log 와 같은 이유로 무한 증가하고,

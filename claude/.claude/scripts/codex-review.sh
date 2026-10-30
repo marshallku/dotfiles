@@ -7,7 +7,9 @@
 #   codex-review.sh                              # HEAD vs main (or origin/main)
 #   codex-review.sh --base develop               # HEAD vs given base
 #   codex-review.sh --uncommitted                # working tree changes
-#   codex-review.sh --session <id>               # work-unit changes in this repository
+#   codex-review.sh --session <id>               # staged work unit (HEAD -> index); the
+#                                                # only mode that grants commit approval
+#   codex-review.sh --staged                     # same, without a session to advance
 #   codex-review.sh --files f1.ts,f2.ts          # specific files (comma-sep)
 #   codex-review.sh --focus security             # focused review
 #   codex-review.sh --context "user asked to..." # inline intent brief
@@ -23,8 +25,9 @@
 #                                                # fixes (big token saving). Round
 #                                                # 1 must run WITHOUT --resume.
 #
-# --session compares the captured work-unit baseline with a repository snapshot,
-# including committed, unstaged and untracked changes. --base overrides baseline.
+# --session reviews exactly what save.sh will commit: the index against HEAD.
+# Unstaged and untracked files — other sessions' work included — are not part of
+# it, so stage the work unit first. Approval binds to that HEAD/index pair.
 # --resume sends only changes since the previous review snapshot plus responses.
 # Narrow --files / --focus reviews never grant a repository-wide approval.
 # --response-file F supplies accepted/rebutted findings and verification results.
@@ -74,9 +77,13 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --session)
-            MODE="session"
+            MODE="staged"
             SESSION_ID="$2"
             shift 2
+            ;;
+        --staged)
+            MODE="staged"
+            shift
             ;;
         --files)
             MODE="files"
@@ -108,7 +115,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -h|--help)
-            sed -n '2,34p' "$0"
+            sed -n '2,37p' "$0"
             exit 0
             ;;
         *)
@@ -117,6 +124,11 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+if [[ "$MODE" == staged && -n "$BASE" ]]; then
+    echo '[codex-review] --session/--staged always reviews HEAD -> index; --base does not apply' >&2
+    exit 2
+fi
 
 case "$REVIEWER" in
     codex|claude) ;;
@@ -201,10 +213,14 @@ fi
 PROMPT_FILE=""
 STDOUT_FILE=""
 trap 'rm -f "$PROMPT_FILE" "$STDOUT_FILE"; rmdir "$LOCK_DIR"' EXIT
-REVIEW_TREE=$(review_snapshot "$REVIEW_REPO_ROOT") || exit 2
+# Staged reviews pin the index; the others pin the whole working tree.
+current_tree() {
+    if [[ "$MODE" == staged ]]; then review_index_tree "$REVIEW_REPO_ROOT"; else review_snapshot "$REVIEW_REPO_ROOT"; fi
+}
+REVIEW_TREE=$(current_tree) || exit 2
 
 mark_repo_reviewed() (
-    [[ "$MODE" != "files" && -z "$FOCUS" ]] || return 0
+    [[ "$MODE" == staged && -z "$FOCUS" ]] || return 0
     local publish_lock="$STATE_DIR/review-publish-$REPO_HASH.lock"
     mkdir "$publish_lock" 2>/dev/null || { echo '[cross-review] Review state busy; retry publication via review.' >&2; return 1; }
     trap 'rmdir "$publish_lock"' EXIT
@@ -212,33 +228,32 @@ mark_repo_reviewed() (
         echo '[cross-review] Delegation started during review; approval not published.' >&2
         return 1
     fi
-    if [[ "$REVIEW_TREE" != "$(review_snapshot "$REVIEW_REPO_ROOT")" ]]; then
-        echo '[codex-review] Files changed during review; approval not published. Re-review current changes.' >&2
+    if [[ "$REVIEW_TREE" != "$(current_tree)" || "$REVIEW_BASE" != "$(review_head_tree "$REVIEW_REPO_ROOT")" ]]; then
+        echo '[codex-review] Staged content or HEAD changed during review; approval not published. Re-review.' >&2
         return 1
     fi
-    review_index_matches "$REVIEW_REPO_ROOT" "$REVIEW_TREE" || {
-        echo '[codex-review] Staged content differs from reviewed files. Stage the reviewed versions and re-run.' >&2
-        return 1
-    }
-    local tmp origin="session" marker="$STATE_DIR/reviewed-$REPO_HASH" previous='{}'
-    if [[ -s "$marker" ]] && jq -e --arg repo "$REVIEW_REPO_ROOT" --arg session "$SESSION_ID" \
-        --arg tree "$REVIEW_TREE" '.version == 2 and .scope == "full" and .repo == $repo
-        and .session == $session and .tree == $tree' "$marker" >/dev/null 2>&1; then
+    local tmp origin="session" marker previous='{}'
+    marker=$(review_marker_path "$REVIEW_REPO_ROOT" "$REVIEW_TREE")
+    if [[ -s "$marker" ]] && jq -e --arg repo "$REVIEW_REPO_ROOT" --arg tree "$REVIEW_TREE" --arg base "$REVIEW_BASE" \
+        '.version == 3 and .scope == "staged" and .repo == $repo and .tree == $tree and .base == $base' \
+        "$marker" >/dev/null 2>&1; then
         previous=$(cat "$marker")
         origin=$(jq -r '.origin // "session"' <<< "$previous")
     fi
     [[ ! -f "$STATE_DIR/codex-delegate-pending-$REPO_HASH" ]] || origin="codex-delegate"
     tmp=$(mktemp "$STATE_DIR/.reviewed.XXXXXX")
     jq -n --arg repo "$REVIEW_REPO_ROOT" --arg session "$SESSION_ID" --arg tree "$REVIEW_TREE" \
-        --arg reviewer "$REVIEWER" --arg origin "$origin" --argjson previous "$previous" \
-        '{version:2, scope:"full", repo:$repo, session:$session, tree:$tree, reviewer:$reviewer, origin:$origin,
+        --arg base "$REVIEW_BASE" --arg reviewer "$REVIEWER" --arg origin "$origin" --argjson previous "$previous" \
+        '{version:3, scope:"staged", repo:$repo, session:$session, base:$base, tree:$tree, reviewer:$reviewer, origin:$origin,
           reviewers:((($previous.reviewers // (if $previous.reviewer then [$previous.reviewer] else [] end))
                        + [$reviewer]) | unique)}' > "$tmp"
     mv -f "$tmp" "$marker"
     if [[ "$origin" == codex-delegate ]] && ! review_has_provider "$marker" both; then
-        echo '[cross-review] One reviewer approved; run the other reviewer on the same work unit. Commit gate remains closed.' >&2
+        echo '[cross-review] One reviewer approved; run the other reviewer on the same staged work unit. Commit gate remains closed.' >&2
         return 0
     fi
+    # The reviewed staged tree becomes this session's reminder baseline: what it
+    # edits beyond that is the next work unit.
     if [[ -n "$SESSION_ID" ]]; then
         tmp=$(mktemp "$STATE_DIR/.review-base.XXXXXX")
         printf '%s\n' "$REVIEW_TREE" > "$tmp"
@@ -275,21 +290,9 @@ detect_base() {
 
 TARGET_FILES=()
 case "$MODE" in
-    session)
-        if [[ -n "$BASE" ]]; then
-            REVIEW_BASE=$(git rev-parse "${BASE}^{tree}") || exit 2
-        else
-            MARKER="$STATE_DIR/reviewed-$REPO_HASH"
-            if [[ ! -f "$STATE_DIR/codex-delegate-pending-$REPO_HASH" && -s "$MARKER" ]] \
-                && ! review_has_provider "$MARKER" "$REVIEWER" \
-                && jq -e --arg repo "$REVIEW_REPO_ROOT" --arg session "$SESSION_ID" \
-                '.version == 2 and .repo == $repo and .session == $session' "$MARKER" >/dev/null 2>&1; then
-                echo '[cross-review] Reviewer changed after approval. Supply --base <known-start-commit> to review the full work unit.' >&2
-                exit 2
-            fi
-            REVIEW_BASE=$(review_baseline "$REVIEW_REPO_ROOT" "$SESSION_ID") || exit 2
-        fi
-        DIFF_DESC="work unit in session ${SESSION_ID}; all repository changes since ${REVIEW_BASE}"
+    staged)
+        REVIEW_BASE=$(review_head_tree "$REVIEW_REPO_ROOT") || exit 2
+        DIFF_DESC="staged work unit${SESSION_ID:+ in session ${SESSION_ID}}: HEAD -> index, exactly what save.sh commits"
         ;;
     uncommitted)
         REVIEW_BASE=$(review_head_tree "$REVIEW_REPO_ROOT")
@@ -347,18 +350,21 @@ if [[ "$DIFF" != "$RAW_DIFF" ]]; then
     DIFF+=$(git diff --stat "$REVIEW_BASE" "$REVIEW_TREE" -- "${TARGET_FILES[@]}")
 fi
 
+# Nothing staged is not an approval: it usually means the work unit was never
+# staged, and approving HEAD would only advance the reminder baseline.
+if [[ -z "$RAW_DIFF" && "$MODE" == staged ]]; then
+    {
+        echo "[codex-review] Nothing staged in $REVIEW_REPO_ROOT — the review covers HEAD -> index only."
+        echo "               Stage exactly this work unit first:  git add <paths>"
+    } >&2
+    exit 2
+fi
+
 if [[ -z "$RAW_DIFF" && "$RESUME" == "0" && -z "$CONTEXT" && "$INTENT_AVAILABLE" == "0" && ! -f "$REVIEW_STATE" ]]; then
     echo "## Summary" >&2
     echo "No diff to review (${DIFF_DESC})." >&2
     echo ""
     echo "VERDICT: APPROVED"
-    # Mark reviewed only for auto-scoped modes (uncommitted, branch). For an
-    # explicit --files request that resolves to empty diffs, the user asked
-    # about a narrow set; granting the wider repo's reviewed/pending marker
-    # would be an unauthorized gate bypass.
-    if [[ "$MODE" != "files" ]]; then
-        mark_repo_reviewed || exit 2
-    fi
     notify_codex_done "VERDICT: APPROVED (no diff to review)" "$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")"
     exit 0
 fi
@@ -584,14 +590,9 @@ mv -f "$STATE_TMP" "$REVIEW_STATE"
 
 case "$VERDICT_LINE" in
     "VERDICT: APPROVED")
-        # Mark reviewed only for auto-scoped reviews (uncommitted, session,
-        # branch). An explicit --files request is a narrow query that does
-        # not cover the entire working tree; granting the repo-wide gate
-        # marker on its APPROVED would let unrelated unreviewed changes
-        # slip past pre-commit-gate.sh.
-        if [[ "$MODE" != "files" ]]; then
-            mark_repo_reviewed || exit 2
-        fi
+        # Only a staged review publishes commit approval: it alone reviewed the
+        # exact content save.sh will commit. Branch/uncommitted/files are advisory.
+        mark_repo_reviewed || exit 2
         # COPAD_HOOK_PUBLISH: claude.review_approved $(jq -n --arg s "$SESSION_ID" --arg m "$MODE" '{session:$s,mode:$m}')
         # Redirect coctl's ack ({"queued":true}) away from stdout so it does not
         # trail the VERDICT in the review output the caller reads.
