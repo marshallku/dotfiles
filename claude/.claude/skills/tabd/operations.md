@@ -7,7 +7,7 @@ between.
 
 For the system surface itself (commands, daemon shape), see
 [architecture.md](architecture.md). For install, see
-[INSTALL.md](../INSTALL.md).
+[INSTALL.md](../../../INSTALL.md).
 
 ---
 
@@ -225,6 +225,7 @@ shell scripts. The fields that matter:
 | `lastError` | `null` or `{action, message, at}`. Populated by any failed daemon-side request. |
 | `driver.chromiumPid` | Current chromium pid. Changes after every supervisor restart. |
 | `driver.chromiumRssBytes` | Most recent RSS read from `/proc`. Watch for unbounded growth. |
+| `driver.headed` | `true` if chromium was launched with a visible window (`TABD_HEADED`). See [Headed mode](#headed-mode-visible-window). |
 | `driver.restartAttempts` | How many times the supervisor has rebooted chromium. Non-zero = something is unhappy. |
 | `driver.restarting` | `true` while a restart is in progress. |
 
@@ -262,6 +263,46 @@ done
 
 If you want a longer drain (e.g. an in-flight `screenshot` of a slow page),
 set `Environment=TABD_DRAIN_TIMEOUT_MS=30000` in the systemd unit.
+
+---
+
+## Headed mode (visible window)
+
+tabd runs headless by default (`--headless=new`), which is the point on a
+server or over SSH. For local debugging — watching a login flow, inspecting a
+page that behaves differently with a real window — set **`TABD_HEADED`** to a
+truthy value (`1`, `true`, `yes`, `on`) and the daemon launches Chromium with a
+visible window (no `--headless=new` / `--disable-gpu`):
+
+```bash
+TABD_HEADED=1 tabd navigate https://example.com
+```
+
+The daemon inherits your environment on auto-spawn, so no extra wiring is
+needed. Confirm the live mode via `daemon.health` → `driver.headed`:
+
+```bash
+tabd daemon health | jq .driver.headed   # true when headed
+```
+
+**The mode is fixed when the daemon boots.** A daemon that is already running
+is reused as-is — setting `TABD_HEADED=1` against a running *headless* daemon
+has no effect. To switch, either stop the current daemon first:
+
+```bash
+tabd daemon stop && TABD_HEADED=1 tabd navigate …
+```
+
+…or give the headed session its own daemon via a separate base dir, so it lives
+alongside your headless one instead of replacing it:
+
+```bash
+TABD_BASE_DIR="$HOME/.cache/tabd-headed" TABD_HEADED=1 tabd navigate …
+```
+
+Over SSH, headed mode needs a reachable display (X11 forwarding, a local
+X/Wayland session, or `xvfb-run`); without one Chromium fails to start. On a
+desktop (macOS/Linux with a session) it just works.
 
 ---
 
@@ -332,3 +373,18 @@ ran out of restart attempts and is sleeping between rounds. Check
 A long-running action is blocking the drain. Either wait, or
 `TABD_DRAIN_TIMEOUT_MS` is set too high. systemd's `TimeoutStopSec` is the
 hard cutoff — after it, systemd `SIGKILL`s the daemon.
+
+## Visual mode is owner-only
+
+`tabd` has a second mode that drives the human's everyday browser (their real
+profile and logins) instead of a throwaway one. It runs as a separate daemon
+with its own base directory, so it coexists with the headless one.
+
+**An agent cannot use it.** A visual daemon serves `daemon.ping`,
+`daemon.health`, `daemon.shutdown`, `browser.ensure` and `browser.status`, and
+rejects every other action with `errorCode: "visual_mode_unsupported"`. If you
+see that error, you have reached the wrong daemon: unset or change
+`$TABD_BASE_DIR`, or pass `--base-dir`, to get back to the headless one.
+
+Setting it up (`tabd service install`, `tabd profile import`) is an owner task
+and is documented in the project README, not here.

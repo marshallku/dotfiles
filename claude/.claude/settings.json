@@ -243,6 +243,7 @@
   "effortLevel": "high",
   "tui": "fullscreen",
   "skipDangerousModePermissionPrompt": true,
-  "agentPushNotifEnabled": true,
-  "switchModelsOnFlag": true
+  "switchModelsOnFlag": false,
+  "inputNeededNotifEnabled": true,
+  "agentPushNotifEnabled": true
 }
