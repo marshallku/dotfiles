@@ -110,7 +110,28 @@ hypr_workspace() {
 # TOGGLE for any non-table argument, and likewise for a table without an
 # `action` key -- so both hl.dsp.dpms("on") and hl.dsp.dpms({ state = "on" })
 # silently mean "toggle". Accepted values: on/enable, off/disable, toggle.
+#
+# Hyprland 0.57.x on NVIDIA: DPMS off releases each output's CRTC, and the
+# re-assignment on wake fails its atomic commit with EINVAL ("crtc N failed
+# restore"); the compositor then dies without a crash report and start-hyprland
+# restarts it in --safe-mode (hyprlock "died"). Observed 2026-11-01; upstream
+# aquamarine#428/#429/#433, omarchy#17045. While the running compositor is 0.57,
+# powering outputs down is refused (screens stay on, lock still works). "on"
+# stays allowed: it is a no-op for outputs that never went off.
+# HYPR_DPMS_FORCE=1 bypasses the guard to test a fixed build.
+_hypr_dpms_unsafe() {
+    [ "${HYPR_DPMS_FORCE:-0}" = 1 ] && return 1
+    case "$(hyprctl version 2>/dev/null)" in
+        *"Tag: v0.57."*) return 0 ;;
+    esac
+    return 1
+}
+
 hypr_dpms() {
+    if [ "$1" != on ] && [ "$1" != enable ] && _hypr_dpms_unsafe; then
+        printf 'hypr_dpms: refusing "%s" on Hyprland 0.57 (NVIDIA wake crash)\n' "$1" >&2
+        return 0
+    fi
     if [ -n "${2:-}" ]; then
         hypr_dispatch "hl.dsp.dpms({ action = \"$1\", monitor = \"$2\" })" dpms "$1" "$2"
     else

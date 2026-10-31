@@ -104,9 +104,9 @@ end
 
 -- See https://wiki.hypr.land/Configuring/Advanced-and-Cool/Environment-variables/
 
-hl.env("XCURSOR_THEME", "Bibata-Modern-Classic")
-hl.env("XCURSOR_SIZE", "24")
-hl.env("HYPRCURSOR_SIZE", "24")
+hl.env("XCURSOR_THEME", "mario-gant")
+hl.env("XCURSOR_SIZE", "32")
+hl.env("HYPRCURSOR_SIZE", "32")
 
 -- Font rendering for XWayland apps (like Cursor IDE)
 -- NOTE: the hyprlang config wrote this value with literal double quotes
