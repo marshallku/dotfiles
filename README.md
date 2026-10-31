@@ -92,8 +92,8 @@ QML types were added); it does not migrate idle or clipboard services. Installat
 checks and the optional current-session IPC check are reported separately.
 
 Private `copad`, `comux` and `coctl` binaries are optional: terminal shortcuts fall
-back to Kitty, and agent/usage readings may be unavailable. Pretendard and Bibata
-are optional; the shell uses Noto Sans CJK KR when Pretendard is absent. Grafana
+back to Kitty, and agent/usage readings may be unavailable. Pretendard is
+optional; the shell uses Noto Sans CJK KR when Pretendard is absent. Grafana
 credentials, Tailscale/VPN login, display-manager setup, hardware drivers and a
 Polkit authentication agent remain host-specific setup. No credentials are copied.
 The system-wide `fonts/` package is deliberately excluded from home Stow.

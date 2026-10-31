@@ -7,7 +7,7 @@ import unittest
 
 
 REPO = Path(__file__).resolve().parents[1]
-PACKAGES = ("hyprland", "hypridle", "hyprlock", "hyprpaper", "quickshell", "dunst", "kitty", "fcitx5")
+PACKAGES = ("hyprland", "hypridle", "hyprlock", "hyprpaper", "quickshell", "dunst", "kitty", "fcitx5", "cursor-theme")
 
 
 class DesktopInstallTests(unittest.TestCase):

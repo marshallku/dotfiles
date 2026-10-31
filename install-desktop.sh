@@ -81,7 +81,7 @@ video_types=(video/mp4 video/x-matroska video/webm video/quicktime video/x-msvid
     video/mpeg video/ogg video/x-flv video/x-ms-wmv video/3gpp video/3gpp2 video/mp2t video/x-m4v
     application/x-matroska)
 default_apps=("imv-dir.desktop|${image_types[*]}" "mpv.desktop|${video_types[*]}")
-stow_packages=(hyprland hypridle hyprlock hyprpaper quickshell dunst kitty fcitx5)
+stow_packages=(hyprland hypridle hyprlock hyprpaper quickshell dunst kitty fcitx5 cursor-theme)
 stow_args=(--dir="$repo" --target="$HOME" --no-folding '--ignore=(^|/)(__tests__|__pycache__)(/|$)')
 # One simulation across every package: abort before creating any links on conflict.
 stow "${stow_args[@]}" --simulate "${stow_packages[@]}" || fail 'Stow conflict; move conflicting files aside manually and retry'
@@ -149,7 +149,7 @@ for tool in copad comux coctl; do
 done
 [[ -f "$HOME/.config/hypr/monitors_local.lua" ]] || warn 'No local monitor layout; Hyprland will use preferred/auto outputs'
 [[ -r "$HOME/.config/grafana-homelab/config" ]] || warn 'Grafana credentials are machine-local; homelab metrics unavailable until configured'
-warn 'Pretendard/Bibata are optional personal fonts/theme; standard font/cursor fallbacks apply'
+warn 'Pretendard is an optional personal font; standard font fallbacks apply'
 if "$check" && [[ -n "${WAYLAND_DISPLAY:-}" && -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
     for unit in hypridle.service clipboard-history.service; do
         systemctl --user is-active --quiet "$unit" \
