@@ -36,7 +36,7 @@ Scope {
                 height: Math.min(580, win.height - 120)
                 anchors.horizontalCenter: parent.horizontalCenter
                 y: Math.max(48, (win.height - height) * 0.3)
-                radius: 22
+                radius: 0
                 color: Qt.rgba(0.07, 0.07, 0.11, 0.97)
                 border.color: Theme.cardBorder
                 border.width: 1
@@ -174,7 +174,7 @@ Scope {
                             required property int index
                             width: results.width
                             height: 60
-                            radius: 12
+                            radius: 0
                             color: index === LauncherModel.selected ? Theme.surface0 : hover.containsMouse ? Theme.mantle : "transparent"
                             RowLayout {
                                 anchors.fill: parent

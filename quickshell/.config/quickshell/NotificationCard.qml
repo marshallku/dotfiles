@@ -48,7 +48,7 @@ Card {
             required property var modelData
             Layout.fillWidth: true
             implicitHeight: content.implicitHeight + 24
-            radius: 12
+            radius: 0
             color: Qt.rgba(1, 1, 1, 0.035)
             border.color: modelData.critical ? Theme.red : Theme.cardBorder
 

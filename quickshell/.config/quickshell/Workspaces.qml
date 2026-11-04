@@ -13,7 +13,7 @@ Rectangle {
 
     implicitWidth: row.implicitWidth + 12
     implicitHeight: 28
-    radius: 4
+    radius: 0
     color: Qt.rgba(12 / 255, 12 / 255, 12 / 255, 0.5)
 
     // Below the buttons so it only sees the wheel; clicks land on a button.
@@ -49,7 +49,7 @@ Rectangle {
 
                 implicitWidth: label.implicitWidth + 16
                 implicitHeight: label.implicitHeight + 4
-                radius: 12
+                radius: 0
                 color: urgent ? Qt.rgba(224 / 255, 108 / 255, 117 / 255, 0.15) : area.containsMouse ? Qt.rgba(1, 1, 1, 0.05) : "transparent"
 
                 Behavior on color {

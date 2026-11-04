@@ -204,7 +204,7 @@ Card {
 
             Rectangle {
                 required property var modelData
-                radius: 8
+                radius: 0
                 color: modelData.online ? Qt.rgba(0.65, 0.89, 0.63, 0.10) : Qt.rgba(0.42, 0.44, 0.53, 0.12)
                 border.width: 1
                 border.color: modelData.online ? Qt.rgba(0.65, 0.89, 0.63, 0.35) : "transparent"

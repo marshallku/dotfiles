@@ -44,7 +44,7 @@ PopupWindow {
         anchors.bottom: parent.bottom
         implicitWidth: label.implicitWidth + 24
         implicitHeight: label.implicitHeight + 16
-        radius: 12
+        radius: 0
         color: Qt.rgba(12 / 255, 12 / 255, 24 / 255, 0.95)
         border.width: 1
         border.color: Qt.rgba(180 / 255, 160 / 255, 1, 0.15)

@@ -73,7 +73,7 @@ Rectangle {
             }
             Rectangle {
                 visible: card.error !== ""
-                radius: 6
+                radius: 0
                 color: Qt.rgba(0.95, 0.55, 0.66, 0.15)
                 implicitWidth: badge.implicitWidth + 12
                 implicitHeight: badge.implicitHeight + 4

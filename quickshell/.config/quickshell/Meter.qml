@@ -12,13 +12,13 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        radius: height / 2
+        radius: 0
         color: Theme.surface0
     }
 
     Rectangle {
         height: parent.height
-        radius: height / 2
+        radius: 0
         color: meter.color
         width: parent.width * Math.max(0, Math.min(100, meter.value || 0)) / 100
 

@@ -235,7 +235,7 @@ Scope {
 
                         implicitWidth: 120
                         implicitHeight: 132
-                        radius: 20
+                        radius: 0
                         color: isArmed ? Qt.rgba(0.95, 0.55, 0.66, 0.22) : isSelected ? Qt.rgba(0.80, 0.65, 0.97, 0.18) : Theme.cardBg
                         border.width: isSelected ? 2 : 1
                         border.color: isArmed ? Theme.red : isSelected ? Theme.mauve : Theme.cardBorder

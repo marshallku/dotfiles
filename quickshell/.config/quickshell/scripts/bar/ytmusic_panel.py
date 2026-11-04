@@ -34,18 +34,18 @@ CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "yt
 CSS = b"""
 window { background-color: transparent; }
 .card { background-color: rgba(12, 12, 24, 0.97); border: 1px solid rgba(180,160,255,0.18);
-        border-radius: 16px; }
+        border-radius: 0; }
 .title  { color: #e2e0f0; font-size: 15px; font-weight: 700; }
 .artist { color: #b8b5d0; font-size: 12px; }
 .time   { color: #8885a5; font-size: 10px; font-family: "JetBrainsMono Nerd Font", monospace; }
-.artph  { background: rgba(30,28,48,0.96); border-radius: 12px; color: #6f6c8f; font-size: 64px; }
-scale trough { min-height: 5px; background: rgba(255,255,255,0.12); border-radius: 3px; }
-scale highlight { background: #f28b82; border-radius: 3px; }
+.artph  { background: rgba(30,28,48,0.96); border-radius: 0; color: #6f6c8f; font-size: 64px; }
+scale trough { min-height: 5px; background: rgba(255,255,255,0.12); border-radius: 0; }
+scale highlight { background: #f28b82; border-radius: 0; }
 scale slider { min-width: 12px; min-height: 12px; background: #f28b82; border-radius: 50%;
                margin: -5px; }
 button.ctl { background: transparent; border: none; color: #e2e0f0; font-size: 20px;
              font-family: "JetBrainsMono Nerd Font", monospace; padding: 6px 10px; }
-button.ctl:hover { background: rgba(180,160,255,0.12); border-radius: 10px; }
+button.ctl:hover { background: rgba(180,160,255,0.12); border-radius: 0; }
 button.play { font-size: 26px; color: #f28b82; }
 """
 

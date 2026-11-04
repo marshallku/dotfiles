@@ -37,7 +37,7 @@ Scope {
                     margins: 12
                     topMargin: 52
                 }
-                radius: 24
+                radius: 0
                 color: Qt.rgba(0.07, 0.07, 0.11, 0.96)
                 border.color: Theme.cardBorder
                 border.width: 1

@@ -19,7 +19,7 @@ Rectangle {
     visible: text !== ""
     implicitWidth: label.implicitWidth + 16
     implicitHeight: 28
-    radius: 4
+    radius: 0
     color: hovered ? Qt.rgba(16 / 255, 16 / 255, 32 / 255, 0.7) : Qt.rgba(8 / 255, 8 / 255, 16 / 255, 0.5)
     border.width: 1
     border.color: Qt.rgba(180 / 255, 160 / 255, 1, hovered ? 0.15 : 0.06)

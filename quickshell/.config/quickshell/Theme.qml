@@ -32,7 +32,7 @@ Singleton {
     readonly property string mono: "JetBrainsMono Nerd Font"
     readonly property string sans: Qt.fontFamilies().includes("Pretendard") ? "Pretendard" : "Noto Sans CJK KR"
 
-    readonly property int radius: 14
+    readonly property int radius: 0
     readonly property int gap: 12
     readonly property int pad: 16
 

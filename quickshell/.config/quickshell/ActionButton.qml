@@ -7,7 +7,7 @@ Rectangle {
     signal clicked
     implicitWidth: label.implicitWidth + 24
     implicitHeight: 32
-    radius: 10
+    radius: 0
     color: active ? Theme.surface1 : area.containsMouse ? Theme.surface0 : Qt.rgba(1, 1, 1, 0.035)
     border.color: active ? Theme.mauve : Theme.cardBorder
     border.width: 1
