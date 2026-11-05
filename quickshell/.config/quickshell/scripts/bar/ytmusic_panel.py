@@ -27,18 +27,19 @@ from gi.repository import Gdk, GdkPixbuf, GLib, Gtk, GtkLayerShell  # noqa: E402
 SCRIPT_DIR = Path(__file__).resolve().parent
 STATUS_SH = SCRIPT_DIR / "ytmusic_status.sh"
 ART_SIZE = 220
-PANEL_W = ART_SIZE + 36
+PANEL_W = ART_SIZE + 38  # 18px CSS padding + 1px border on each side
 BAR_GAP = 6  # gap below the bar; its exclusive zone already reserves the bar height
 CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "ytmusic-panel"
 
 CSS = b"""
 window { background-color: transparent; }
 .card { background-color: rgba(12, 12, 24, 0.97); border: 1px solid rgba(180,160,255,0.18);
-        border-radius: 0; }
+        border-radius: 0; padding: 18px; }
 .title  { color: #e2e0f0; font-size: 15px; font-weight: 700; }
 .artist { color: #b8b5d0; font-size: 12px; }
 .time   { color: #8885a5; font-size: 10px; font-family: "JetBrainsMono Nerd Font", monospace; }
 .artph  { background: rgba(30,28,48,0.96); border-radius: 0; color: #6f6c8f; font-size: 64px; }
+scale { padding: 6px 0; }
 scale trough { min-height: 5px; background: rgba(255,255,255,0.12); border-radius: 0; }
 scale highlight { background: #f28b82; border-radius: 0; }
 scale slider { min-width: 12px; min-height: 12px; background: #f28b82; border-radius: 50%;
@@ -152,7 +153,8 @@ class Panel(Gtk.Window):
         # event-catcher so any click outside the card closes the panel.
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         root.get_style_context().add_class("card")
-        root.set_border_width(18)
+        # Padding lives in CSS: GTK3 paints the background inside set_border_width,
+        # which would leave the content flush against the card edge.
         root.set_size_request(PANEL_W, -1)
         root.set_halign(Gtk.Align.START)
         root.set_valign(Gtk.Align.START)
