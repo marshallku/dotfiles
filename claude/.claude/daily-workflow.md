@@ -77,7 +77,7 @@ claude --resume          # 이전 세션 자체를 이어서
 ### Codex 크로스체크 (다른 모델 패밀리의 독립 리뷰)
 
 ```
-/cross-review      # VERDICT 루프 + Fix-First, 최대 3라운드
+/cross-review      # VERDICT 루프 + Fix-First, 유효한 지적 동안 반복(안전 한도 10)
 /ask-codex "질문"   # 작업 중 one-shot 자문
 ```
 

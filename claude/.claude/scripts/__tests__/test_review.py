@@ -493,13 +493,22 @@ print(json.dumps({"type":"result", "subtype":"success", "session_id":session,
         self.write("code.py", "second = True\n", stage=False)
         self.assertIn("hookSpecificOutput", self.hook("remind-cross-review.sh"))
 
-    def test_three_round_cap_cannot_reset_by_omitting_resume(self):
+    def test_round_guard_cannot_reset_by_omitting_resume(self):
         self.write("code.py", "feature = True\n")
         self.env["FAKE_VERDICT"] = "REVISE"
-        for _ in range(3):
+        for _ in range(10):
             self.review("--session", "s1", status=1)
         result = self.review("--session", "s1", status=2)
-        self.assertIn("3 rounds exhausted", result.stderr)
+        self.assertIn("10 rounds exhausted", result.stderr)
+
+    def test_round_guard_is_configurable(self):
+        self.write("code.py", "feature = True\n")
+        self.env["FAKE_VERDICT"] = "REVISE"
+        self.env["CODEX_REVIEW_MAX_ROUNDS"] = "2"
+        for _ in range(2):
+            self.review("--session", "s1", status=1)
+        result = self.review("--session", "s1", status=2)
+        self.assertIn("2 rounds exhausted", result.stderr)
 
     def test_concurrent_index_change_cannot_publish_approval(self):
         self.write("code.py", "feature = True\n")
@@ -671,6 +680,7 @@ print(json.dumps({"type":"result", "subtype":"success", "session_id":session,
     def test_claude_round_cap_and_concurrent_mutation(self):
         self.write("code.py", "changed = True\n")
         self.env["FAKE_VERDICT"] = "REVISE"
+        self.env["CODEX_REVIEW_MAX_ROUNDS"] = "3"
         for _ in range(3):
             self.review("--reviewer", "claude", "--session", "s1", status=1)
         self.review("--reviewer", "claude", "--session", "s1", status=2)

@@ -300,7 +300,7 @@ log "BLOCK: $CMD — staged diff in $REPO_ROOT is unreviewed"
 # shellcheck disable=SC2016
 REASON="[pre-commit-gate] The staged diff in $REPO_ROOT (HEAD -> index, exactly what save.sh commits) has no review approval.
 Stage only this work unit (git add <paths>; unstage others with git restore --staged <paths>), then run /cross-review for session $SESSION.
-It reviews the staged diff only; unstaged edits from any session are ignored. Use its evidence-first triage and maximum three rounds.
+It reviews the staged diff only; unstaged edits from any session are ignored. Use its evidence-first triage; keep re-reviewing while findings stay valid and stop on a repeated or out-of-scope finding.
 After fixes, re-stage, run relevant tests and re-review with --resume --response-file <finding dispositions and test results>.
 On error or unresolved disagreement, report the evidence. Never fabricate an approval marker."
 

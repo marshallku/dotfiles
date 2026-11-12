@@ -1,6 +1,6 @@
 ---
 name: cross-review
-description: 구현 주체와 반대 모델로 교차 리뷰한다 (Claude 작성→Codex, Codex 작성→Claude). 작업 단위 승인 재사용, 근거 검증, 수정분 재리뷰, 최대 3라운드.
+description: 구현 주체와 반대 모델로 교차 리뷰한다 (Claude 작성→Codex, Codex 작성→Claude). 작업 단위 승인 재사용, 근거 검증, 수정분 재리뷰, 유효한 지적이 이어지는 동안 반복(안전 한도 10라운드).
 user-invocable: true
 allowed-tools: Bash, Read, Grep, Glob, Edit
 effort: high
@@ -81,8 +81,14 @@ bash ~/.claude/scripts/codex-review.sh --reviewer "$REVIEWER" --session "$SESSIO
 
 재리뷰는 직전 스테이징 tree 이후 diff와 response만 전달한다. 관련 호출자 검토는 허용한다.
 컨텍스트가 달라졌거나 thread가 없으면 전체 리뷰로 전환한다.
-같은 미완료 작업을 다시 호출하면 자동으로 resume하며, 최대 3라운드로 제한한다. 한도를 우회하려고 fresh로 다시 시작하지 않는다.
-같은 CRITICAL이 수정·반박 후에도 반복되면 자동 수정을 중단하고 양쪽 근거를 사용자에게 제시한다.
+같은 미완료 작업을 다시 호출하면 자동으로 resume한다. 라운드 수 자체로 멈추지 않는다 — 매 라운드 지적이
+검증된 유효·범위 내 지적이면 수정하고 계속 재리뷰한다. 다음 경우에만 자동 루프를 멈추고 양쪽 근거를 사용자에게 제시한다:
+
+- 같은 CRITICAL이 수정·반박 후에도 반복된다.
+- 남은 지적이 전부 무효이거나 범위 밖이다(직전 수정과 무관한, 이번 변경이 건드리지 않은 코드의 새 지적).
+
+`CODEX_REVIEW_MAX_ROUNDS`(기본 10, `0`=무제한)는 반복 감지를 놓쳤을 때의 폭주 방지 장치일 뿐이다.
+한도에 걸리면 보고한다. 한도를 우회하려고 fresh로 다시 시작하지 않는다.
 
 ## 승인과 보고
 

@@ -7,9 +7,15 @@ review_head_tree() {
     printf '%s\n' "$tree"
 }
 
+# review_snapshot <repo> [path...]
+# The working tree as a tree object. With paths, only those are taken from the
+# working tree and the rest stays at the index: a fresh scratch index has no stat
+# cache, so `add -A .` hashes the whole tree (1.5-3.9 s in a large repo), and the
+# prompt hook used to pay that twice per repository the session touched.
 review_snapshot() (
     set -e
     cd "$1" || return 1
+    shift
     local scratch
     scratch=$(mktemp -d "${TMPDIR:-/tmp}/review-index.XXXXXX") || return 1
     trap 'rm -rf "$scratch"' EXIT
@@ -17,9 +23,33 @@ review_snapshot() (
     export GIT_INDEX_FILE="$scratch/index"
     git read-tree "$(review_head_tree "$PWD")" || return 1
     git update-index -z --index-info < "$scratch/staged" || return 1
-    git add -A -- . || return 1
+    if [ $# -gt 0 ]; then
+        _review_add_paths "$@" || git add -A -- . || return 1
+    else
+        git add -A -- . || return 1
+    fi
     git write-tree
 )
+
+# Stage the named paths the way `add -A .` would: present or tracked (a deletion),
+# and not ignored unless tracked.
+_review_add_paths() {
+    local path ignored=$'\n'
+    local -a keep=()
+    # check-ignore rejects literal pathspec magic, so only ls-files/add get it.
+    while IFS= read -r -d '' path; do
+        ignored+="$path"$'\n'
+    done < <(printf '%s\0' "$@" | git check-ignore -z --stdin 2>/dev/null || true)
+    while IFS= read -r -d '' path; do
+        [[ "$ignored" != *$'\n'"$path"$'\n'* ]] && keep+=("$path")
+    done < <({
+        for path in "$@"; do
+            if [ -e "$path" ] || [ -L "$path" ]; then printf '%s\0' "$path"; fi
+        done
+        GIT_LITERAL_PATHSPECS=1 git ls-files -z -- "$@"
+    } | LC_ALL=C sort -zu)
+    [ ${#keep[@]} -eq 0 ] || GIT_LITERAL_PATHSPECS=1 git add -A -- "${keep[@]}"
+}
 
 # The tree save.sh would commit: the real index, written through a copy so the
 # user's index file (and its cache-tree) is never touched.
@@ -170,21 +200,60 @@ review_ignored() {
 # review_session_paths <repo> <session>
 # Repo-relative paths this session wrote through Edit/Write (dirty-<session>.log).
 review_session_paths() {
-    local log="$HOME/.claude/state/dirty-$2.log"
+    local top path
+    review_session_resolved "$2" | while IFS=$'\t' read -r top path; do
+        case "$path" in "$1"/*) printf '%s\n' "${path#"$1"/}" ;; esac
+    done | LC_ALL=C sort -u
+}
+
+# review_session_resolved <session>
+# "<toplevel>\t<physical path>" for each path in dirty-<session>.log. Resolving
+# forks per path and every reminder asked once per repository, twice, so a long
+# session outgrew the 5 s prompt hook (140 paths, 4 repos: 8.8 s). Cached beside
+# the log, keyed on its size: the log is append-only.
+review_session_resolved() {
+    local log="$HOME/.claude/state/dirty-$1.log" cache size header="" tmp
     [ -f "$log" ] || return 0
-    _review_resolve "$1" "$log"
+    cache="$log.resolved"
+    size=$(wc -c < "$log") || return 1
+    size="${size//[[:space:]]/}"
+    [ ! -f "$cache" ] || read -r header < "$cache" || true
+    if [ "$header" != "# $size" ]; then
+        tmp=$(mktemp "$cache.XXXXXX") || return 1
+        # Size is read before the log: an append in between leaves a stale header,
+        # which only forces another rebuild.
+        if { printf '# %s\n' "$size"; LC_ALL=C sort -u "$log" | _review_resolve_paths; } > "$tmp"; then
+            mv -f "$tmp" "$cache"
+        else
+            rm -f "$tmp"
+            return 1
+        fi
+    fi
+    tail -n +2 "$cache"
 }
 
 # Logged paths may go through symlinks (~/.claude -> dotfiles); Git reports the
-# physical toplevel, so resolve before stripping the repository prefix.
-_review_resolve() {
-    local repo="$1" path
-    shift
-    cat "$@" 2>/dev/null | LC_ALL=C sort -u | while IFS= read -r path; do
+# physical toplevel, so resolve before stripping the repository prefix. Input is
+# sorted, so siblings reuse their directory's resolution and toplevel.
+_review_resolve_paths() {
+    local path dir last="" real_dir="" top="" probe real
+    while IFS= read -r path; do
         [ -n "$path" ] || continue
-        path=$(realpath -m -- "$path" 2>/dev/null || _review_realpath "$path")
-        case "$path" in "$repo"/*) printf '%s\n' "${path#"$repo"/}" ;; esac
-    done | LC_ALL=C sort -u
+        dir="${path%/*}"
+        if [ "$dir" != "$last" ]; then
+            last="$dir"
+            real_dir=$(_review_realpath "${dir:-/}")
+            probe="$real_dir"
+            while [ ! -d "$probe" ] && [ "$probe" != / ]; do probe="${probe%/*}"; probe="${probe:-/}"; done
+            top=$(git -C "$probe" rev-parse --show-toplevel 2>/dev/null) || top=""
+        fi
+        if [ -L "$path" ]; then
+            real=$(_review_realpath "$path")
+        else
+            real="${real_dir%/}/${path##*/}"
+        fi
+        [ -z "$top" ] || printf '%s\t%s\n' "$top" "$real"
+    done
 }
 
 # Portable `realpath -m` (macOS realpath has no -m): follows a symlinked file,
@@ -207,14 +276,10 @@ _review_realpath() {
 
 # Repositories this session wrote to through Edit/Write, plus its cwd repository.
 review_session_repos() {
-    local session="$1" cwd="$2" path dir
+    local session="$1" cwd="$2"
     {
         git -C "$cwd" rev-parse --show-toplevel 2>/dev/null
-        LC_ALL=C sort -u "$HOME/.claude/state/dirty-$session.log" 2>/dev/null | while IFS= read -r path; do
-            dir=$(dirname -- "$path")
-            while [ ! -d "$dir" ] && [ "$dir" != / ]; do dir=$(dirname -- "$dir"); done
-            git -C "$dir" rev-parse --show-toplevel 2>/dev/null
-        done
+        review_session_resolved "$session" | cut -f1
     } | awk 'NF && !seen[$0]++'
 }
 
@@ -230,12 +295,16 @@ review_path_needs_review() {
 
 # review_session_range <repo> <session>
 # Print "<base> <tree>" for this session's reminder scope: its baseline (HEAD in a
-# repository it has none for, e.g. a second repo) against the working tree.
+# repository it has none for, e.g. a second repo) against the working tree. Only
+# this session's paths are snapshotted, so diff the pair only over those paths.
 review_session_range() {
-    local base tree
+    local base tree path
+    local -a paths=()
+    while IFS= read -r path; do paths+=("$path"); done < <(review_session_paths "$1" "$2")
+    [ ${#paths[@]} -gt 0 ] || return 1
     base=$(review_baseline "$1" "$2" 2>/dev/null) || base=$(review_head_tree "$1") || return 1
     git -C "$1" cat-file -e "${base}^{tree}" 2>/dev/null || return 1
-    tree=$(review_snapshot "$1") || return 1
+    tree=$(review_snapshot "$1" "${paths[@]}") || return 1
     printf '%s %s\n' "$base" "$tree"
 }
 

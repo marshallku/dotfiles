@@ -383,7 +383,7 @@ The full collaboration surface, mapped to where they belong in the workflow:
 | Quick design Q during work | `/ask-codex "q"` | foreground, read-only, 1 turn | Low-effort, treat as 30s consult. Do not use for trivia you are 80%+ confident on. |
 | Plan validation before implementation | `/codex-plan` | foreground, read-only, **multi-round** | Same codex thread across rounds via `--continue`. Frames codex as adversarial planner, not implementer. |
 | Sub-task delegation | `/codex-delegate` | **background, write** | Codex actually edits files. Returns job id; check progress with `--status`/`--tail`/`--result`. |
-| Code review before commit | `/cross-review` | foreground, read-only, VERDICT loop | 3 rounds max, Fix-First triage. Hooks tied to exit code. |
+| Code review before commit | `/cross-review` | foreground, read-only, VERDICT loop | Runs while findings stay valid (safety limit 10), Fix-First triage. Hooks tied to exit code. |
 | Subagent wrapper | `@codex-reviewer` | — | For programmatic Agent() invocation inside other workflows like `/iterate`. |
 | Direct script calls | `bash ~/.claude/scripts/codex-{ask,review,plan,delegate}.sh` | — | For scripting / CI / piping context via stdin. |
 
@@ -461,8 +461,10 @@ that merely contains the words, so write such content with Edit/Write, not a Bas
 
 For REVISE, verify each finding before accepting it, make minimal fixes, run relevant tests,
 and send dispositions/evidence using `--resume --response-file`. Resume sends only the delta
-from the prior snapshot. Stop after three rounds or a repeated unresolved finding; present both
-sides' evidence. The skill defines this workflow for automatic and manual calls alike.
+from the prior snapshot. There is no fixed round cap: keep going while each round brings valid,
+in-scope findings. Stop and present both sides' evidence on a repeated unresolved finding, or when
+only invalid or out-of-scope findings remain (new issues in code the fixes did not touch).
+`CODEX_REVIEW_MAX_ROUNDS` (default 10, `0` = none) is a runaway guard, not a convergence target. The skill defines this workflow for automatic and manual calls alike.
 
 Snapshots (and the index tree, written through a copy of the index) create unreferenced Git
 tree/blob objects; the user's index file and branches are unchanged. They follow normal Git object retention. If Git pruning removes
@@ -549,7 +551,7 @@ User-invocable skills live at `~/dotfiles/claude/.claude/skills/<name>/SKILL.md`
 - `/ask-codex` — one-shot design consultation with Codex
 - `/codex-plan` — multi-round plan pressure-testing with Codex (pre-implementation)
 - `/codex-delegate` — delegate a sub-task to Codex (write-capable, background by default)
-- `/cross-review` — full cross-review loop with VERDICT gate (3 rounds max)
+- `/cross-review` — full cross-review loop with VERDICT gate (runs while findings stay valid; safety limit 10)
 - `/debug` — 5-phase structured debugging (3-strike + scope lock)
 - `/iterate` — one work-cycle gate (implement → unit test → e2e → build/lint/typecheck → cross-review → `~/save.sh`); pair with `/loop` to enforce the gate every cycle. **Status: invoked 0 times since it was written.** `contract-inject.sh` now injects the same gate automatically on every `/goal`·`/loop`, so the skill is a manual duplicate of an automated path. Kept because the explicit form is still the clearest way to force the gate on a single ad-hoc task — retire it if that stays theoretical.
 
@@ -602,7 +604,7 @@ Do not call it for trivia you are 80%+ confident about — noise is worse than s
 2. **Valid feedback only — Fix-First pattern**. Mechanical fixes get applied immediately; judgment calls go to the user as questions. Suppress this class of finding (do not report): style/formatting (prettier/eslint handles it), things CI already catches (lint, typecheck), subjective naming preference, "future improvement" suggestions, TODO/FIXME comments, missing test coverage (separate task), import ordering.
 3. **When you and codex disagree, surface both opinions to the user**. Do not silently pick one side. The disagreement itself is valuable signal.
 4. **Read-only by default; write-capable only via `/codex-delegate`**. `/ask-codex`, `/codex-plan`, and `/cross-review` all run codex in `read-only` sandbox so it can investigate but not edit. `/codex-delegate` is the one path that grants `workspace-write`, and the user must opt in to it explicitly. Code that codex writes via delegate should be reviewed by Claude (and ideally by `/cross-review`) before commit — same as any third-party patch.
-5. **Limit the loop**. `/cross-review` caps at 3 rounds. `/codex-plan` should also stop at ~3 rounds — beyond that the plan itself probably needs a rewrite, not more critique. If the same CRITICAL finding appears twice in a row, stop and ask the user — either codex is wrong or Claude cannot fix it cleanly.
+5. **Stop on repetition, not on a count**. `/cross-review` continues while findings are valid and in scope (round 10 is only a runaway guard); it stops on a repeated finding or when only invalid/out-of-scope findings remain. `/codex-plan` is different: stop at ~3 rounds — beyond that the plan itself probably needs a rewrite, not more critique. If the same CRITICAL finding appears twice in a row, stop and ask the user — either codex is wrong or Claude cannot fix it cleanly.
 6. **Language split — codex always English, user reply always matches user's language**. Prompts and briefs sent to codex (via any wrapper or direct `codex exec`) are always in English; codex's `~/.codex/AGENTS.md` is English and the wrapper templates are English, so this stays consistent and is more token-efficient for technical content. Replies back to the user always match the user's most recent message language, even right after a long English exchange with codex. When quoting codex output to the user, keep technical identifiers (paths, function names, error strings) verbatim but translate the surrounding narrative — do not pass codex's English prose through unchanged when the user is speaking another language.
 
 ### Integration with existing workflows

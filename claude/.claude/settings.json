@@ -135,7 +135,7 @@
           {
             "type": "command",
             "command": "bash $HOME/.claude/hooks/remind-cross-review.sh",
-            "timeout": 5
+            "timeout": 15
           },
           {
             "type": "command",
@@ -161,7 +161,7 @@
           {
             "type": "command",
             "command": "bash $HOME/.claude/hooks/auto-cross-review.sh",
-            "timeout": 10
+            "timeout": 15
           },
           {
             "type": "command",
@@ -171,7 +171,7 @@
           {
             "type": "command",
             "command": "bash $HOME/.claude/hooks/notify-stop.sh",
-            "timeout": 5
+            "timeout": 15
           },
           {
             "type": "command",

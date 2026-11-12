@@ -20,7 +20,7 @@ fi
 
 if [ -d "$STATE_DIR" ]; then
     find "$STATE_DIR" -maxdepth 1 -type f \( \
-        -name "dirty-*.log" -o -name "stop-blocked-*" -o -name "verify-blocked-*" \
+        -name "dirty-*.log" -o -name "dirty-*.log.resolved" -o -name "stop-blocked-*" -o -name "verify-blocked-*" \
         -o -name "ssot-checked-*" -o -name "compact-reinject-*" \
         \) -mtime +1 -delete 2>/dev/null || true
 

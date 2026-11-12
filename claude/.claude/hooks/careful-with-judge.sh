@@ -50,9 +50,9 @@ logv() {  # $1=verdict $2=category
 case " $STRIPPED " in
 *' rm '*|*'/rm '*)   # bare rm 또는 /bin/rm·/usr/bin/rm 등 경로 호출
     SCRATCH_CWD=0  # cwd가 scratch로 옮겨졌는지: 상대경로 타겟을 안전 취급할 근거
-    printf '%s' "$STRIPPED" | grep -Eq 'cd +/(tmp|var/tmp|dev/shm)' && SCRATCH_CWD=1
+    printf '%s' "$STRIPPED" | grep -Eq 'cd +(/private)?/(tmp|var/tmp|dev/shm)' && SCRATCH_CWD=1
 
-    SCRATCH_RE='^(/tmp(/|$)|/var/tmp/|/dev/shm/)|(^|/)target(/|$)|(^|/)\.claude/state|\.(count|log|tmp)$'
+    SCRATCH_RE='^(/tmp(/|$)|/private/(tmp|var/tmp)/.|/var/tmp/|/dev/shm/)|(^|/)target(/|$)|(^|/)\.claude/state|\.(count|log|tmp)$'
     ARTIFACT_RE='(^|/)(node_modules|dist|build|\.next|coverage|__pycache__|\.cache|\.turbo)(/|$)'
 
     CATASTROPHIC=0; UNSAFE=0; SAFE=0; ENGAGED=0
