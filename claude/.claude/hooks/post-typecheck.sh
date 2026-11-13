@@ -20,8 +20,8 @@
 # Three rules follow from that and must not be undone:
 #   1. NO `set -e`. A sensor that aborts is worse than no sensor: it reports
 #      clean. Every fallible command is handled explicitly instead.
-#   2. Every exit path logs, except the unsupported-file-extension one (see the
-#      comment at that branch). If this hook ever dies again, the gap in
+#   2. Every exit path logs, except the unsupported-file-extension one, which
+#      records a daily heartbeat instead (see the comment at that branch). If this hook ever dies again, the gap in
 #      hook-events.jsonl is the evidence.
 #   3. The checker runs ONCE and its output is reused for both the count and the
 #      detail. The old version invoked tsc twice per edit.
@@ -73,8 +73,21 @@ fi
 # so logging it would make "file this hook does not check" the highest-volume
 # record in the ledger while saying nothing about the sensor's health. Every
 # other exit path — including disabled and malformed input above — is recorded.
+# It still records one `heartbeat` a day, so a machine that only edits .lua/.sh for a
+# week shows a live hook instead of tripping harness-report's "gone silent" wire
+# (309 false trips on Linux in November).
 EXT="${FILE_PATH##*.}"
-case "$EXT" in ts|tsx|rs|go) ;; *) clean ;; esac
+case "$EXT" in
+    ts|tsx|rs|go) ;;
+    *)
+        BEAT="$HOME/.claude/state/post-typecheck-heartbeat-$(date '+%Y-%m-%d')"
+        if [ ! -e "$BEAT" ]; then
+            rm -f "$HOME"/.claude/state/post-typecheck-heartbeat-* 2>/dev/null
+            : > "$BEAT" 2>/dev/null && hook_event post-typecheck heartbeat
+        fi
+        clean
+        ;;
+esac
 
 # Nearest ancestor directory holding a project manifest.
 find_project_root() {
@@ -96,6 +109,19 @@ find_local_bin() {
     while [ "$dir" != "/" ] && [ -n "$dir" ]; do
         if [ -x "$dir/node_modules/.bin/$name" ]; then
             printf '%s\n' "$dir/node_modules/.bin/$name"
+            return 0
+        fi
+        dir=$(dirname "$dir")
+    done
+    return 1
+}
+
+# Nearest ancestor holding a Yarn Plug'n'Play manifest (.pnp.cjs).
+find_pnp_root() {
+    local dir="$1"
+    while [ "$dir" != "/" ] && [ -n "$dir" ]; do
+        if [ -f "$dir/.pnp.cjs" ]; then
+            printf '%s\n' "$dir"
             return 0
         fi
         dir=$(dirname "$dir")
@@ -147,13 +173,25 @@ case "$EXT" in
         # tsc command you are looking for" and exits 0 — the grep then finds no
         # "error TS" and the sensor reports clean. That is a silent false
         # negative, so refuse to guess.
-        TSC_BIN=$(find_local_bin "$PROJECT_ROOT" tsc) || {
-            hook_event post-typecheck skip lang=ts reason=no_local_tsc root="$PROJECT_ROOT"
-            clean
-        }
         LANG_LABEL="TypeScript"
         ERROR_RE='error TS'
-        run_checker "$TSC_BIN" --noEmit --pretty false
+        if TSC_BIN=$(find_local_bin "$PROJECT_ROOT" tsc); then
+            run_checker "$TSC_BIN" --noEmit --pretty false
+        elif PNP_ROOT=$(find_pnp_root "$PROJECT_ROOT") && command -v yarn >/dev/null 2>&1 \
+            && (cd "$PROJECT_ROOT" && yarn bin tsc >/dev/null 2>&1); then
+            # Yarn PnP has no node_modules/.bin, so this branch used to skip as no_local_tsc:
+            # 1,799 of 2,664 TS edits on the work machine, the busiest repos included.
+            # `yarn bin tsc` proves the project's own typescript resolves (not an unrelated
+            # global). --incremental keeps re-checks near 5s; its build info goes to a cache,
+            # never into the repository.
+            BUILDINFO_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/post-typecheck"
+            mkdir -p "$BUILDINFO_DIR" 2>/dev/null
+            BUILDINFO="$BUILDINFO_DIR/$(printf '%s' "$PROJECT_ROOT" | portable_md5 2>/dev/null | head -c 16).tsbuildinfo"
+            run_checker yarn tsc --noEmit --pretty false --incremental --tsBuildInfoFile "$BUILDINFO"
+        else
+            hook_event post-typecheck skip lang=ts reason=no_local_tsc root="$PROJECT_ROOT"
+            clean
+        fi
         ;;
     rs)
         [ -f "$PROJECT_ROOT/Cargo.toml" ] || { hook_event post-typecheck skip lang=rs reason=no_cargo_toml root="$PROJECT_ROOT"; clean; }

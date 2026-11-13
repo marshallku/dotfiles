@@ -65,6 +65,11 @@
             "type": "command",
             "command": "bash $HOME/.claude/hooks/block-raw-git.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/hooks/track-bash-edit.sh pre",
+            "timeout": 5
           }
         ]
       },
@@ -220,6 +225,11 @@
             "type": "command",
             "command": "bash $HOME/.claude/hooks/ssot-check-mark.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/hooks/track-bash-edit.sh post",
+            "timeout": 30
           }
         ]
       }

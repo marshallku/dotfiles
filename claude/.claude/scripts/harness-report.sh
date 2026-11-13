@@ -91,7 +91,48 @@ if [ -f "$EVENTS" ]; then
         | [.[] | select(.recent == 0 and .older > 0) | .c] | join(", ")
     ' "$EVENTS" 2>/dev/null | head -n1 | tr -d '\n')
 fi
+# post-typecheck runs only on Edit/Write. With a daily heartbeat on every edit, its silence
+# means "dead" only if this machine edited anything this week (Linux tripped 309 times in
+# November while only Bash ran there).
+if [ -n "$SILENT" ] && ! find "$STATE" -maxdepth 1 -name 'dirty-*.log' -mtime -7 2>/dev/null | grep -q .; then
+    SILENT=$(printf '%s' "$SILENT" | tr ',' '\n' | sed 's/^ *//' | grep -vx 'post-typecheck' | paste -sd, - | sed 's/,/, /g')
+fi
 [ -n "$SILENT" ] && [ "$SILENT" != "null" ] && TRIPS+=("no events in 7 days from: ${SILENT} — component may be dead (see post-typecheck, dead 2026-04→08)")
+
+# --- TW4: the install no longer matches dotfiles -------------------------------
+# A gate can only run if its files are where settings.json points. On one machine
+# ~/.claude/hooks held per-file symlinks without the _*.py helpers, and the merge policy
+# silently allowed everything; on another a retired launchd job failed every few minutes
+# for months. Neither produced a single ledger event.
+INSTALL=()
+HOOKS="$HOME/.claude/hooks"
+SRC_HOOKS=$(python3 -c 'import os,sys; print(os.path.dirname(os.path.realpath(sys.argv[1])))' "$HOOKS/_lib.sh" 2>/dev/null)
+if [ -n "$SRC_HOOKS" ] && [ -d "$SRC_HOOKS" ]; then
+    for f in "$SRC_HOOKS"/*.sh "$SRC_HOOKS"/*.py; do
+        [ -e "$f" ] || continue
+        [ -e "$HOOKS/$(basename "$f")" ] || INSTALL+=("hooks/$(basename "$f") missing (link the whole hooks directory)")
+    done
+    SRC_SETTINGS="$(dirname "$SRC_HOOKS")/settings.json"
+    if [ -f "$SRC_SETTINGS" ] && [ ! -L "$HOME/.claude/settings.json" ] \
+        && ! cmp -s "$SRC_SETTINGS" "$HOME/.claude/settings.json"; then
+        INSTALL+=("settings.json is a copy that differs from dotfiles")
+    fi
+fi
+if [ -f "$HOME/.claude/settings.json" ]; then
+    while IFS= read -r hook; do
+        [ -e "$HOOKS/$hook" ] || INSTALL+=("settings.json runs hooks/$hook, which does not exist")
+    done < <(jq -r '.. | .command? // empty' "$HOME/.claude/settings.json" 2>/dev/null \
+        | grep -oE '\.claude/hooks/[A-Za-z0-9_.-]+' | sed 's|.*/||' | sort -u)
+fi
+if [ "$(uname -s)" = Darwin ]; then
+    for plist in "$HOME"/Library/LaunchAgents/*.plist; do
+        [ -f "$plist" ] || continue
+        while IFS= read -r ref; do
+            [ -e "$ref" ] || INSTALL+=("launchd $(basename "$plist" .plist) runs missing $ref")
+        done < <(grep -oE "$HOME/\.claude/[^<\"' ]+" "$plist" 2>/dev/null | sort -u)
+    done
+fi
+[ ${#INSTALL[@]} -gt 0 ] && TRIPS+=("install drift: $(printf '%s; ' "${INSTALL[@]:0:4}")")
 
 # --- Output -------------------------------------------------------------------
 if [ "$MODE" = "tripwire" ]; then

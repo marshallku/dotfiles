@@ -20,6 +20,17 @@ if [ "$NODE_MAJOR" -lt 18 ] || { [ "$NODE_MAJOR" -eq 18 ] && [ "$NODE_MINOR" -lt
 fi
 echo "✓ node $(node -v)"
 
+# Hooks and codex wrappers run `bash` from PATH under `set -u` and expand arrays that may
+# be empty, which bash 3.2 (macOS /bin/bash) treats as unbound: every review then exits 2.
+# Claude Code sessions get Homebrew's bash first on PATH; a shell that does not (ssh,
+# launchd) runs the harness on 3.2 and fails.
+BASH_MAJOR=$(bash -c 'echo "${BASH_VERSINFO[0]}"' 2>/dev/null || echo 0)
+if [ "${BASH_MAJOR:-0}" -lt 4 ]; then
+    echo "✗ bash on PATH is $(bash -c 'echo $BASH_VERSION' 2>/dev/null) — need >=4 (macOS: brew install bash, and put /opt/homebrew/bin first on PATH)"
+    exit 1
+fi
+echo "✓ bash ${BASH_MAJOR}.x"
+
 if ! command -v codex >/dev/null 2>&1; then
     echo "✗ codex CLI not found — install first: npm i -g @openai/codex"
     exit 1

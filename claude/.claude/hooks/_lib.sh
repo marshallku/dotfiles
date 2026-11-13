@@ -34,6 +34,32 @@ portable_timeout() {
         bin=timeout
     elif command -v gtimeout >/dev/null 2>&1; then
         bin=gtimeout
+    elif command -v perl >/dev/null 2>&1; then
+        # macOS without Homebrew on PATH (ssh, launchd) has neither binary but always has
+        # perl; without this the type checker skipped as no_timeout_binary there. Same
+        # contract as `timeout -k`: the command runs in its own process group, which gets
+        # TERM at the deadline and KILL after the grace, so descendants (yarn → node → tsc)
+        # cannot outlive it or hold the caller's output pipe open. Exit 124 on timeout.
+        perl -e '
+            my ($secs, $grace) = (shift, shift);
+            my $pid = fork() // exit 127;
+            if (!$pid) { setpgrp(0, 0); exec @ARGV or exit 127 }
+            $SIG{ALRM} = sub {
+                kill "TERM", -$pid;
+                # Wait for the whole group, not just the direct child: a descendant that
+                # ignores TERM would otherwise keep running (and hold the output pipe).
+                for (1 .. $grace * 10) {
+                    waitpid($pid, 1);
+                    exit 124 unless kill 0, -$pid;
+                    select(undef, undef, undef, 0.1);
+                }
+                kill "KILL", -$pid; waitpid($pid, 0); exit 124;
+            };
+            alarm $secs;
+            waitpid($pid, 0);
+            exit($? & 127 ? 128 + ($? & 127) : $? >> 8);
+        ' "$secs" "$grace" "$@"
+        return $?
     else
         echo "[_lib] no timeout binary found (install coreutils: 'brew install coreutils')" >&2
         return 127
