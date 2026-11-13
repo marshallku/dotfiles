@@ -154,6 +154,55 @@ local function review_since_commit(root)
     })
 end
 
+-- Keep the other pane's cursor on the line that corresponds to this one, and
+-- its folds open where this pane's are. Native cursorbind can't: codediff
+-- aligns panes with filler virtual lines, not diff mode, so cursorbind follows
+-- line numbers and drifts after any insertion. Compact mode syncs zo/zc, but a
+-- jump (G, search, ]c) opens the fold in the current pane only, which shifts
+-- one pane against the other. The line mapping is codediff's own (internal
+-- API, so every call is guarded).
+local function sync_diff_cursor()
+    local ok_life, lifecycle = pcall(require, "codediff.ui.lifecycle")
+    local ok_compact, compact = pcall(require, "codediff.ui.view.compact")
+    if not (ok_life and ok_compact and lifecycle.get_session and compact.compute_corresponding_lnum) then
+        return
+    end
+    local session = lifecycle.get_session(vim.api.nvim_get_current_tabpage())
+    local win = vim.api.nvim_get_current_win()
+    -- Inline has one pane. A merge-conflict view's stored diff maps base to
+    -- modified, not the ours/theirs panes on screen, so it would mislead.
+    if not session or session.layout == "inline" or session.merge or session.result_win then
+        return
+    end
+    local panes = {
+        { win = session.original_win, side = "original" },
+        { win = session.modified_win, side = "modified" },
+    }
+    local from, to
+    for i, pane in ipairs(panes) do
+        if pane.win == win then
+            from, to = pane, panes[3 - i]
+        end
+    end
+    local changes = session.stored_diff_result and session.stored_diff_result.changes
+    if not from or not changes or not (to.win and vim.api.nvim_win_is_valid(to.win)) then
+        return
+    end
+
+    local lnum = vim.api.nvim_win_get_cursor(win)[1]
+    local open_here = vim.fn.foldclosed(lnum) == -1
+    local target = compact.compute_corresponding_lnum(changes, from.side, to.side, lnum)
+    target = math.max(1, math.min(target, vim.api.nvim_buf_line_count(vim.api.nvim_win_get_buf(to.win))))
+    vim.api.nvim_win_call(to.win, function()
+        pcall(vim.api.nvim_win_set_cursor, to.win, { target, 0 })
+        if open_here then
+            vim.cmd("silent! normal! zv")
+        end
+    end)
+    -- Opening a fold changes the partner's height above the cursor; re-align
+    vim.cmd("syncbind")
+end
+
 return {
     "esmuellert/codediff.nvim",
     cond = function() return not vim.g.vscode end,
@@ -180,6 +229,10 @@ return {
         { "<leader>gh", "<cmd>CodeDiff history %<cr>", desc = "File history" },
     },
     init = function()
+        vim.api.nvim_create_autocmd("CursorMoved", {
+            group = vim.api.nvim_create_augroup("codediff_cursor_sync", { clear = true }),
+            callback = function() vim.schedule(sync_diff_cursor) end,
+        })
         vim.api.nvim_create_autocmd("FileType", {
             pattern = "codediff-history",
             callback = function(event)
