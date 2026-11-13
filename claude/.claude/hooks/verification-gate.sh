@@ -72,8 +72,9 @@ log() {
 # Already fired once this session → let this stop proceed
 [ -f "$BLOCKED" ] && { echo '{}'; exit 0; }
 
-# Trivial change (few files) → skip
-FILE_COUNT=$(sort -u "$DIRTY_LOG" 2>/dev/null | wc -l | tr -d ' ')
+# Trivial change (few files) → skip. Scratchpad files are working notes, not code changes.
+# `|| true`: grep -v exits 1 when every line is scratch, and pipefail + set -e would kill the hook.
+FILE_COUNT=$({ grep -v -E '/claude-[0-9]+/[^/]+/[^/]+/scratchpad/' "$DIRTY_LOG" 2>/dev/null || true; } | sort -u | wc -l | tr -d ' ')
 if [ "${FILE_COUNT:-0}" -lt "$MIN_FILES" ]; then
     log "skip: only $FILE_COUNT file(s) touched (min $MIN_FILES)"
     echo '{}'; exit 0
@@ -115,15 +116,25 @@ if [ -f "$TRANSCRIPT" ]; then
             # extra user-supplied runners (exact first-token match)
             if (extra != "") { en = split(extra, ea, /[[:space:]]+/)
                 for (i=1;i<=en;i++) if (t1 == ea[i]) return 1 }
-            if (t1 ~ /^(pytest|vitest|jest|mocha|cypress|playwright|ava|tox|nextest)$/) return 1
+            if (t1 ~ /^(pytest|vitest|jest|mocha|cypress|playwright|ava|tox|nextest|bats)$/) return 1
+            # tabd drives a real browser: any page action is an e2e check (daemon/help are not).
+            if (t1 == "tabd" && t2 != "" && t2 !~ /^(daemon|help|-h|--help|--version|version)$/) return 1
+            if (t1 ~ /^(flutter|swift|deno|dotnet|mvn|gradle|gradlew)$/ && t2 ~ /^(test|drive)$/) return 1
+            if (t1 == "xcodebuild") { for (i=2;i<=n;i++) if (a[i] ~ /^test(-without-building)?$/) return 1 }
+            # Project test scripts: ./scripts/e2e.sh, bash scripts/test-native.sh, ...
+            script = t1
+            if (t1 ~ /^(bash|sh|zsh)$/) { script = t2; sub(/^.*\//, "", script) }
+            if (script ~ /\.sh$/ && script ~ /(^|[-_.])(e2e|tests?)([-_.]|$)/) return 1
             if (t1 == "deploy-remote") return 1
             if (t1 ~ /^python(3(\.[0-9]+)?)?$/ && t2 == "-m" && t3 ~ /^(unittest|pytest)$/) return 1
             if (t1 == "cargo" && t2 ~ /^(test|nextest|run)$/) return 1
             if (t1 == "go"    && t2 ~ /^(test|run)$/) return 1
-            if (t1 == "npx"   && t2 ~ /^(playwright|vitest|jest|cypress|mocha|ava)$/) return 1
+            if (t1 ~ /^(npx|bunx)$/ && t2 ~ /^(playwright|vitest|jest|cypress|mocha|ava)$/) return 1
             if (t1 ~ /^(npm|pnpm|yarn|bun)$/) {
                 script = t2
-                if (t2 ~ /^(run|run-script|exec)$/) script = t3
+                if (t2 ~ /^(run|run-script|exec|dlx|x)$/) script = t3
+                # `yarn vitest run`, `pnpm exec playwright test`: the runner binary itself.
+                if (script ~ /^(vitest|jest|playwright|cypress|mocha|ava)$/) return 1
                 if (script ~ /^(test|test:.+|e2e|e2e:.+|dev|start|serve|preview)$/) return 1
             }
             if (t1 == "make") {
@@ -188,6 +199,8 @@ REASON="[verify-gate] You changed code across $FILE_COUNT files this session, bu
 1. If the change is verifiable, RUN it — unit tests for the touched code, and an e2e / real-app check if behaviour changed (per the project's usual command: cargo test, vitest, playwright, make run, deploy-remote, etc.). Report the actual result, not an assumption.
 2. If verification genuinely does not apply (docs/config/pure-rename, or a library-internal change unit tests already cover), say so in ONE line with the reason, then conclude.
 
-Do NOT claim the work is done while silently skipping verification — that is the exact failure this gate exists to catch. This fires at most once per session. Opt-out: touch ~/.claude/state/verify-gate-disabled"
+Do NOT claim the work is done while silently skipping verification — that is the exact failure this gate exists to catch. This fires at most once per session. Opt-out: touch ~/.claude/state/verify-gate-disabled
+
+$STOP_REPLY_NOTE"
 
 jq -n --arg r "$REASON" '{decision: "block", reason: $r}'

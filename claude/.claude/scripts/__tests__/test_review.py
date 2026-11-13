@@ -483,6 +483,24 @@ print(json.dumps({"type":"result", "subtype":"success", "session_id":session,
             self.assertEqual(self.verify_gate(command, f"v{i}"), {}, command)
         self.assertEqual(self.verify_gate("python3 -m http.server", "v9")["decision"], "block")
 
+    def test_verify_gate_counts_package_manager_runners_browsers_and_test_scripts(self):
+        commands = ("yarn vitest run src", "pnpm exec playwright test", "bunx vitest", "yarn dlx jest",
+                    "tabd navigate http://localhost:3000", "flutter test", "swift test",
+                    "xcodebuild -scheme App test", "bash scripts/e2e-native.sh", "./scripts/test.sh")
+        for i, command in enumerate(commands):
+            self.assertEqual(self.verify_gate(command, f"r{i}"), {}, command)
+        for i, command in enumerate(("tabd daemon start", "cat vitest.config.ts", "bash scripts/build.sh")):
+            self.assertEqual(self.verify_gate(command, f"n{i}")["decision"], "block", command)
+
+    def test_verify_gate_ignores_scratchpad_notes_and_speaks_to_the_user(self):
+        transcript = self.root / "scratch.jsonl"
+        transcript.write_text("")
+        scratch = "/tmp/claude-1000/-home-u/0a1b/scratchpad"
+        (self.home / ".claude/state/dirty-sc.log").write_text(f"{scratch}/a.md\n{scratch}/b.md\n")
+        self.assertEqual(self.hook("verification-gate.sh", session_id="sc", transcript_path=str(transcript)), {})
+        block = self.verify_gate("ls", "lang")
+        self.assertIn("language of their last message", block["reason"])
+
     def test_reminder_deduplicates_snapshot(self):
         self.write("code.py", "first = True\n", stage=False)
         self.assertIn("hookSpecificOutput", self.hook("remind-cross-review.sh"))

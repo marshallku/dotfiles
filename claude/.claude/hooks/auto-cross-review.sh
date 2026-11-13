@@ -38,5 +38,7 @@ fi
 review_stop_record "$REPO" "$SESSION" "$TREE"
 hook_log auto-cross-review "BLOCK: unreviewed session edits in $REPO"
 hook_event auto-cross-review block repo="$REPO"
-REASON="[auto-review] Files this session edited in $REPO are unreviewed. After relevant tests pass, stage exactly this work unit (git add <paths>) and run /cross-review for session $SESSION; it reviews the staged diff only. Follow the skill's evidence-first triage and response-file; continue while findings stay valid. Report errors or unresolved findings; do not claim approval."
+REASON="[auto-review] Files this session edited in $REPO are unreviewed. After relevant tests pass, stage exactly this work unit (git add <paths>) and run /cross-review for session $SESSION; it reviews the staged diff only. Follow the skill's evidence-first triage and response-file; continue while findings stay valid. Report errors or unresolved findings; do not claim approval.
+
+$STOP_REPLY_NOTE"
 jq -n --arg reason "$REASON" '{decision:"block", reason:$reason}'

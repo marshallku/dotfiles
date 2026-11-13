@@ -83,6 +83,7 @@ class BridgeTests(unittest.TestCase):
         result = self.hook("Stop", stop_hook_active=False)
         self.assertEqual(result["decision"], "block")
         self.assertIn("cross-review", result["reason"])
+        self.assertIn("language of their last message", result["reason"])  # reply to the user, not the hook
         self.git("add", "code.py")  # the commit gate judges the staged index only
         commit = self.hook("PreToolUse", tool_name="Bash", tool_input={"command": "~/save.sh 'Fix test'"})
         self.assertEqual(commit["hookSpecificOutput"]["permissionDecision"], "deny")

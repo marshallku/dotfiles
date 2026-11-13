@@ -168,6 +168,11 @@ hook_permission() {
         '{hookSpecificOutput:{hookEventName:"PreToolUse", permissionDecision:$d, permissionDecisionReason:$r}}'
 }
 
+# Appended to every Stop-hook block reason. The reason becomes the last input of the
+# turn, so the model answered the (English) hook in English — "한글로 말해줘" was typed
+# 48 times across two machines. The reply is for the user, not for the hook.
+STOP_REPLY_NOTE="When you reply after doing this, write to the user in the language of their last message, not to this hook."
+
 # --- Observability ------------------------------------------------------------
 # One timestamp format and one machine-readable event stream for the whole
 # harness. Both are best-effort and always return 0 — every hook runs under
