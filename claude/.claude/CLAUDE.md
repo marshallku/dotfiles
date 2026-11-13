@@ -370,252 +370,82 @@ If you can only read a few things, read these:
 
 ---
 
-## 🤝 Codex Cross-Check (Agent Orchestration)
+## 🤝 Codex Cross-Check & Harness Rules
 
-You are not alone. OpenAI Codex CLI is installed and configured as a peer reviewer / consultant. Treat it as another senior engineer in the room — a different model family with different failure modes, which is exactly why it is useful for cross-checking.
+OpenAI Codex CLI is a peer reviewer from a different model family. These are the rules;
+the why, the hook registry, the ledgers and the history of what broke are in
+`~/dotfiles/claude/.claude/hooks/README.md` — read it before changing the harness.
 
-### The tools
+### Tools
 
-The full collaboration surface, mapped to where they belong in the workflow:
-
-| Stage | Tool | Mode | Notes |
-|---|---|---|---|
-| Quick design Q during work | `/ask-codex "q"` | foreground, read-only, 1 turn | Low-effort, treat as 30s consult. Do not use for trivia you are 80%+ confident on. |
-| Plan validation before implementation | `/codex-plan` | foreground, read-only, **multi-round** | Same codex thread across rounds via `--continue`. Frames codex as adversarial planner, not implementer. |
-| Sub-task delegation | `/codex-delegate` | **background, write** | Codex actually edits files. Returns job id; check progress with `--status`/`--tail`/`--result`. |
-| Code review before commit | `/cross-review` | foreground, read-only, VERDICT loop | Runs while findings stay valid (safety limit 10), Fix-First triage. Hooks tied to exit code. |
-| Subagent wrapper | `@codex-reviewer` | — | For programmatic Agent() invocation inside other workflows like `/iterate`. |
-| Direct script calls | `bash ~/.claude/scripts/codex-{ask,review,plan,delegate}.sh` | — | For scripting / CI / piping context via stdin. |
-
-All four user-facing skills (`/ask-codex`, `/codex-plan`, `/codex-delegate`, `/cross-review`) route through `~/.claude/scripts/codex-exec.sh`, a thin runner over `codex exec --json`. Its contract: **stdout = the final assistant message only** (safe to parse for `VERDICT:`), **stderr = rendered progress** (`🧵 thread` / `🟢 turn started` / `▶ command` / `✓ exit N` / `💬 message` / `🔵 turn completed`), so codex is not a black box. Exit codes: `0` ok · `2` error · `3` resume unavailable · `124` timeout.
-
-- **Thread resume is by explicit id.** `--thread-key KEY` persists the thread id under `~/.claude/state/codex-threads/<key>`; `--resume` continues exactly that thread. Keys are `plan-<repo_hash>` and `review-<repo_hash>-<session_hash>`, so an `/ask-codex` between VERDICT rounds can no longer hijack a resume — the failure mode of the old workspace-wide `--resume-last`. A missing or GC'd thread exits `3` and the wrapper degrades to a fresh round instead of failing.
-- **Delegate jobs are plain files** at `~/.claude/state/codex-jobs/<repo-hash>/<id>.{meta,log,out,prompt}`. A background job is its own process group (`setsid`, or perl `POSIX::setsid` on macOS; the job confirms startup before the parent hands over the active lock), so `--cancel` takes down codex and its tool commands together; liveness is verified against the recorded process start time, so a recycled pid can't fake a running job.
-- **Notifications are native again.** `codex exec` invokes the `notify` program from `~/.codex/config.toml`, so a finished turn pings the user by itself. Wrappers call `notify_codex_done` only for outcomes codex never reports (empty diff, timeout, spawn failure) — adding it to a success path double-pings.
-
-> Migrated 2026-08-02 from the @openai/codex-plugin-cc app-server runtime (`~/dev/codex-plugin-cc` + `codex-companion.sh`). It was never installed as a Claude Code plugin (only its `codex-companion.mjs` was used, as a node CLI), its background job manager had 11 uses total — all on setup day — and its broker daemon had no idle timeout, leaking an 85–290 MB process pair per workspace until reboot. That leak was the sole reason `reap-codex-brokers.sh` + a launchd timer existed; both are gone.
-
-Codex also auto-loads `~/.codex/AGENTS.md`, which mirrors this user's coding profile — so any codex call already follows the same principles (Rule of Three, anti-patterns, review format with `VERDICT:` contract).
-
-### Waiting on codex — block foreground, do NOT poll
-
-Codex calls (`/codex-plan`, `/cross-review`, a heavy `/ask-codex`) are slow — a multi-round plan or review runs for minutes. The wrong pattern, observed repeatedly in past sessions, is to launch codex and then wait on it with the **Monitor** tool (poll-for-condition), which times out and forces a manual re-arm. Each re-arm burns a turn and the loop reads as "still waiting" when nothing is actually progressing. That polling — not foreground execution — was the actual friction. Don't do it.
-
-**Default: run the codex wrapper script foreground and block on it — ALWAYS pass an explicit `timeout`.** In the work-unit gate a cross-review or plan is the step that decides whether you commit; you wait on its verdict regardless, so there is nothing to overlap.
-
-The one thing that makes foreground "look broken": the Bash tool's **default timeout is 120 s (2 min)**, but a real review/plan runs 3–8 min (the wrappers' own internal caps are 540 s for review, 420 s for plan). With the default, the Bash call is killed at 2 min and you see a half-finished review that "just exited" — so **set `timeout: 600000`** (the 10-min Bash maximum) on every foreground codex call. That, not backgrounding, is the fix. `notify_codex_done` still pings you on completion so you can step away during the wait.
-
-**Do NOT background a gating review/plan.** A `run_in_background` Bash call returns instantly, so with nothing else to do you end the turn — the session goes idle and the verdict arrives detached from the flow. That is exactly the "nothing executes, it just exits" symptom. Background is only for the rare case where you have genuine independent work to do alongside codex (and never edit the same files codex is reviewing); there a backgrounded Bash command re-invokes you automatically when it exits.
-
-- Codex call gating the next step (the usual case) → **foreground, `timeout: 600000`, block.**
-- Codex call with real parallel work alongside (rare) → `run_in_background: true`, continue; you are re-invoked when it exits.
-- **Never** → a `Monitor` poll-loop + re-arm, or a hand-rolled "poll for completion marker" background script, for a *local* codex job. Reserve `Monitor`/`ScheduleWakeup` for external state the harness cannot observe (a remote CI run, a deploy), never for a background job the harness already tracks.
-
-### Auto-review — work-unit approval
-
-**The work unit is the staged index.** `save.sh` commits the index only, so the commit gate and
-the review both judge exactly that: `HEAD -> index`. Stage this work unit (`git add <paths>`), then
-`/cross-review` (`codex-review.sh --session <id>`); unstaged and untracked files — another
-session's edits in the same directory included — are in neither the review nor the gate. Nothing
-staged → the review exits 2 instead of approving. `--base` does not apply; no baseline is needed.
-
-Approval is content-addressed: `reviewed-<repo-hash>-<index-tree>` records the HEAD tree it was
-reviewed against and the reviewer set. It is not bound to a session, so sessions never overwrite
-each other's approval and any session may commit a reviewed tree. Further `git add`, or HEAD
-moving, makes the pair stop matching. Unstaged edits never invalidate it. `--files`, `--focus`,
-`--uncommitted` and branch mode are advisory and never approve. Markers older than 7 days are
-GC'd by `session-start.sh`.
-
-The commit, Stop and prompt hooks share path eligibility. Documentation-only changes may skip;
-single-file implementation, configuration and dependency changes still require review. A
-repo-root `.reviewignore` (bash globs, `*` crosses `/`) marks automation-written data (bot memory,
-sync metadata) as doc-like; protected paths (`SKILL.md`, `AGENTS.md`, `CLAUDE.md`, `.claude/*`,
-`.codex/*`, `.reviewignore` itself) always require review.
-The commit gate counts every staged path, whoever wrote it (Bash edits leave no log). The prompt
-and Stop reminders count only files **this session** wrote through Edit/Write
-(`dirty-<session>.log`) that changed since its baseline (working tree at SessionStart, advanced
-to the approved staged tree on approval), in every repo it edited plus its cwd repo. They
-de-duplicate on the fingerprint of that session-own diff, so another session editing the same
-repo neither triggers nor re-arms them. Stop additionally fires at most once per
-`AUTO_REVIEW_STOP_COOLDOWN` (20 min) while changes keep landing; a new approval re-arms it.
-`pre-commit-gate` judges the repository each command really commits in
-(`hooks/_commit_targets.py`): reading `save.sh` (`grep`/`head`/`cat`) is not a commit, and
-`cd ~/docs && ~/save.sh` is judged in `~/docs`; any shape it cannot fully parse falls back to the
-old substring match. Empty/legacy `reviewed-*` markers are not approvals. Global opt-out remains
-`~/.claude/state/auto-review-disabled`, only when requested by the user.
-
-**Attribution is blocked at commit time** in three layers: `commit-policy-gate.sh`, `~/save.sh`
-and the global `commit-msg` hook all reject a message line that starts with a co-author trailer
-(anyone, not only AI) or the Claude Code "Generated with" line; the hook also catches the
-`--trailer` / separate `-m` forms. Mid-line mentions (docs about the policy) pass.
-GitHub writes merge commits server-side, past every git hook: its default squash message
-(`COMMIT_MESSAGES`) appends `Co-authored-by:` for other authors and for trailers in the branch
-commits. So the hook (`hooks/_gh_merge_policy.py`) denies `gh pr merge` (squash/merge) and
-`gh api .../pulls/N/merge` without an explicit `--body` / `commit_message`. Pass a short summary,
-or `--body ""` for the title only. `--rebase` replays commits under their own authors and passes.
-It also checks `gh pr create|edit|merge` titles, bodies and `--body-file` for the same lines.
-Hook denials must use `hookSpecificOutput.permissionDecision`: the old top-level
-`{permissionDecision}` shape was silently ignored, so `commit-policy-gate` and `block-raw-git`
-were log-only until 2026-10-30. Both now really deny; `block-raw-git` also matches a heredoc
-that merely contains the words, so write such content with Edit/Write, not a Bash heredoc.
-
-For REVISE, verify each finding before accepting it, make minimal fixes, run relevant tests,
-and send dispositions/evidence using `--resume --response-file`. Resume sends only the delta
-from the prior snapshot. There is no fixed round cap: keep going while each round brings valid,
-in-scope findings. Stop and present both sides' evidence on a repeated unresolved finding, or when
-only invalid or out-of-scope findings remain (new issues in code the fixes did not touch).
-`CODEX_REVIEW_MAX_ROUNDS` (default 10, `0` = none) is a runaway guard, not a convergence target. The skill defines this workflow for automatic and manual calls alike.
-
-Snapshots (and the index tree, written through a copy of the index) create unreferenced Git
-tree/blob objects; the user's index file and branches are unchanged. They follow normal Git object retention. If Git pruning removes
-a reminder baseline, that session's reminders go quiet (the commit gate needs none). Do not prune
-objects during an active review.
-Usage telemetry records round, snapshot, resume, verdict, elapsed time and cached tokens; missing
-usage is explicitly marked. The actual model remains unknown unless reported by the CLI.
-
-### Intent capture — DISABLED 2026-06-30, kept for reference
-
-The `intent-capture.sh` PreToolUse hook is **not registered** in settings.json.
-It fired 7,713 times in its last week for ~2 intent files (≈58% of all hook log
-noise) and produced zero acks after 2026-05-29, so it was unregistered rather
-than tuned. The script, `intent-finalize.sh`, and `pre-commit-gate.sh`'s intent
-branch all still exist; `AUTO_INTENT_SOFT_GATE` defaults to `1`, so the
-pre-commit intent branch is inert.
-
-What it did: before the first non-trivial edit, write a SourceItem to
-`~/docs/sources/sessions/<repo-slug>/<date>-session-<id>.md` carrying
-`goal` / `acceptance_criteria` / `out_of_scope` / `assumptions` / `verification.e2e`,
-get the user to ack it, then let `codex-review.sh --intent-file` review the diff
-as *code-vs-intent* instead of *code-vs-prompt*.
-
-**To revive:** re-register the `Edit|Write` PreToolUse block, set
-`AUTO_INTENT_SOFT_GATE=0`, and fix the fire-rate problem first — it blocked on
-every edit, not once per session. `/cross-review` currently falls back to
-inline-brief mode, which covers most of the value.
-
-
-### Complete hook registry
-
-| Hook | Event | Matcher | Purpose |
-|---|---|---|---|
-| `careful-with-judge.sh` | PreToolUse | Bash | Dangerous-command pattern match (rm -r, DROP TABLE, force push…) → LLM-judge only when matched |
-| `freeze.sh` | PreToolUse | Edit/Write | Block edits outside `~/.claude/freeze-dir.txt` scope (night-agent sandbox) |
-| `protect-secrets.sh` | PreToolUse | Edit/Write | Deny writes to `.env`, `.secrets`, `credentials`, `*.pem`, `*.key`, `id_rsa*` |
-| `intent-capture.sh` | PreToolUse | Edit/Write | **DISABLED 2026-06-30** (unregistered from settings.json — 7713 fires/wk for ~2 intent files; soft-gate produced ~58% of hook noise with near-zero output). Script kept; re-register the Edit\|Write block to revive. Capture user intent (SourceItem in `~/docs/sources/sessions/`) before non-trivial sessions accumulate drift |
-| `pre-commit-gate.sh` | PreToolUse | Bash | Block `save.sh`/`git commit` until the staged diff (HEAD → index) has a matching `reviewed-<repo>-<tree>` approval AND (hard-gate mode) acked intent file |
-| `commit-policy-gate.sh` | PreToolUse | Bash | Deny commits whose message has a line starting with a co-author trailer (anyone) or the "Generated with Claude Code" line; deny `gh pr merge`/API merges without an explicit body (GitHub's default squash message adds co-authors) and attribution in PR text. Opt-out: `commit-policy-disabled` |
-| `block-raw-git.sh` | PreToolUse | Bash | UNCONDITIONALLY deny raw `git commit` (incl. `-C`/composed forms); allows save.sh and every other git subcommand (push, tag, …). Forces all commits through `~/save.sh`. Opt-out: `raw-git-block-disabled` |
-| `plan-ssot-gate.sh` | PreToolUse | ExitPlanMode | Block presenting a plan until the session has consulted ~/docs (a `dn search`/`tag`/`related` query → `ssot-checked-<session>` marker). Per-session: one consult clears the gate for the session. No-op when `dn`/`~/docs` absent. Opt-out: `ssot-gate-disabled` |
-| `track-edit.sh` | PostToolUse | Edit/Write | Append edited file path to `~/.claude/state/dirty-<session>.log`; review validity is checked from Git content |
-| `ssot-check-mark.sh` | PostToolUse | Bash | Detect `dn search`/`tag`/`related` and touch `ssot-checked-<session>`; this is what clears `plan-ssot-gate.sh` |
-| `post-typecheck.sh` | PostToolUse | Edit/Write | **The computational sensor.** Runs the project's `tsc --noEmit` / `cargo check` / `go vet ./...` once per edit and feeds errors back as `additionalContext`. Requires a *local* `tsc` (walks up for workspace hoisting) — bare `npx tsc` resolves to an unrelated binary and silently reports clean. Logs every outcome (pass/fail/skip/timeout/checker_error) to the event ledger. **Was silently dead 2026-04-21 → 2026-08-31**: `set -e` + an unguarded pipefail pipeline killed it on the error path only. Runs without `set -e` now — do not re-add it. Opt-out: `post-typecheck-disabled` |
-| `session-start.sh` | SessionStart | — | Load this repo's handoff (`handoffs/repo-<hash>.md`; `latest.md` only outside a repo or when it points into this repo) into systemPrompt; GC stale state files (incl. `intent-active-*` older than 7d); rotate `hooks-debug.log` + the two JSONL ledgers |
-| `remind-cross-review.sh` | UserPromptSubmit | — | Inject additionalContext reminding Claude to run codex-review before concluding |
-| `contract-inject.sh` | UserPromptSubmit | — | On `/goal`·`/loop` activation, inject the per-work-unit autonomous-loop contract as additionalContext so the user need not retype it (non-blocking). Opt-out: `contract-inject-disabled` |
-| `verification-gate.sh` | Stop | — | Block stop once/session when code changed but no test/e2e/run/deploy command was actually executed this session (scans executed Bash commands, not output text; excludes build/typecheck). Single-shot, so a genuinely-N/A change is handled by stating the reason once. Sibling to auto-cross-review (did *you* run it? vs. did a reviewer see it?). Opt-out: `verify-gate-disabled` |
-| `auto-cross-review.sh` | Stop | — | Remind (block once) per state of this session's own unreviewed Edit/Write files, at most once per 20-min cooldown; avoids recursive Stop hooks |
-| `auto-handoff.sh` | Stop | — | Capture git status + branch + recent log to `~/.claude/handoffs/latest.md` and `repo-<hash>.md` for the next session in that repo |
-| `harness-report.sh --tripwire` | SessionStart | — | Trip wires over the two ledgers: codex spend >2x the 6-day mean, a sensor erroring/timing out, or a component that used to emit events going silent for 7d. Silent unless something trips. Opt-out: `tripwire-disabled` |
-
-### Observability — the two ledgers
-
-Everything the harness does is recorded in three places. This layer exists
-because `post-typecheck.sh` was dead for four months and nothing noticed: the
-harness could enforce a gate but could not answer "is a component that used to
-work still working?".
-
-| Sink | Written by | Shape |
+| Stage | Tool | Notes |
 |---|---|---|
-| `~/.claude/hooks-debug.log` | `hook_log <component> <msg>` in `_lib.sh` | `[YYYY-MM-DD HH:MM:SS] component: message` |
-| `~/.claude/state/hook-events.jsonl` | `hook_event <component> <event> [k=v…]` | one JSON object per line: `ts` (UTC), `component`, `event`, plus arbitrary fields |
-| `~/.claude/state/codex-usage.jsonl` | `record_usage` in `codex-exec.sh` | per-run token spend: `day`, `thread_key`, `model`, `status`, `input_tokens`, `output_tokens`, `total_tokens` |
+| Quick design question | `/ask-codex "q"` | read-only, one turn. Not for things you are 80%+ sure of. |
+| Plan pressure test | `/codex-plan` | read-only, multi-round; stop at ~3 rounds. Use for risky or wide plans, not every plan. |
+| Delegate a sub-task | `/codex-delegate` | background, **writes files**; only when the user opts in. Review its diff yourself. |
+| Review before commit | `/cross-review` | read-only VERDICT loop over the staged index. |
 
-Rules:
-- **Never hand-roll another `log()`.** Nine hooks each defined their own with a
-  `%H:%M:%S` stamp and no date, so no query could span days and rotation threw
-  the history away. Source `_lib.sh` and call `hook_log`.
-- **A new hook logs on every exit path**, especially the skip paths. A hook that
-  only logs when it acts is indistinguishable from a hook that is not running.
-- **`hook_log` / `hook_event` never fail the caller** — they always return 0, so
-  a `set -e` hook cannot die from its own instrumentation.
+All of them run through `~/.claude/scripts/codex-exec.sh`: stdout is the final message (parse
+`VERDICT:` there), stderr is progress; exit `0` ok · `1` REVISE · `2` error · `3` resume
+unavailable · `124` timeout.
 
-Read them with `bash ~/.claude/scripts/harness-report.sh` (scorecard: sensor
-pass/fail/skip counts, codex spend per day, gate-block frequency). The same
-script runs as `--tripwire` on SessionStart and stays silent unless something
-tripped.
+### Waiting on codex
 
-### Installed skills (slash commands)
+Run a gating review/plan **in the foreground with Bash `timeout: 600000`** and block on it.
+Never background it, and never poll a local codex job with Monitor/ScheduleWakeup.
 
-User-invocable skills live at `~/dotfiles/claude/.claude/skills/<name>/SKILL.md`:
+### Work units, review and commits
 
-- `/ask-codex` — one-shot design consultation with Codex
-- `/codex-plan` — multi-round plan pressure-testing with Codex (pre-implementation)
-- `/codex-delegate` — delegate a sub-task to Codex (write-capable, background by default)
-- `/cross-review` — full cross-review loop with VERDICT gate (runs while findings stay valid; safety limit 10)
-- `/debug` — 5-phase structured debugging (3-strike + scope lock)
-- `/iterate` — one work-cycle gate (implement → unit test → e2e → build/lint/typecheck → cross-review → `~/save.sh`); pair with `/loop` to enforce the gate every cycle. **Status: invoked 0 times since it was written.** `contract-inject.sh` now injects the same gate automatically on every `/goal`·`/loop`, so the skill is a manual duplicate of an automated path. Kept because the explicit form is still the clearest way to force the gate on a single ad-hoc task — retire it if that stays theoretical.
+- A work unit is the staged index. `git add <exact paths>`, then `/cross-review`; `save.sh`
+  commits exactly that index. Approval is bound to the (HEAD tree, index tree) pair, not to a
+  session; more `git add` or a moved HEAD needs a new review.
+- Review is required for any implementation, configuration, dependency or agent-instruction
+  change (`SKILL.md`, `AGENTS.md`, `CLAUDE.md`, `.claude/*`, `.codex/*` always). Docs-only
+  changes may skip. Auth, permissions, secrets and shell/path handling are never skipped by size.
+- On REVISE: verify each finding against the code and a reproduction, fix minimally with a
+  regression test, re-stage, and resume with `--resume --response-file`. Keep going while
+  findings are valid and in scope; stop and show both sides on a repeated finding or when only
+  invalid / out-of-scope findings remain.
+- Commit only through `~/save.sh` (subject: `Verb …` from its list, or `type: …`). Never a raw
+  git commit. No co-author or "Generated with" lines anywhere — commit messages, PR text,
+  and GitHub merges (`gh pr merge` needs an explicit `--body`).
+- Edit files with Edit/Write. Bash heredoc/sed edits reach the type checker and review
+  reminders, but `protect-secrets` and `freeze` only see Edit/Write.
 
-- `/audit` — 프로젝트 갭 감사: 코드/문서/로드맵 병렬 탐색(Explore fan-out) → 미완성 구현·문서-실제 불일치·품질 갭을 P0/P1/P2 우선순위 리스트로 보고 (read-only; 수정은 후속 작업으로)
+### Writing hooks
 
-(Other installed skills not in the codex set: `/debug`, `/catchup`, `/mentor`, `/tabd`, `/frontend-design`, `/dotfiles-drift`, `/probe-hooks`, `/find-skills`, `/slides`. See `~/dotfiles/claude/.claude/skills/`.)
+- PreToolUse decisions go through `hook_permission <deny|ask> <reason>` (`_lib.sh`). A
+  top-level `{permissionDecision}` is ignored and the command runs.
+- A gate whose helper is missing or fails must deny or ask, never allow.
+- Log every exit path with `hook_log` / `hook_event`; never hand-roll `log()`.
+- Sensors (`post-typecheck.sh`) do not use `set -e`.
+- Hooks and wrappers must run on Linux and macOS (bash ≥ 4 on PATH, BSD/GNU `stat`, `date`,
+  `sed`, `awk`; use the `portable_*` helpers). Add a test under `scripts/__tests__`.
+- `bash ~/.claude/scripts/harness-report.sh` is the health scorecard; its `--tripwire` mode runs
+  at SessionStart.
 
-> Removed 2026-06-01: `/ship`, `/review`, `/verify`, `/handoff` — each was fully subsumed by automation. `/ship` → `~/save.sh` + `pre-commit-gate` (review) + autonomous-loop contract. `/review` (self-review) → `/cross-review` + the suppression rules folded into the Codex principles below. `/verify` → `/iterate` Step 3 e2e (tabd browser). `/handoff` → `auto-handoff.sh` Stop hook.
+### Autonomous loops (`/goal`, `/loop`)
 
-### Autonomous loop contract (`/goal`, `/loop`)
+Per work unit: plan (if non-trivial) → codex plan review (if risky) → implement → unit test →
+e2e (if applicable) → `/cross-review` → `~/save.sh`. Skip a step only with a stated reason.
+Pause for the user only at planning checkpoints. `/iterate` encodes the same gate.
 
-`/goal <text>` and `/loop` drive the session autonomously — a native session-scoped Stop hook re-feeds the goal until it is done. When you are driving any such loop, treat the per-work-unit gate below as **standing policy**. The user should NOT have to restate it in the goal text every time (they have been retyping it into nearly every `/goal` — that is the failure this contract fixes):
+### Working with codex output
 
-> **plan (if non-trivial) → codex review of plan → implement → unit test → e2e test (if applicable) → codex cross-review → `~/save.sh`**
+1. It is a second opinion, not ground truth. Verify before accepting.
+2. Apply mechanical fixes; bring judgment calls to the user. Ignore style, lint/typecheck,
+   naming, "future improvement", TODO and coverage-only findings.
+3. When you and codex disagree, show the user both positions.
+4. Codex is read-only except through `/codex-delegate`.
+5. Prompts to codex are English; replies to the user are in the user's language, including
+   right after a hook or codex exchange in English.
 
-1. One work-unit = one coherent change. Run the full gate **per unit**, not once at the very end.
-2. Skip a step only with a stated reason ("e2e skipped — library-internal change, unit tests suffice"). Never skip silently.
-3. The final commit always goes through `~/save.sh` (never raw `git commit`/`git push`). Stage deliberately first — `git add <paths>` for exactly the files this work-unit touched; save.sh commits the index only, so unrelated working-tree files no longer get swept in.
-4. This gate is exactly what `/iterate` encodes. Prefer **`/loop /iterate <task>`** when you want it mechanically enforced each cycle rather than relying on memory inside a free-form `/goal`.
-5. Only pause for the user at planning checkpoints; otherwise run to completion.
-6. Long codex review/plan steps in the loop follow the async-codex rule above — background + auto-wake, never Monitor polling.
+### Reporting
 
-### The rule (strong, manual fallback)
+Mark each claim of a result as reproduced (command + exit code), read in code (`file:line`),
+or inferred. Say what was not verified. If a real environment cannot be reached, stop and say
+so — do not report a mock run as verification.
 
-Use `/cross-review` before declaring an implementation work unit complete; reuse its approval while the reviewed content is unchanged.
-
-"Non-trivial" means:
-- Any change touching 2+ files with logic (not just formatting/rename)
-- Anything security-sensitive (auth, input validation, crypto, secrets)
-- Refactors that move or rename public APIs
-- New features, new modules, new endpoints
-
-Skip the gate only for:
-- One-line bug fixes
-- Documentation-only changes
-- Comment / formatting / pure rename operations
-
-### The rule (soft)
-
-**When you find yourself uncertain during work, call `/ask-codex` rather than guessing.** A 30-second consultation is cheaper than a 10-minute wrong turn. Good triggers:
-- "I'm not sure whether X or Y is more idiomatic here"
-- "This trade-off could go either way"
-- "I'm about to introduce a pattern I haven't used in this codebase before"
-
-Do not call it for trivia you are 80%+ confident about — noise is worse than signal loss.
-
-### Principles for dealing with codex output
-
-1. **Codex is not ground truth**. It is another LLM with its own failure modes. Treat its output as a second opinion, never as a verdict you must obey.
-2. **Valid feedback only — Fix-First pattern**. Mechanical fixes get applied immediately; judgment calls go to the user as questions. Suppress this class of finding (do not report): style/formatting (prettier/eslint handles it), things CI already catches (lint, typecheck), subjective naming preference, "future improvement" suggestions, TODO/FIXME comments, missing test coverage (separate task), import ordering.
-3. **When you and codex disagree, surface both opinions to the user**. Do not silently pick one side. The disagreement itself is valuable signal.
-4. **Read-only by default; write-capable only via `/codex-delegate`**. `/ask-codex`, `/codex-plan`, and `/cross-review` all run codex in `read-only` sandbox so it can investigate but not edit. `/codex-delegate` is the one path that grants `workspace-write`, and the user must opt in to it explicitly. Code that codex writes via delegate should be reviewed by Claude (and ideally by `/cross-review`) before commit — same as any third-party patch.
-5. **Stop on repetition, not on a count**. `/cross-review` continues while findings are valid and in scope (round 10 is only a runaway guard); it stops on a repeated finding or when only invalid/out-of-scope findings remain. `/codex-plan` is different: stop at ~3 rounds — beyond that the plan itself probably needs a rewrite, not more critique. If the same CRITICAL finding appears twice in a row, stop and ask the user — either codex is wrong or Claude cannot fix it cleanly.
-6. **Language split — codex always English, user reply always matches user's language**. Prompts and briefs sent to codex (via any wrapper or direct `codex exec`) are always in English; codex's `~/.codex/AGENTS.md` is English and the wrapper templates are English, so this stays consistent and is more token-efficient for technical content. Replies back to the user always match the user's most recent message language, even right after a long English exchange with codex. When quoting codex output to the user, keep technical identifiers (paths, function names, error strings) verbatim but translate the surrounding narrative — do not pass codex's English prose through unchanged when the user is speaking another language.
-
-### Integration with existing workflows
-
-- **`/iterate`** — the one-cycle gate (implement → unit test → e2e → build/lint/typecheck → `/cross-review` → `~/save.sh`). This is where commit-time cross-review lives now that `/ship` is gone; commit always goes through `~/save.sh`, never raw git. See the autonomous-loop contract above.
-- **`/codex-plan` before non-trivial implementation** — pair it with the existing `ExitPlanMode` checkpoint. After Claude writes a plan and before going wide on edits, run `/codex-plan --plan-file <path>` to pressure-test it. Cheaper than discovering plan flaws via `/cross-review` after the code is written.
-- **`/codex-delegate` for clean-cut sub-tasks** — when a piece of work is well-scoped (clear input, clear acceptance) and would burn Claude's context, delegate it. Always verify the diff afterwards; never trust codex's "I ran the tests" claim without checking.
-- **`@code-reviewer`** — Claude-based worktree reviewer (existing). Use together with `@codex-reviewer` for two independent perspectives on the same diff when the stakes are high (CodeX-Verify research shows 2-3 independent agents with different concerns beat single-agent review by ~40 percentage points).
-- **`/debug`** — 5-phase structured debugging. Invoke when `/ask-codex` alone is not enough and you want a scoped debugging session (3-strike rule + scope lock prevents flailing).
-- **Session handoff** — handled automatically by the `auto-handoff.sh` Stop hook (captures branch, recent commits, working-tree state to `~/.claude/handoffs/latest.md`). For a richer narrative handoff between major phases, just ask Claude to write one to that path.
-- **Frontend visual check** — fold into `/iterate` Step 3 e2e: drive the dev server with tabd, screenshot the changed UI, and inspect layout/console errors before declaring done.
 
 ---
 

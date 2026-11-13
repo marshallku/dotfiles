@@ -25,9 +25,11 @@ the invoked workflow, go through `~/save.sh`; never raw git commit/push.
 
 Review commands always pass `--reviewer claude` and use the exact session ID injected by SessionStart, or
 `CODEX_THREAD_ID` if available. Never infer it from another session's state.
-If hooks were not active before edits, supply the known starting commit with
-`--base`; don't invent a baseline. Review approval remains bound to session,
-repository and full content. Keep the three-round limit and evidence-first triage.
+The review covers exactly the staged index (HEAD -> index): stage the work unit first.
+`--base` is refused in session mode; no baseline is needed. Approval is bound to the
+repository, the reviewer set and the (HEAD tree, index tree) pair — not to a session.
+Use evidence-first triage and keep going while findings stay valid; stop on a repeated
+finding or when only invalid/out-of-scope ones remain (10 rounds is a runaway guard only).
 
 Cross-model review is required: **Codex implements → Claude reviews; Claude implements → Codex reviews**.
 The shared `cross-review` skill selects the reviewer explicitly. The existing
@@ -35,12 +37,11 @@ The shared `cross-review` skill selects the reviewer explicitly. The existing
 both runners. Codex hooks reject approval from Codex, including legacy approvals.
 Delegation can mix both authors, so its pending marker requires **both Claude
 and Codex** to approve the same full snapshot after the delegate finishes.
-One approval neither opens the gate nor advances the baseline. Changed content
-invalidates both. The completed approval preserves this origin for the exact
+One approval alone does not open the gate. A changed index invalidates both. The completed approval preserves this origin for the exact
 snapshot; subsequent Claude edits require Codex review again. Delegate launch
 and approval publication share a lock, and active delegates block publication.
-Resume threads are provider-specific. Switching reviewer after approval requires
-an explicit known `--base`, since the old approval advanced the work-unit baseline.
+Resume threads are provider-specific. Switching reviewer adds an approval for the
+same index tree; it does not replace the other reviewer's.
 Never fall back to the implementing model when the other CLI fails.
 
 Claude review runs with Read/Glob/Grep only, without command execution, writes,
