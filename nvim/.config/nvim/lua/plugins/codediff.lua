@@ -233,6 +233,32 @@ return {
             group = vim.api.nvim_create_augroup("codediff_cursor_sync", { clear = true }),
             callback = function() vim.schedule(sync_diff_cursor) end,
         })
+        -- :q in a diff pane or the explorer closes the whole codediff tab, like
+        -- its `q`, instead of one window at a time. :q still closes this window
+        -- first; the scheduled close (queued before codediff's own WinClosed
+        -- cleanup) then takes the rest of the tab.
+        vim.api.nvim_create_autocmd("QuitPre", {
+            group = vim.api.nvim_create_augroup("codediff_quit_tab", { clear = true }),
+            callback = function()
+                local ok, lifecycle = pcall(require, "codediff.ui.lifecycle")
+                local tab = vim.api.nvim_get_current_tabpage()
+                local session = ok and lifecycle.get_session and lifecycle.get_session(tab)
+                if not session or #vim.api.nvim_list_tabpages() < 2 then
+                    return -- the last tab: let :q quit as usual
+                end
+                local win = vim.api.nvim_get_current_win()
+                local panel = session.panel and session.panel.view and session.panel.view.winid
+                if win ~= session.original_win and win ~= session.modified_win
+                    and win ~= session.result_win and win ~= panel then
+                    return -- some other window in the tab, e.g. :help
+                end
+                vim.schedule(function()
+                    if vim.api.nvim_tabpage_is_valid(tab) then
+                        lifecycle.close(tab)
+                    end
+                end)
+            end,
+        })
         vim.api.nvim_create_autocmd("FileType", {
             pattern = "codediff-history",
             callback = function(event)
