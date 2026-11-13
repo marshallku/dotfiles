@@ -1,0 +1,22 @@
+[cli]
+installer = "internal"
+
+[marketplace]
+default_skills_installs_purged = true
+official_marketplace_auto_installed = true
+
+[[marketplace.sources]]
+name = "xAI Official"
+git = "https://github.com/xai-org/plugin-marketplace.git"
+
+[ui]
+max_thoughts_width = 120
+yolo = true
+compact_mode = false
+theme = "terminal"
+
+[privacy]
+privacy_banner_acked = "2026-11-03T15:11:15Z"
+
+[features]
+terminal_theme = true
