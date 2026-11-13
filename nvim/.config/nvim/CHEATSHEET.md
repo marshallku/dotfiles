@@ -48,12 +48,18 @@ without waiting `timeoutlen` for a follow-up key.
 | `<leader>rn` | Rename symbol |
 | `<leader>mp` | Format file |
 | `<A-j/k>` | Move line down/up |
+| `zc` / `zo` / `za` | Close / open / toggle fold (treesitter; all open at start) |
+
+### References for agents
+| Key | Action | Mode |
+|-----|--------|------|
+| `<leader>yr` | Yank `@path:line` (visual: `@path:start-end`) | n, v |
+| `<leader>yc` | Yank selection as a code block headed by `@path:start-end` | v |
 
 ### Git
 | Key | Action |
 |-----|--------|
 | `<leader>gg` | Open lazygit |
-| `<leader>gn` | Neogit (magit-style) |
 | `<leader>gd` | Review working tree changes (codediff) |
 | `<leader>gs` | Review staged changes (codediff) |
 | `<leader>gD` | Review branch changes since the default-branch merge-base (PR scope) |
@@ -61,8 +67,8 @@ without waiting `timeoutlen` for a follow-up key.
 | `<leader>gl` | Review recent commits one by one (codediff history) |
 | `<leader>gL` | Review branch commits one by one (`<default>..HEAD`) |
 | `<leader>gc` | Pick a commit, review everything after it through the working tree |
-| `<leader>gh` | File history (diffview) |
-| `<leader>gx` | Diffview close |
+| `<leader>gh` | File history (codediff history of the current file) |
+| `<leader>go` | Toggle inline diff overlay: changed lines, changed words, deleted lines |
 | `<leader>gB` | Blame buffer |
 | `]h` / `[h` | Next/previous hunk |
 | `<leader>hp` | Preview hunk |
@@ -71,7 +77,9 @@ without waiting `timeoutlen` for a follow-up key.
 
 Inline blame (author, relative time, summary) is **on by default** at the end of the current line.
 
-Roles: lazygit stages and pushes, diffview shows file history, codediff reviews.
+Roles: lazygit stages and pushes, codediff reviews (working tree, history).
+Jump from a diff into the code: `gf` in a codediff tab opens the file as a normal
+buffer; `e` on a file in lazygit opens it in this Neovim (`os.editPreset: nvim-remote`).
 codediff refreshes live while an agent edits files, and folds unchanged regions.
 Inside a codediff tab: `t` inline / side-by-side, `gc` compact, `]c`/`[c` hunk,
 `]f`/`[f` file, `-` stage file, `<leader>hs`/`<leader>hr` stage/discard hunk,
@@ -80,33 +88,18 @@ In the `gl`/`gL` history panel, `O` on a commit (or any of its file lines) opens
 that commit alone in a new tab: its files in the left explorer, parent vs commit,
 `]f`/`[f` to walk them. `q` closes it and returns to the history tab.
 
-### Claude Code
-| Key | Action | Mode |
-|-----|--------|------|
-| `<leader>cc` | Toggle Claude Code | n |
-| `<M-c>` | Toggle Claude Code (also from inside the Claude terminal) | n + t |
-| `<leader>cf` | Focus Claude Code | n |
-| `<leader>cs` | Send selection (visual) | v |
-| `<leader>cb` | Add buffer to chat | n |
-| `<leader>cda` | Accept Claude diff | n |
-| `<leader>cdd` | Deny Claude diff | n |
-
-`<M-c>` is the only one that works while focus is inside the Claude terminal buffer — leader chords don't fire in terminal mode. Use `<leader>cc` from a normal buffer, `<M-c>` from anywhere.
-
-On **macOS**, Option-key combos send special characters by default (Option+c → ç). For `<M-c>` to work, set the terminal's option-as-meta:
-- ghostty: `macos-option-as-alt = true` in config
-- iTerm2: Profile → Keys → Left/Right Option = "Esc+"
-- Terminal.app: Preferences → Profiles → Keyboard → "Use Option as Meta key"
-
-The bridge starts a WebSocket+MCP server (same protocol as the Cursor VS Code extension), so `claude` running in the embedded terminal sees the buffer, selection and diagnostics in real time.
-
 ### Text case (parity with `change-case`)
 Prefix `gA` (uppercase, so built-in `ga` ASCII inspect is preserved). Examples: `gAu` upper, `gAl` lower, `gAs` snake, `gAc` camel, `gAp` pascal, `gAd` dash (kebab), `gAn` constant.
 
 ### Terminal
 | Key | Action |
 |-----|--------|
-| `<C-\>` | Toggle terminal |
+| `<C-\>` | Toggle floating terminal |
+| `<M-\>` | Toggle bottom split terminal (n + t) |
+| `<M-h/j/k/l>` | Move to another window from inside a terminal |
+
+On **macOS**, Option-key combos send special characters by default. For the
+`<M-…>` keys, set the terminal's option-as-meta (ghostty: `macos-option-as-alt = true`).
 
 ## Vim Motions (Quick Reminder)
 

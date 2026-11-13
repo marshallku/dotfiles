@@ -7,7 +7,7 @@ return {
 
         lualine.setup({
             options = {
-                theme = "tokyonight",
+                theme = "catppuccin-nvim", -- follows the catppuccin flavour
                 component_separators = {left = "|", right = "|"},
                 section_separators = {left = "", right = ""}
             },

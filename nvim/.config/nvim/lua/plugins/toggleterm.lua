@@ -36,6 +36,13 @@ return {
 
         function _lazygit_toggle() lazygit:toggle() end
 
+        -- Bottom split terminal beside the code (VS Code panel). Hidden, so
+        -- <C-\> keeps toggling only the floating one.
+        local split = Terminal:new({ direction = "horizontal", hidden = true })
+        vim.keymap.set({ "n", "t" }, "<M-\\>", function()
+            split:toggle(math.floor(vim.o.lines * 0.3))
+        end, { desc = "Toggle split terminal" })
+
         vim.keymap.set("n", "<leader>gg", "<cmd>lua _lazygit_toggle()<CR>",
                        {desc = "Toggle lazygit"})
     end

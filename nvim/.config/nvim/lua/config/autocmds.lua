@@ -83,6 +83,16 @@ autocmd("FileType", {
 	end,
 })
 
+-- Cursorline only in the focused window, so it shows where focus is
+autocmd({ "WinEnter", "BufWinEnter" }, {
+	group = augroup("active_cursorline", { clear = true }),
+	callback = function() vim.wo.cursorline = true end,
+})
+autocmd("WinLeave", {
+	group = "active_cursorline",
+	callback = function() vim.wo.cursorline = false end,
+})
+
 -- Auto-reload files changed externally
 autocmd({ "FocusGained", "BufEnter", "CursorHold" }, {
 	group = augroup("auto_reload", { clear = true }),

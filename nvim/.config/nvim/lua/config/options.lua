@@ -42,6 +42,13 @@ if not vim.g.vscode then
 end
 vim.opt.conceallevel = 0 -- Don't conceal characters (for ligatures to work properly)
 
+-- Folding by syntax tree, everything open at start (zc / zo / za).
+-- Global defaults only: codediff sets its own window-local folds.
+vim.opt.foldmethod = "expr"
+vim.opt.foldexpr = "v:lua.vim.treesitter.foldexpr()"
+vim.opt.foldlevel = 99
+vim.opt.foldtext = "" -- show the first line with its highlighting
+
 -- Completion menu
 vim.opt.completeopt = "menu,menuone,noselect"
 

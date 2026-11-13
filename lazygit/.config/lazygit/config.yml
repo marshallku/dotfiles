@@ -1,0 +1,4 @@
+# Open files in the Neovim that launched lazygit (<leader>gg float) instead of
+# a nested one: `e` on a file, or on a line in the staging view, jumps there.
+os:
+  editPreset: "nvim-remote"

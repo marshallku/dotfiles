@@ -80,6 +80,17 @@ return {
                 map("n", "<leader>tb", gs.toggle_current_line_blame,
                     {desc = "Toggle inline blame"})
                 map("n", "<leader>hd", gs.diffthis, {desc = "Diff this"})
+
+                -- Show every change inside the file at once: changed lines,
+                -- changed words and deleted lines. Gitsigns keeps these in its
+                -- global config, so the state is read from there, not kept here.
+                map("n", "<leader>go", function()
+                    local config = require("gitsigns.config").config
+                    local on = not (config.linehl and config.word_diff and config.show_deleted)
+                    config.show_deleted = on -- toggle_deleted() is deprecated; it only sets this
+                    gs.toggle_linehl(on)
+                    gs.toggle_word_diff(on)
+                end, {desc = "Toggle inline diff overlay"})
             end
         })
     end

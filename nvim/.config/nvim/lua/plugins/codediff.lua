@@ -1,5 +1,5 @@
 -- Live review workspace for agent-made changes.
--- Roles: lazygit commits/pushes, diffview shows file history, codediff reviews.
+-- Roles: lazygit commits/pushes, codediff reviews (working tree, history).
 
 -- Repo of the current buffer, falling back to cwd for non-file buffers or
 -- files outside any Git repo.
@@ -177,6 +177,7 @@ return {
             desc = "Review branch commits one by one",
         },
         { "<leader>gc", with_repo(review_since_commit), desc = "Review changes after a picked commit" },
+        { "<leader>gh", "<cmd>CodeDiff history %<cr>", desc = "File history" },
     },
     init = function()
         vim.api.nvim_create_autocmd("FileType", {

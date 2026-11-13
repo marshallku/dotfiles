@@ -5,7 +5,6 @@ return {
     version = "*",
     dependencies = {
         "rafamadriz/friendly-snippets",
-        "fang2hou/blink-copilot",
     },
     ---@module "blink.cmp"
     ---@type blink.cmp.Config
@@ -24,15 +23,7 @@ return {
             nerd_font_variant = "mono",
         },
         sources = {
-            default = { "copilot", "lsp", "path", "snippets", "buffer" },
-            providers = {
-                copilot = {
-                    name = "copilot",
-                    module = "blink-copilot",
-                    score_offset = 100,
-                    async = true,
-                },
-            },
+            default = { "lsp", "path", "snippets", "buffer" },
         },
         completion = {
             documentation = {
