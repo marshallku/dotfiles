@@ -1,4 +1,25 @@
-# Open files in the Neovim that launched lazygit (<leader>gg float) instead of
-# a nested one: `e` on a file, or on a line in the staging view, jumps there.
+# Inside Neovim (<leader>gg float, $NVIM set), `e` opens the file in the window
+# lazygit covers and hides lazygit (LazygitEdit in nvim's toggleterm.lua). The
+# nvim-remote preset alone would open a new tab instead. Outside Neovim, plain nvim.
+# The path goes through a file, not the expression, so it needs no escaping.
 os:
+  # Kept for the preset's editInTerminal choice: hand over the terminal only
+  # when $NVIM is unset. A fixed editInTerminal leaves lazygit inside Neovim
+  # waiting on a "press enter" screen after every edit.
   editPreset: "nvim-remote"
+  edit: >-
+    if [ -n "$NVIM" ]; then
+    printf '%s\n0\n' {{filename}} > "$NVIM.lazygit-edit" &&
+    nvim --server "$NVIM" --remote-expr 'v:lua.LazygitEdit()' > /dev/null;
+    else nvim -- {{filename}}; fi
+  editAtLine: >-
+    if [ -n "$NVIM" ]; then
+    printf '%s\n%s\n' {{filename}} {{line}} > "$NVIM.lazygit-edit" &&
+    nvim --server "$NVIM" --remote-expr 'v:lua.LazygitEdit()' > /dev/null;
+    else nvim +{{line}} -- {{filename}}; fi
+  editAtLineAndWait: "nvim +{{line}} -- {{filename}}"
+  openDirInEditor: >-
+    if [ -n "$NVIM" ]; then
+    printf '%s\n0\n' {{dir}} > "$NVIM.lazygit-edit" &&
+    nvim --server "$NVIM" --remote-expr 'v:lua.LazygitEdit()' > /dev/null;
+    else nvim -- {{dir}}; fi
