@@ -75,10 +75,12 @@ def run_hook(name, payload, timeout):
     if result.returncode:
         raise RuntimeError(f"{name} exited {result.returncode}: {result.stderr.strip()}")
     output = json.loads(result.stdout or "{}")
-    # Some existing Claude hooks use a legacy, top-level decision shape.
-    decision = output.get("permissionDecision")
+    # Hooks decide with hookSpecificOutput (the only shape Claude Code honours); the
+    # legacy top-level shape is still read so an unconverted hook cannot fail open here.
+    specific = output.get("hookSpecificOutput", {})
+    decision = specific.get("permissionDecision") or output.get("permissionDecision")
     if decision in {"deny", "ask"}:
-        reason = output.get("message", name)
+        reason = specific.get("permissionDecisionReason") or output.get("message", name)
         if decision == "ask":
             reason += " [Codex cannot implement hook 'ask'; run this operation manually if intended.]"
         return {"hookSpecificOutput": {

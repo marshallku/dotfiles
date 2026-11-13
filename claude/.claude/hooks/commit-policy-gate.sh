@@ -42,7 +42,15 @@ log() {
 # co-author trailers unless a body is given), PR text, and `gh api .../merge`.
 case "$CMD" in
     *gh*)
-        GH_REASON=$(printf '%s' "$CMD" | python3 "$(dirname "$0")/_gh_merge_policy.py" "$CWD" 2>/dev/null) || GH_REASON=""
+        # Fail closed: a missing or crashing checker used to read as "no reason" and allow.
+        # That is how per-file hook symlinks without _gh_merge_policy.py let
+        # `gh pr merge --squash` through on one machine.
+        if ! GH_REASON=$(printf '%s' "$CMD" | python3 "$(dirname "$0")/_gh_merge_policy.py" "$CWD" 2>/dev/null); then
+            GH_REASON=""
+            if [[ $CMD =~ gh[[:space:]].*(merge|create|edit|api) ]]; then
+                GH_REASON="The attribution checker (hooks/_gh_merge_policy.py) is missing or failed, so this gh write cannot be checked. Repair the hooks install (~/.claude/hooks must link the whole dotfiles hooks directory)."
+            fi
+        fi
         if [ -n "$GH_REASON" ]; then
             log "BLOCK: gh attribution/default merge message"
             jq -n --arg msg "[commit-policy-gate] $GH_REASON

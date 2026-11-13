@@ -77,10 +77,13 @@ class BridgeTests(unittest.TestCase):
     def test_baseline_review_gate_and_child_recursion(self):
         start = self.hook("SessionStart", source="startup")
         self.assertIn("test-session", start["hookSpecificOutput"]["additionalContext"])
+        # Stop reminds about this session's own edits only, so make the edit through a tool.
         (self.repo / "code.py").write_text("after = True\n")
+        self.patch("*** Begin Patch\n*** Update File: code.py\n*** End Patch", event="PostToolUse")
         result = self.hook("Stop", stop_hook_active=False)
         self.assertEqual(result["decision"], "block")
         self.assertIn("cross-review", result["reason"])
+        self.git("add", "code.py")  # the commit gate judges the staged index only
         commit = self.hook("PreToolUse", tool_name="Bash", tool_input={"command": "~/save.sh 'Fix test'"})
         self.assertEqual(commit["hookSpecificOutput"]["permissionDecision"], "deny")
         handoff = self.home / ".claude/handoffs/latest.md"
@@ -97,7 +100,9 @@ class BridgeTests(unittest.TestCase):
         self.patch("*** Begin Patch\n*** Add File: one.py\n+x\n*** Add File: two.py\n+x\n*** End Patch",
                    event="PostToolUse")
         dirty = self.home / ".claude/state/dirty-test-session.log"
-        self.assertEqual(len(dirty.read_text().splitlines()), 2)
+        # The bridge checks both the logical and the resolved path, which differ on macOS
+        # (/var/folders vs /private/var/folders); count files, not spellings.
+        self.assertEqual(len({os.path.realpath(p) for p in dirty.read_text().splitlines()}), 2)
         self.hook("PostToolUse", tool_name="Bash", tool_input={"command": "pytest tests"})
         result = self.hook("Stop", stop_hook_active=False)
         self.assertNotIn("verify-gate", result.get("reason", ""))
@@ -114,7 +119,9 @@ class BridgeTests(unittest.TestCase):
         result = self.patch("*** Begin Patch\n*** Add File: .env\n+x\n*** End Patch")
         self.assertEqual(result["hookSpecificOutput"]["permissionDecision"], "deny")
         self.assertFalse((self.home / ".claude/handoffs/latest.md").exists())
-        for command in ("git commit -m test", "git push", "~/save.sh 'Fix test'"):
+        # A raw push only publishes commits that already passed save.sh, so it is allowed.
+        self.git("add", "code.py")  # the commit gate judges the staged index only
+        for command in ("git commit -m test", "~/save.sh 'Fix test'"):
             result = self.hook("PreToolUse", tool_name="Bash", tool_input={"command": command})
             self.assertEqual(result["hookSpecificOutput"]["permissionDecision"], "deny", command)
         self.env["HARNESS_READ_ONLY_CHILD"] = "1"

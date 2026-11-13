@@ -7,10 +7,9 @@
 #   - 그 외 위험                              → ask   (확인 프롬프트)
 # allow/deny/ask 모두 --dangerously-skip-permissions에서도 유효하다.
 #
-# rm 판정은 명령 전체 substring이 아니라 "모든 인자 토큰"을 검사한다. rm은
-# 인자를 여러 개 받고 파괴적/실제 대상이 어느 위치에든 섞일 수 있으므로
-# (rm -rf /tmp/foo / , rm -rf build / , cd /tmp && rm -rf $HOME/.ssh),
-# 토큰 단위 검사만이 다중 타겟 우회를 막는다.
+# rm 판정은 _rm_policy.py가 rm의 operand 하나하나를 실제 경로로 풀어서 한다.
+# 하나라도 파괴적이면 deny, 하나라도 판단 불가·비-scratch면 ask이므로
+# (rm -rf /tmp/foo / , cd /tmp && rm -rf $HOME/.ssh) 같은 다중 타겟도 막힌다.
 #
 # 과거에는 `claude -p --model haiku`로 LLM judge를 호출했으나, 중첩 claude는
 # 인증 컨텍스트가 없어 항상 "Not logged in"을 반환 → `|| echo deny` fallback이
@@ -24,91 +23,40 @@ set -euo pipefail
 LOG="$HOME/.claude/hooks-debug.log"
 INPUT=$(cat)
 CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
+CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
 
 [ -z "$CMD" ] && echo '{}' && exit 0
 
-# 공백 정규화 + 토큰 판정용 정규화(인용부호·백슬래시·`--` argv 구분자 제거)
-#   (rm -rf "$HOME" , \rm -rf / , rm -rf -- / 같은 회피를 정규화)
+# 공백 정규화 (force push 세그먼트 판정용)
 NORM=$(printf '%s' "$CMD" | tr -s '[:space:]' ' ')
-STRIPPED=$(printf '%s' "$NORM" | sed -e "s/[\"']//g" -e 's/\\//g' -e 's/ -- / /g')
 
-# CMD에 따옴표/제어문자가 있어도 안전하도록 JSON은 jq로 생성한다
+# 결정은 반드시 hookSpecificOutput 형식(_lib.sh hook_permission). 예전의
+# top-level {permissionDecision} 출력은 Claude Code가 무시해 이 훅은 2026-11-14까지
+# 아무것도 막지 못했다(rm -rf / 포함).
 emit() {  # $1=category $2=permissionDecision $3=message-prefix
-    jq -cn --arg cmd "$CMD" --arg cat "$1" --arg dec "$2" --arg pre "$3" \
-        '{permissionDecision:$dec, message:("[careful] " + $pre + " " + $cat + ": " + $cmd)}'
+    hook_permission "$2" "[careful] $3 $1: $(printf '%s' "$CMD" | head -c 300)"
 }
 logv() {  # $1=verdict $2=category
     hook_log careful-with-judge "verdict: $1 ($2): $(echo "$CMD" | head -c 60)"
     hook_event careful-with-judge verdict decision="$1" rule="$2"
 }
 
-# ── 재귀 rm 처리 (상태기계: rm 자신의 operand만 분류) ─────────────────────────
-# 명령 전체 토큰을 무차별 스캔하면 `find . -exec rm -rf {}`의 `.`나
-# `ls * && rm ...`의 `*` 같은 "다른 명령의 인자"를 rm 타겟으로 오인한다.
-# 그래서 rm 토큰을 만난 뒤 그 rm의 플래그/operand만 추적한다. 재귀 여부도
-# rm 자신의 플래그 클러스터(-r/-R/-rf/-Rf, 분리된 -f -r, --recursive)에서만 본다.
-case " $STRIPPED " in
-*' rm '*|*'/rm '*)   # bare rm 또는 /bin/rm·/usr/bin/rm 등 경로 호출
-    SCRATCH_CWD=0  # cwd가 scratch로 옮겨졌는지: 상대경로 타겟을 안전 취급할 근거
-    printf '%s' "$STRIPPED" | grep -Eq 'cd +(/private)?/(tmp|var/tmp|dev/shm)' && SCRATCH_CWD=1
-
-    SCRATCH_RE='^(/tmp(/|$)|/private/(tmp|var/tmp)/.|/var/tmp/|/dev/shm/)|(^|/)target(/|$)|(^|/)\.claude/state|\.(count|log|tmp)$'
-    ARTIFACT_RE='(^|/)(node_modules|dist|build|\.next|coverage|__pycache__|\.cache|\.turbo)(/|$)'
-
-    CATASTROPHIC=0; UNSAFE=0; SAFE=0; ENGAGED=0
-    STATE=idle; REC=0
-
-    set -f  # glob 확장 차단
-    for t in $STRIPPED; do
-        if [ "$STATE" = idle ]; then
-            case "$t" in rm|*/rm) STATE=rmflags; REC=0 ;; esac
-            continue
-        fi
-        if [ "$STATE" = rmflags ]; then
-            case "$t" in
-                --recursive) REC=1; continue ;;
-                --*) continue ;;                              # 기타 long 플래그
-                -*[rR]*) REC=1; continue ;;                   # r/R 포함 short 클러스터(-r,-R,-rf,-fr)
-                -*) continue ;;                               # 기타 short 플래그(-f 등)
-                '&&'|'||'|';'|'|'|'&') STATE=idle; continue ;; # operand 없이 segment 종료
-                *) STATE=rmargs ;;                            # 첫 operand → 아래에서 분류
-            esac
-        elif [ "$STATE" = rmargs ]; then
-            case "$t" in
-                '&&'|'||'|';'|'|'|'&') STATE=idle; continue ;; # 이 rm 종료
-                -*) continue ;;                                # 뒤따르는 플래그 무시
-            esac
-        fi
-        # 여기 도달 = rm의 operand. 재귀 rm일 때만 분류(비재귀 rm은 디렉터리 삭제 불가)
-        [ "$REC" = 1 ] || continue
-        ENGAGED=1
-        case "$t" in
-            # 파괴적 대상: 루트/홈전체/부모/cwd전체/와일드카드 → deny
-            /|/\*|'~'|'~/'|'~/*'|'$HOME'|'${HOME}'|'$HOME/'|'$HOME/*'|'${HOME}/'|'${HOME}/*'|.|./|..|../|'*')
-                CATASTROPHIC=1; break ;;
-        esac
-        if printf '%s' "$t" | grep -Eq "$SCRATCH_RE"; then SAFE=1
-        elif printf '%s' "$t" | grep -Eq "$ARTIFACT_RE"; then SAFE=1
-        else
-            case "$t" in
-                '~'*|'$HOME'*|'${HOME}'*) UNSAFE=1 ;;  # 홈 경로
-                /*) UNSAFE=1 ;;                         # 그 외 절대경로
-                *) [ "$SCRATCH_CWD" = 1 ] && SAFE=1 || UNSAFE=1 ;;  # 상대경로: scratch cwd에서만 안전
-            esac
-        fi
-    done
-    set +f
-    [ "$STATE" = rmflags ] && [ "$REC" = 1 ] && ENGAGED=1  # `rm -rf` (operand 없음)도 처리
-
-    if [ "$ENGAGED" = 1 ]; then
-        if [ "$CATASTROPHIC" = 1 ]; then
-            logv deny "rm catastrophic"; emit "rm catastrophic" deny "Blocked likely-catastrophic"; exit 0
-        fi
-        if [ "$UNSAFE" = 0 ] && [ "$SAFE" = 1 ]; then
-            logv allow "rm recursive"; echo '{}'; exit 0
-        fi
-        logv ask "rm recursive"; emit "rm recursive" ask "Confirm"; exit 0
-    fi
+# ── 재귀 rm 처리 ─────────────────────────────────────────────────────────────
+# 판정은 _rm_policy.py가 한다: cd·변수 대입을 추적하고 bash -c / ssh / trap /
+# $(...) / 셸로 들어가는 heredoc 안까지 따라가 operand를 실제 경로로 풀어 분류한다.
+# (공백 split 방식은 heredoc 본문·원격 명령·find -exec까지 rm operand로 오인해
+#  실제 세션 1,487건 중 deny 67·ask 1,242건이 대부분 scratch 경로 오판이었다.)
+# 도우미가 실패하면 allow가 아니라 ask — 판정하지 못한 삭제는 묻는다.
+case "$CMD" in
+*rm*|*-delete*)  # rm, find -exec rm, find -delete
+    RM_VERDICT=$(printf '%s' "$CMD" | python3 "$(dirname "$0")/_rm_policy.py" "$CWD" "$HOME" 2>/dev/null) \
+        || RM_VERDICT="ask rm policy helper failed"
+    [ -n "$RM_VERDICT" ] || RM_VERDICT="ask rm policy helper failed"
+    case "$RM_VERDICT" in
+        deny*) logv deny "rm catastrophic"; emit "rm catastrophic (${RM_VERDICT#deny })" deny "Blocked likely-catastrophic"; exit 0 ;;
+        ask*)  logv ask "rm recursive"; emit "rm recursive (${RM_VERDICT#ask })" ask "Confirm"; exit 0 ;;
+        allow) logv allow "rm recursive" ;;
+    esac
     ;;
 esac
 

@@ -225,4 +225,4 @@ Bypass mechanisms (use sparingly, document the reason):
 
 Schema reference: ~/docs/sources/sessions/<repo>/<date>-session-<id>.md follows the SourceItem standard (~/docs/CLAUDE.md:41) plus intent-capture-specific fields.'
 
-jq -n --arg msg "$REASON" '{permissionDecision: "deny", message: $msg}'
+hook_permission deny "$REASON"

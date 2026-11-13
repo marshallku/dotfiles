@@ -4,6 +4,8 @@
 
 set -euo pipefail
 
+. "$(dirname "$0")/_lib.sh"
+
 INPUT=$(cat)
 FREEZE_FILE="$HOME/.claude/freeze-dir.txt"
 
@@ -37,6 +39,6 @@ case "$REAL_FILE/" in
         echo '{}'
         ;;
     *)
-        printf '{"permissionDecision":"deny","message":"[freeze] Blocked edit outside frozen directory: %s (allowed: %s)"}\n' "$REAL_FILE" "$FREEZE_DIR"
+        hook_permission deny "[freeze] Blocked edit outside frozen directory: $REAL_FILE (allowed: $FREEZE_DIR)"
         ;;
 esac

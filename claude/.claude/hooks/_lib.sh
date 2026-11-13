@@ -131,6 +131,17 @@ notify_codex_done() {
     return 0
 }
 
+# hook_permission <deny|ask> <reason>
+# The one PreToolUse decision shape Claude Code honours. A top-level
+# {permissionDecision, message} is ignored and the tool runs: careful-with-judge,
+# protect-secrets, freeze and plan-ssot-gate emitted it and blocked nothing until
+# 2026-11-14 (commit-policy-gate and block-raw-git until 2026-10-30). Every
+# PreToolUse hook decides through this function; test_hook_contract.py enforces it.
+hook_permission() {
+    jq -cn --arg d "$1" --arg r "$2" \
+        '{hookSpecificOutput:{hookEventName:"PreToolUse", permissionDecision:$d, permissionDecisionReason:$r}}'
+}
+
 # --- Observability ------------------------------------------------------------
 # One timestamp format and one machine-readable event stream for the whole
 # harness. Both are best-effort and always return 0 — every hook runs under

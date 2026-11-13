@@ -65,4 +65,4 @@ Then re-run ExitPlanMode to present the plan.
 
 Bypass for this session: touch ~/.claude/state/ssot-gate-disabled'
 
-jq -n --arg msg "$REASON" '{permissionDecision: "deny", message: $msg}'
+hook_permission deny "$REASON"
