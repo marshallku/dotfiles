@@ -606,6 +606,17 @@ esac
 # directories that do not exist here).
 if [[ "$(uname)" == "Darwin" ]]; then
   PATH="/opt/homebrew/opt/coreutils/libexec/gnubin:$PATH"
+
+  # Binary-only casks come back quarantined after every upgrade, and the
+  # Gatekeeper prompt that follows hangs headless agents (see brew-release-quarantine).
+  brew() {
+    command brew "$@"
+    local rc=$?
+    case "${1:-}" in
+      install|upgrade|reinstall) (( rc == 0 )) && brew-release-quarantine ;;
+    esac
+    return $rc
+  }
 fi
 
 if [[ "$(uname)" != "Darwin" ]]; then

@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# brew-release-quarantine — drop com.apple.quarantine from binary-only Homebrew casks.
+#
+# Usage:
+#   brew-release-quarantine [--check]
+#
+# Homebrew quarantines every cask download and no longer has --no-quarantine.
+# On upgrade it carries the Gatekeeper approval over only for `app` artifacts,
+# so casks that ship bare executables (codex, claude-code, kotlin-lsp, flutter)
+# come back quarantined after every upgrade. The next launch then hangs on a
+# Gatekeeper dialog — fatal on a headless box where agents run the binaries.
+#
+# This strips the attribute from the installed version of each cask that has no
+# `app` artifact, which is what --no-quarantine used to do. Homebrew has already
+# verified the download's sha256. App casks are left to Homebrew's own approval
+# inheritance. --check lists what would be released without changing anything.
+
+set -u -o pipefail
+
+if [[ "$(uname -s)" != "Darwin" ]]; then
+    exit 0
+fi
+
+check=false
+if [[ "${1:-}" == "--check" ]]; then
+    check=true
+fi
+
+caskroom="$(brew --caskroom)"
+
+# One line per binary-only cask: "<token> <installed version>".
+if ! casks="$(brew info --cask --json=v2 --installed 2>/dev/null \
+    | jq -r '.casks[] | select([.artifacts[] | keys[]] | index("app") | not) | "\(.token) \(.installed)"')"; then
+    echo "✗ could not list installed casks" >&2
+    exit 1
+fi
+
+failed=0
+while read -r token version; do
+    [[ -z "$token" ]] && continue
+    dir="$caskroom/$token/$version"
+    [[ -d "$dir" ]] || continue
+
+    count="$(xattr -r "$dir" 2>/dev/null | grep -c ': com.apple.quarantine$')"
+    if (( count == 0 )); then
+        if $check; then
+            echo "✓ $token $version not quarantined"
+        fi
+    elif $check; then
+        echo "→ $token $version has $count quarantined paths"
+    elif xattr -dr com.apple.quarantine "$dir"; then
+        echo "✓ $token $version released ($count paths)"
+    else
+        echo "✗ $token $version could not be released" >&2
+        failed=1
+    fi
+done <<<"$casks"
+
+exit $failed

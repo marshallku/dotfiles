@@ -36,6 +36,15 @@ bash install-claude.sh   # check prerequisites (codex, jq, node) + register MCP
 bash install-codex.sh    # link shared skills + Codex hook adapter; then trust via /hooks
 ```
 
+## macOS (headless UI-test box)
+
+```bash
+stow bin zsh
+bash install-macos.sh   # silence crash dialogs, release binary-only casks from quarantine
+```
+
+`brew-release-quarantine --check` lists quarantined binary-only casks without changing them.
+
 ## Desktop shell
 
 Hyprland uses the local Quickshell shell and comux/copad agent widgets.
