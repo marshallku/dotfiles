@@ -188,3 +188,14 @@ if [ -f "$EVENTS" ]; then
         | map("  auto-cross-review \(.[0].event): \(length)") | .[]
     ' "$EVENTS" 2>/dev/null || true
 fi
+echo
+echo "-- Flagged (allowed, recorded for review), last 24h --"
+# careful-with-judge never asks: a prompt would stall an autonomous loop. Risky-but-recoverable
+# commands run and land here instead, so a morning read shows what happened overnight.
+if [ -f "$EVENTS" ]; then
+    FLAGGED=$(jq -r --arg since "$DAY_AGO" '
+        select(.ts >= $since and .component == "careful-with-judge" and .decision == "flagged")
+        | "  \(.ts[0:16])  \(.rule)\(if (.detail // "") != "" then " (\(.detail))" else "" end): \(.cmd // "" | gsub("\\s+"; " ") | .[0:110])"
+    ' "$EVENTS" 2>/dev/null | tail -n 30)
+    if [ -n "$FLAGGED" ]; then printf '%s\n' "$FLAGGED"; else echo "  none"; fi
+fi

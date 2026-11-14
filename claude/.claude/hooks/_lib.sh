@@ -157,7 +157,9 @@ notify_codex_done() {
     return 0
 }
 
-# hook_permission <deny|ask> <reason>
+# hook_permission deny <reason>
+# (Do not pass `ask`: it waits for a human and stalls autonomous loops. Deny with the
+#  alternative in the reason, or allow and record decision=flagged.)
 # The one PreToolUse decision shape Claude Code honours. A top-level
 # {permissionDecision, message} is ignored and the tool runs: careful-with-judge,
 # protect-secrets, freeze and plan-ssot-gate emitted it and blocked nothing until

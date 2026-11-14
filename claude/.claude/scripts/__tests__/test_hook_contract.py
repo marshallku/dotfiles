@@ -53,16 +53,39 @@ class HookContractTests(unittest.TestCase):
             code = "\n".join(line for line in path.read_text().splitlines() if not line.lstrip().startswith("#"))
             self.assertIsNone(legacy.search(code), f"{path.name} emits a top-level permissionDecision")
 
-    def test_careful_blocks_catastrophic_and_asks_for_unknown_deletes(self):
+    def flagged_rules(self):
+        ledger = self.home / ".claude/state/hook-events.jsonl"
+        events = [json.loads(line) for line in ledger.read_text().splitlines()] if ledger.exists() else []
+        return [e["rule"] for e in events if e.get("decision") == "flagged"]
+
+    def test_careful_denies_irreversible_and_flags_the_rest_without_stopping(self):
         project = "/opt/proj"  # outside every temp root; the hook only reads the payload cwd
         self.assertEqual(self.bash("rm -rf /"), "deny")
         self.assertEqual(self.bash('rm -rf "$HOME"'), "deny")
         self.assertEqual(self.bash("bash -c 'rm -rf ~/*'"), "deny")
         self.assertEqual(self.bash("rm -rf .", cwd=project), "deny")
-        self.assertEqual(self.bash("rm -rf /opt/proj"), "ask")
-        self.assertEqual(self.bash("ls | xargs rm -rf"), "ask")
-        self.assertEqual(self.bash("find /opt/proj -delete"), "ask")  # no `rm` in the command
-        self.assertEqual(self.bash("git push --force origin main"), "ask")
+        self.assertEqual(self.bash("git push --force origin main"), "deny")  # --force-with-lease exists
+        # Unclear but recoverable: let the autonomous loop run, keep a record for review.
+        for command in ("rm -rf /opt/proj", "ls | xargs rm -rf", "find /opt/proj -delete",
+                        "psql -c 'DROP DATABASE t'", "git reset --hard HEAD~1"):
+            self.assertEqual(self.bash(command), "allow", command)
+        self.assertEqual(self.flagged_rules(), ["rm recursive"] * 3 + ["sql destructive", "git discard"])
+
+    def test_force_push_is_judged_on_the_command_not_on_text(self):
+        for command in ("git push -f origin main", "git -C repo push --force", "git push origin +main",
+                        "cd x && git push --force-with-lease --force", "bash -c 'git push -fu origin x'",
+                        "git push origin +main --force-if-includes"):  # if-includes alone is no lease
+            self.assertEqual(self.bash(command), "deny", command)
+        for command in ("git push --force-with-lease origin main", "git push origin main",
+                        "claude -p 'run git push --force origin main and report'",
+                        "git commit -m 'Explain why git push --force is denied'",
+                        "cat <<'EOF'\ngit push --force\nEOF"):
+            self.assertEqual(self.bash(command), "allow", command)
+
+    def test_no_hook_ever_asks(self):
+        # `ask` waits for a human and stalls long autonomous loops; hooks deny or allow.
+        for path in HOOKS.glob("*.sh"):
+            self.assertNotRegex(path.read_text(), r"hook_permission\s+\"?ask", path.name)
 
     def test_careful_allows_scratch_and_artifacts(self):
         for command in ("S=/tmp/claude-1/x/scratchpad; rm -rf $S/repo", 'D=$(mktemp -d); rm -rf "$D"',
@@ -71,12 +94,13 @@ class HookContractTests(unittest.TestCase):
                         "git push --force-with-lease"):
             self.assertEqual(self.bash(command), "allow", command)
 
-    def test_careful_asks_when_its_classifier_is_missing(self):
+    def test_careful_denies_deletes_when_its_classifier_is_missing(self):
         hooks = self.root / "hooks"
         shutil.copytree(HOOKS, hooks, ignore=shutil.ignore_patterns("_rm_policy.py", "__pycache__"))
         output = self.run_hook("careful-with-judge.sh", {"tool_input": {"command": "rm -rf /tmp/x"}, "cwd": "/"},
                                hooks=hooks)
-        self.assertEqual(self.decision(output), "ask")
+        self.assertEqual(self.decision(output), "deny")
+        self.assertIn("_rm_policy.py", output["hookSpecificOutput"]["permissionDecisionReason"])
 
     def test_protect_secrets_denies_secrets_but_not_templates(self):
         edit = lambda path: self.decision(self.run_hook("protect-secrets.sh", {"tool_input": {"file_path": path}}))

@@ -414,9 +414,12 @@ Never background it, and never poll a local codex job with Monitor/ScheduleWakeu
 
 ### Writing hooks
 
-- PreToolUse decisions go through `hook_permission <deny|ask> <reason>` (`_lib.sh`). A
+- PreToolUse decisions go through `hook_permission deny <reason>` (`_lib.sh`). A
   top-level `{permissionDecision}` is ignored and the command runs.
-- A gate whose helper is missing or fails must deny or ask, never allow.
+- Never `ask`: it waits for a human and stalls long autonomous loops. Deny what is
+  irreversible and has an alternative (say the alternative in the reason); allow and record
+  (`hook_event … decision=flagged`) what is merely risky.
+- A gate whose helper is missing or fails must deny, never allow.
 - Log every exit path with `hook_log` / `hook_event`; never hand-roll `log()`.
 - Sensors (`post-typecheck.sh`) do not use `set -e`.
 - Hooks and wrappers must run on Linux and macOS (bash ≥ 4 on PATH, BSD/GNU `stat`, `date`,

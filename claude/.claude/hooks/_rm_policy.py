@@ -242,6 +242,9 @@ class Walker:
             return frozenset(moved), cwds
         if prog == "rm":
             self.rm(args, cwds, env, substs, remote)
+        elif prog == "git":
+            if plain_force_push(args):
+                self.verdicts.deny.append("plain force push; use --force-with-lease")
         elif prog == "find":
             self.find(args, cwds, env, substs, remote)
         elif prog == "xargs" and any(os.path.basename(a) == "rm" for a in args):
@@ -405,6 +408,28 @@ class Walker:
             self.verdicts.ask.append(where)
         else:
             self.verdicts.allow += 1
+
+
+GIT_VALUE_OPTS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"}
+
+
+def plain_force_push(args):
+    """`git [opts] push` that force-overwrites without a lease (`--force`, `-f`, `+ref`).
+
+    Judged on the parsed command, so the words inside a commit message, a prompt or a
+    heredoc body are not a push (the substring match blocked those).
+    """
+    i = 0
+    while i < len(args) and args[i].startswith("-"):
+        i += 2 if args[i] in GIT_VALUE_OPTS else 1
+    if i >= len(args) or args[i] != "push":
+        return False
+    rest = args[i + 1:]
+    # Only --force-with-lease protects; --force-if-includes alone is a no-op (git-push(1)).
+    lease = any(a.startswith("--force-with-lease") for a in rest)
+    forced = any(a == "--force" or re.match(r"^-[A-Za-z]*f[A-Za-z]*$", a) for a in rest)
+    plus_ref = any(a.startswith("+") and len(a) > 1 for a in rest)
+    return forced or (plus_ref and not lease)
 
 
 def rm_args(args):

@@ -90,13 +90,14 @@ commits. So the hook (`hooks/_gh_merge_policy.py`) denies `gh pr merge` (squash/
 or `--body ""` for the title only. `--rebase` replays commits under their own authors and passes.
 It also checks `gh pr create|edit|merge` titles, bodies and `--body-file` for the same lines.
 Hook denials must use `hookSpecificOutput.permissionDecision` — emit them with
-`hook_permission <deny|ask> <reason>` from `_lib.sh`. The old top-level `{permissionDecision}`
+`hook_permission deny <reason>` from `_lib.sh` (never `ask`: it waits for a human and
+stalls autonomous loops; a test fails if any hook passes `ask`). The old top-level `{permissionDecision}`
 shape is silently ignored and the tool runs: `commit-policy-gate` and `block-raw-git` were
 log-only until 2026-10-30, and `careful-with-judge`, `protect-secrets`, `freeze` and
 `plan-ssot-gate` until 2026-11-14 (their logs said "deny" the whole time; found by a
 `claude -p` A/B probe). `scripts/__tests__/test_hook_contract.py` runs every deciding hook from
-`~/.claude/hooks` and fails on the old shape. A helper a gate depends on failing must deny or
-ask, never allow: `commit-policy-gate` denies gh writes when `_gh_merge_policy.py` is
+`~/.claude/hooks` and fails on the old shape. A helper a gate depends on failing must deny,
+never allow (`careful-with-judge` denies deletes when `_rm_policy.py` fails): `commit-policy-gate` denies gh writes when `_gh_merge_policy.py` is
 missing. `block-raw-git` also matches a heredoc that merely contains the words, so write
 such content with Edit/Write, not a Bash heredoc.
 
@@ -139,7 +140,7 @@ inline-brief mode, which covers most of the value.
 
 | Hook | Event | Matcher | Purpose |
 |---|---|---|---|
-| `careful-with-judge.sh` | PreToolUse | Bash | Dangerous commands → deny/ask. Recursive deletes are judged by `_rm_policy.py`, which walks the command like the shell (cd and `&&`/`||`/subshell outcomes, variables, mktemp, `bash -c`, `ssh`, `trap`, heredocs, `find -exec/-delete`) and resolves each operand: catastrophic roots deny, temp/scratch/build artifacts allow, the rest ask; a failing classifier asks. DROP/TRUNCATE, force push, `git reset --hard`, `kubectl delete`, docker prune ask. **Blocked nothing until 2026-11-14** (top-level decision shape, see below). |
+| `careful-with-judge.sh` | PreToolUse | Bash | Dangerous commands → deny or flagged, **never ask** (a prompt stalls autonomous loops; a deny with a reason lets the agent adapt). Recursive deletes are judged by `_rm_policy.py`, which walks the command like the shell (cd and `&&`/`||`/subshell outcomes, variables, mktemp, `bash -c`, `ssh`, `trap`, heredocs, `find -exec/-delete`) and resolves each operand: catastrophic roots deny, temp/scratch/build artifacts allow, the rest run and are recorded as `flagged`; a failing classifier denies. Plain force push (`--force`, `-f`, `+ref`; found by the same walker, so the words in a commit message or prompt do not count) denies — use `--force-with-lease`. DROP/TRUNCATE, `git reset --hard`, `kubectl delete`, docker prune are flagged. Read flagged commands in `harness-report.sh` ("Flagged", last 24h). **Blocked nothing until 2026-11-14** (top-level decision shape, see below). |
 | `freeze.sh` | PreToolUse | Edit/Write | Block edits outside `~/.claude/freeze-dir.txt` scope (night-agent sandbox) |
 | `protect-secrets.sh` | PreToolUse | Edit/Write | Deny writes to `.env*` (templates `.env.example/.sample/.template` allowed), `.secrets`, `credentials`, `*.pem`, `*.key`, `id_rsa*`, `.ssh/`. Bash writes are not covered. |
 | `intent-capture.sh` | PreToolUse | Edit/Write | **DISABLED 2026-06-30** (unregistered from settings.json — 7713 fires/wk for ~2 intent files; soft-gate produced ~58% of hook noise with near-zero output). Script kept; re-register the Edit\|Write block to revive. Capture user intent (SourceItem in `~/docs/sources/sessions/`) before non-trivial sessions accumulate drift |

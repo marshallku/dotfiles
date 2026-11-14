@@ -69,10 +69,12 @@ class BridgeTests(unittest.TestCase):
         result = self.patch("*** Begin Patch\n*** Update File: .env\n@@\n-x\n+y\n*** End Patch")
         self.assertEqual(result["hookSpecificOutput"]["permissionDecision"], "deny")
 
-    def test_legacy_ask_is_denied_instead_of_ignored(self):
-        result = self.hook("PreToolUse", tool_name="Bash", tool_input={"command": "git reset --hard"})
+    def test_shared_policy_denies_irreversible_and_lets_risky_commands_run(self):
+        # Same careful-with-judge policy as Claude: no ask, so a Codex loop never waits on a human.
+        result = self.hook("PreToolUse", tool_name="Bash", tool_input={"command": "git push --force origin main"})
         self.assertEqual(result["hookSpecificOutput"]["permissionDecision"], "deny")
-        self.assertIn("cannot implement", result["hookSpecificOutput"]["permissionDecisionReason"])
+        self.assertIn("force-with-lease", result["hookSpecificOutput"]["permissionDecisionReason"])
+        self.assertEqual(self.hook("PreToolUse", tool_name="Bash", tool_input={"command": "git reset --hard"}), {})
 
     def test_baseline_review_gate_and_child_recursion(self):
         start = self.hook("SessionStart", source="startup")
