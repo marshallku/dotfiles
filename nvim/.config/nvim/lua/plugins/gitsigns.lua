@@ -93,5 +93,12 @@ return {
                 end, {desc = "Toggle inline diff overlay"})
             end
         })
+
+        -- Every changed hunk in the repository into the quickfix list, then
+        -- ]q / [q walk them in the real files (gd / gr work there, unlike in a
+        -- diff view). Global: it is the way into files not open yet.
+        vim.keymap.set("n", "<leader>gq", function()
+            require("gitsigns").setqflist("all")
+        end, {desc = "Changed hunks to quickfix"})
     end
 }

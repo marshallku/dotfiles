@@ -69,6 +69,7 @@ without waiting `timeoutlen` for a follow-up key.
 | `<leader>gc` | Pick a commit, review everything after it through the working tree |
 | `<leader>gh` | File history (codediff history of the current file) |
 | `<leader>go` | Toggle inline diff overlay: changed lines, changed words, deleted lines |
+| `<leader>gq` | Every changed hunk in the repo into quickfix; `]q` / `[q` walk them in the real files |
 | `<leader>gB` | Blame buffer |
 | `]h` / `[h` | Next/previous hunk |
 | `<leader>hp` | Preview hunk |
@@ -79,14 +80,32 @@ Inline blame (author, relative time, summary) is **on by default** at the end of
 
 Roles: lazygit stages and pushes, codediff reviews (working tree, history).
 Jump from a diff into the code: `gf` in a codediff tab opens the file as a normal
-buffer; `e` on a file in lazygit opens it in this Neovim (`os.editPreset: nvim-remote`).
+buffer; `e` on a file in lazygit opens it in the window lazygit covers.
 codediff refreshes live while an agent edits files, and folds unchanged regions.
 Inside a codediff tab: `t` inline / side-by-side, `gc` compact, `]c`/`[c` hunk,
 `]f`/`[f` file, `-` stage file, `<leader>hs`/`<leader>hr` stage/discard hunk,
-`q` close, `g?` all keys. `:CodeDiff pr 512` reviews a PR without checking it out.
+`q` (or `:q`) closes the whole tab, `g?` all keys. The other pane's cursor follows
+to the corresponding line. `:CodeDiff pr 512` reviews a PR without checking it out.
 In the `gl`/`gL` history panel, `O` on a commit (or any of its file lines) opens
 that commit alone in a new tab: its files in the left explorer, parent vs commit,
 `]f`/`[f` to walk them. `q` closes it and returns to the history tab.
+
+### Review comments to Claude (review.nvim)
+| Key | Action |
+|-----|--------|
+| `<leader>vv` / `vc` / `vb` | Review working tree / picked commits / a branch (codediff) |
+| `<leader>vn` | Note on this line or selection of any file, no diff needed (n, v) |
+| `<leader>ve` / `vd` / `vl` | Edit / delete the comment at the cursor / list all |
+| `<leader>vs` | Send the comments to Claude and close the review |
+
+In the review tab: `i` comment (pick note / suggestion / issue / praise; visual
+for a range), `F` file comment, `r` mark file reviewed, `]n`/`[n` next comment,
+`C` copy as markdown, `q` copy, archive and close.
+
+`<leader>vs` types the export into the Claude Code agent that comux runs in this
+repository (`comux send --paste --enter`) and submits it. With several, a picker
+lists them, agents in Neovim's own comux tab first (`*`). Outside a review tab it
+sends without closing anything. The export is always on the clipboard too.
 
 ### Text case (parity with `change-case`)
 Prefix `gA` (uppercase, so built-in `ga` ASCII inspect is preserved). Examples: `gAu` upper, `gAl` lower, `gAs` snake, `gAc` camel, `gAp` pascal, `gAd` dash (kebab), `gAn` constant.
