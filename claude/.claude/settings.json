@@ -74,6 +74,16 @@
         ]
       },
       {
+        "matcher": "Bash|Read|Glob|Grep|Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/hooks/protect-read.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
         "matcher": "Edit|Write",
         "hooks": [
           {
