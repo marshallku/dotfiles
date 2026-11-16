@@ -122,8 +122,8 @@ hl.env("WINIT_X11_SCALE_FACTOR", "1")
 hl.env("GTK_THEME", "Adwaita:dark")
 hl.env("GTK_THEME_VARIANT", "dark")
 hl.env("GTK_THEME_PREFER_DARK", "1")
-hl.env("QT_QPA_PLATFORMTHEME", "qt5ct")
-hl.env("QT_STYLE_OVERRIDE", "kvantum")
+hl.env("QT_QPA_PLATFORMTHEME", "xdgdesktopportal")
+hl.env("QT_STYLE_OVERRIDE", "Fusion")
 
 -----------------------
 ----- PERMISSIONS -----
