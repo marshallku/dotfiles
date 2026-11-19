@@ -93,7 +93,6 @@ print(json.dumps({"type":"result", "subtype":"success", "session_id":session,
         (self.repo / "code.py").write_text("initial = True\n")
         self.git("add", ".")
         self.git("commit", "-qm", "initial")
-        self.shell('review_init_baseline "$PWD" s1')
 
     def run_cmd(self, args, **kwargs):
         return subprocess.run(args, cwd=self.repo, env=self.env, text=True, capture_output=True, **kwargs)
@@ -311,121 +310,23 @@ print(json.dumps({"type":"result", "subtype":"success", "session_id":session,
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout)
 
-    def test_stop_rearms_for_new_work_unit_and_avoids_recursion(self):
-        self.write("code.py", "first = True\n", stage=False)
-        self.assertEqual(self.hook("auto-cross-review.sh")["decision"], "block")
-        self.assertEqual(self.hook("auto-cross-review.sh", stop_hook_active=True), {})
-        self.git("add", "code.py")
-        self.review("--session", "s1")
-        self.assertEqual(self.hook("auto-cross-review.sh"), {})
-        self.write("code.py", "second = True\n", stage=False)
-        self.assertEqual(self.hook("auto-cross-review.sh")["decision"], "block")
-
-    def test_stop_reminds_once_per_snapshot_and_respects_cooldown(self):
-        self.write("code.py", "first = True\n", stage=False)
-        self.assertEqual(self.hook("auto-cross-review.sh")["decision"], "block")
-        # Waiting on subagents: the same snapshot never re-blocks.
-        self.assertEqual(self.hook("auto-cross-review.sh"), {})
-        # New changes inside the cooldown are not re-blocked either; commit stays the hard gate.
-        self.write("code.py", "second = True\n")
-        self.assertEqual(self.hook("auto-cross-review.sh"), {})
-        self.assertTrue(self.denied(self.gate()))
-        # Past the cooldown, a new snapshot is reminded again.
-        self.env["AUTO_REVIEW_STOP_COOLDOWN"] = "0"
-        self.assertEqual(self.hook("auto-cross-review.sh")["decision"], "block")
-        self.assertEqual(self.hook("auto-cross-review.sh"), {})
-
-    def test_stop_reminder_right_after_an_approval_still_deduplicates(self):
-        self.write("code.py", "first = True\n")
-        self.review("--session", "s1")
-        self.write("code.py", "second = True\n", stage=False)
-        # Same second as the approval: the reminder must still count as made after it.
-        self.assertEqual(self.hook("auto-cross-review.sh")["decision"], "block")
-        self.assertEqual(self.hook("auto-cross-review.sh"), {})
-
     def log_edit(self, session, path):
         with open(self.home / f".claude/state/dirty-{session}.log", "a") as log:
             log.write(f"{path}\n")
 
-    def test_changes_uncommitted_before_session_start_are_not_its_work(self):
-        (self.repo / "code.py").write_text("dirty_before_start = True\n")
-        self.shell('rm "$(review_state_path "$PWD" s1)"')
-        self.hook("session-start.sh", source="startup")
-        self.assertEqual(self.hook("auto-cross-review.sh"), {})
-        self.assertEqual(self.gate(), {})
-        self.write("code.py", "session_edit = True\n", stage=False)
-        self.assertEqual(self.hook("auto-cross-review.sh")["decision"], "block")
-
-    def test_reminders_ignore_files_only_another_session_edited(self):
-        other = self.write("other.py", "by_other_session = True\n", session="s2", stage=False)
+    def test_gate_judges_staged_paths_whoever_wrote_them(self):
+        self.write("other.py", "by_other_session = True\n", session="s2", stage=False)
         (self.repo / "bash_edit.py").write_text("unlogged = True\n")
-        self.assertEqual(self.hook("auto-cross-review.sh"), {})
-        self.assertEqual(self.hook("remind-cross-review.sh"), {})
         self.assertEqual(self.gate(), {})
-        # Commit stays strict on what is staged, whoever wrote it: Bash edits leave no log.
-        self.git("add", "other.py")
+        # Bash edits leave no log, so the staged index is the only thing judged.
+        self.git("add", "bash_edit.py")
         self.assertTrue(self.denied(self.gate()))
-        # A file both sessions edited is this session's work too.
-        self.log_edit("s1", other)
-        self.assertEqual(self.hook("auto-cross-review.sh")["decision"], "block")
 
-    def test_reminders_follow_the_repository_the_session_edited(self):
-        other = self.published_repo("other")
-        (self.repo / "code.py").write_text("by_other_session = True\n")
-        self.log_edit("s2", self.repo / "code.py")
-        (other / "untouched.py").write_text("dirty_but_not_ours = True\n")
-        self.assertEqual(self.hook("auto-cross-review.sh"), {})
-        (other / "app.py").write_text("x = 2\n")
-        self.log_edit("s1", other / "app.py")
-        out = self.hook("auto-cross-review.sh")
-        self.assertEqual(out["decision"], "block")
-        self.assertIn(f"in {other.resolve()}", out["reason"])
-        self.assertIn(str(other.resolve()), self.hook("remind-cross-review.sh")
-                      ["hookSpecificOutput"]["additionalContext"])
-
-    def test_a_repository_already_reminded_does_not_hide_the_next(self):
-        other = self.published_repo("other")
-        self.write("code.py", "first = True\n", stage=False)
-        self.assertEqual(self.hook("auto-cross-review.sh")["decision"], "block")
-        self.assertIn("hookSpecificOutput", self.hook("remind-cross-review.sh"))
-        (other / "app.py").write_text("x = 2\n")
-        self.log_edit("s1", other / "app.py")
-        self.assertIn(str(other.resolve()), self.hook("auto-cross-review.sh")["reason"])
-        self.assertIn(str(other.resolve()), self.hook("remind-cross-review.sh")
-                      ["hookSpecificOutput"]["additionalContext"])
-
-    def test_portable_realpath_resolves_symlinks_and_missing_tails(self):
-        link = self.root / "link"
-        link.symlink_to(self.repo)
-        (self.repo / "target.py").write_text("t = 1\n")
-        (self.root / "file-link.py").symlink_to(self.repo / "target.py")
-        real = str(self.repo.resolve())
-        self.assertEqual(self.shell(f'_review_realpath "{link}/gone/new.py"'), f"{real}/gone/new.py")
-        self.assertEqual(self.shell(f'_review_realpath "{self.root}/file-link.py"'), f"{real}/target.py")
-
-    def test_stop_suppression_grace_ignores_a_reminder_from_this_stop(self):
-        self.write("code.py", "first = True\n", stage=False)
-        self.assertEqual(self.hook("auto-cross-review.sh")["decision"], "block")
-        fresh = self.run_cmd(["bash", "-c", f'. "{ROOT}/hooks/_lib.sh"; '
-                              'review_stop_suppressed "$PWD" s1 "$(review_session_fingerprint "$PWD" s1)" 10'])
-        self.assertNotEqual(fresh.returncode, 0)
-        aged = self.run_cmd(["bash", "-c", f'. "{ROOT}/hooks/_lib.sh"; '
-                             'review_stop_suppressed "$PWD" s1 "$(review_session_fingerprint "$PWD" s1)" 0'])
-        self.assertEqual(aged.returncode, 0)
-
-    def test_session_start_injects_only_its_own_repositorys_handoff(self):
-        other = self.published_repo("other")
+    def test_session_start_does_not_inject_the_handoff(self):
         self.hook("auto-handoff.sh")
-        start = {"source": "resume", "session_id": "s2"}
-        own = self.hook("session-start.sh", **start)
-        self.assertIn(f"**Directory:** {self.repo}", own["hookSpecificOutput"]["additionalContext"])
-        # latest.md now describes self.repo; a session in another repository must not receive it.
-        self.assertEqual(self.hook("session-start.sh", cwd=str(other), **start), {})
-        # A hand-written narrative in latest.md for this repository still wins when it is newer.
-        time.sleep(1.1)
-        (self.home / ".claude/handoffs/latest.md").write_text(f"# Narrative\n\n- **Directory:** {self.repo}\n")
-        own = self.hook("session-start.sh", **start)
-        self.assertIn("# Narrative", own["hookSpecificOutput"]["additionalContext"])
+        self.assertTrue((self.home / ".claude/handoffs/latest.md").exists())
+        self.assertEqual(self.hook("session-start.sh", source="startup"), {})
+        self.assertEqual(self.hook("session-start.sh", source="resume"), {})
 
     def test_portable_timeout_kills_a_command_that_ignores_term(self):
         self.env["PORTABLE_TIMEOUT_KILL_AFTER"] = "1"
@@ -501,16 +402,6 @@ print(json.dumps({"type":"result", "subtype":"success", "session_id":session,
         block = self.verify_gate("ls", "lang")
         self.assertIn("language of their last message", block["reason"])
 
-    def test_reminder_deduplicates_snapshot(self):
-        self.write("code.py", "first = True\n", stage=False)
-        self.assertIn("hookSpecificOutput", self.hook("remind-cross-review.sh"))
-        self.assertEqual(self.hook("remind-cross-review.sh"), {})
-        # Another session editing the same repository must not re-arm this session's reminder.
-        self.write("theirs.py", "by_other_session = True\n", session="s2", stage=False)
-        self.assertEqual(self.hook("remind-cross-review.sh"), {})
-        self.write("code.py", "second = True\n", stage=False)
-        self.assertIn("hookSpecificOutput", self.hook("remind-cross-review.sh"))
-
     def test_round_guard_cannot_reset_by_omitting_resume(self):
         self.write("code.py", "feature = True\n")
         self.env["FAKE_VERDICT"] = "REVISE"
@@ -585,28 +476,14 @@ print(json.dumps({"type":"result", "subtype":"success", "session_id":session,
         self.write("requirements.txt", "dependency==1.0\n")
         self.assertEqual(self.gate()["hookSpecificOutput"]["permissionDecision"], "deny")
 
-    def test_gate_needs_no_session_baseline(self):
-        self.shell('rm "$(review_state_path "$PWD" s1)"')
-        self.assertEqual(self.gate(), {})
-        self.write("code.py", "changed = True\n")
-        self.assertTrue(self.denied(self.gate()))
-
     def test_unborn_repository(self):
         unborn = self.root / "unborn"
         unborn.mkdir()
         self.repo = unborn
         self.git("init", "-q", "-b", "main")
-        self.shell('review_init_baseline "$PWD" s1')
         self.write("new.py", "new = True\n")
         self.review("--session", "s1")
         self.assertIn("+new = True", (self.root / "prompt").read_text())
-
-    def test_session_start_does_not_reset_baseline_on_resume(self):
-        before = self.shell('cat "$(review_state_path "$PWD" s1)"')
-        (self.repo / "code.py").write_text("committed = True\n")
-        self.git("commit", "-qam", "feature")
-        self.hook("session-start.sh", source="resume")
-        self.assertEqual(self.shell('cat "$(review_state_path "$PWD" s1)"'), before)
 
     def test_relative_files_from_subdirectory(self):
         nested = self.repo / "nested"
@@ -618,16 +495,6 @@ print(json.dumps({"type":"result", "subtype":"success", "session_id":session,
         self.assertIn("+nested = True", (self.root / "prompt").read_text())
         self.git("add", "nested")
         self.assertTrue(self.denied(self.gate()))
-
-    def test_legacy_resume_does_not_invent_baseline(self):
-        self.shell('rm "$(review_state_path "$PWD" s1)"')
-        self.hook("session-start.sh", source="resume")
-        self.assertNotEqual(self.run_cmd(["bash", "-c", f'. "{ROOT}/hooks/_lib.sh"; '
-                                          'test -e "$(review_state_path "$PWD" s1)"']).returncode, 0)
-
-    def test_stop_does_not_review_while_waiting_for_clarification(self):
-        self.write("code.py", "in_progress = True\n", stage=False)
-        self.assertEqual(self.hook("auto-cross-review.sh", last_assistant_message="Which behavior do you want?"), {})
 
     def test_claude_review_uses_read_only_tools_and_provider_bound_approval(self):
         self.write("code.py", "changed = True\n")

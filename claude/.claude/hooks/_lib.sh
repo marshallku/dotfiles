@@ -106,25 +106,8 @@ handoff_publish() {
     return 0
 }
 
-# Review state helpers share one policy across Stop, prompt and commit hooks.
+# Review state helpers shared by the commit gate and the review script.
 . "$(dirname "${BASH_SOURCE[0]}")/_review-state.sh"
-
-# auto_review_pending_repos <session> <cwd>
-# Print every repository holding this session's unreviewed work: the cwd repo or
-# any repo the session edited, so a session opened in A and editing B is judged by
-# B, and other sessions' edits in A do not count (review_required session scope).
-# All of them, not the first: a repo already reminded about must not hide the next.
-auto_review_pending_repos() {
-    local session="${1:-default}" cwd="${2:-}" repo found=1
-    [ -f "$HOME/.claude/state/auto-review-disabled" ] && return 1
-    while IFS= read -r repo; do
-        if review_required "$repo" "$session" session; then
-            printf '%s\n' "$repo"
-            found=0
-        fi
-    done < <(review_session_repos "$session" "$cwd")
-    return $found
-}
 
 # Path to notify-codex.sh. Anchored to the deployed ~/.claude/hooks location
 # (same convention as ~/.codex/config.toml's absolute notify path); BASH_SOURCE

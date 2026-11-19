@@ -252,13 +252,6 @@ mark_repo_reviewed() (
         echo '[cross-review] One reviewer approved; run the other reviewer on the same staged work unit. Commit gate remains closed.' >&2
         return 0
     fi
-    # The reviewed staged tree becomes this session's reminder baseline: what it
-    # edits beyond that is the next work unit.
-    if [[ -n "$SESSION_ID" ]]; then
-        tmp=$(mktemp "$STATE_DIR/.review-base.XXXXXX")
-        printf '%s\n' "$REVIEW_TREE" > "$tmp"
-        mv -f "$tmp" "$(review_state_path "$REVIEW_REPO_ROOT" "$SESSION_ID")"
-    fi
     rm -f "$STATE_DIR/codex-delegate-pending-$REPO_HASH"
 )
 
@@ -351,7 +344,7 @@ if [[ "$DIFF" != "$RAW_DIFF" ]]; then
 fi
 
 # Nothing staged is not an approval: it usually means the work unit was never
-# staged, and approving HEAD would only advance the reminder baseline.
+# staged, and approving HEAD -> HEAD approves nothing.
 if [[ -z "$RAW_DIFF" && "$MODE" == staged ]]; then
     {
         echo "[codex-review] Nothing staged in $REVIEW_REPO_ROOT — the review covers HEAD -> index only."

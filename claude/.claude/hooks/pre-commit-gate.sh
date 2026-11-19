@@ -289,7 +289,7 @@ Edit the file and re-run intent-finalize.sh.'
     esac
 fi
 
-if ! review_required "$REPO_ROOT" "$SESSION" && [ ! -f "$DELEGATE_PENDING" ]; then
+if ! review_required "$REPO_ROOT" &&[ ! -f "$DELEGATE_PENDING" ]; then
     log "allow: nothing staged needs review"
     echo '{}'
     exit 0

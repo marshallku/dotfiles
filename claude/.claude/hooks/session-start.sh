@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# SessionStart hook: 이전 세션 handoff 자동 로드
-# auto-handoff.sh가 저장한 handoff(repo 별 파일, repo 밖이면 latest.md)를 시스템 프롬프트에 주입
+# SessionStart hook: state GC, ledger/log rotation, and post-compaction re-injection.
+# The previous-session handoff is no longer injected: it repeated the gitStatus Claude
+# Code already provides (672 injections × ~1.4 KB in 30 days). auto-handoff.sh still
+# writes it for /catchup.
 
 set -euo pipefail
 
@@ -11,12 +13,8 @@ SOURCE=$(echo "$INPUT" | jq -r '.source // empty' 2>/dev/null || echo "")
 SESSION=$(echo "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || echo "")
 
 # 부수 작업: 1일 이상 된 ephemeral 세션 마커 청소.
-# 승인·기준점·delegate 마커는 긴 세션에서도 필요하므로 나이 기준 삭제에서 제외한다.
+# 승인·delegate 마커는 긴 세션에서도 필요하므로 나이 기준 삭제에서 제외한다.
 STATE_DIR="$HOME/.claude/state"
-CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
-if [[ "$SOURCE" == "startup" || "$SOURCE" == "clear" ]] && [ -n "$SESSION" ] && REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null); then
-    review_init_baseline "$REPO_ROOT" "$SESSION" || echo '[review] Could not capture session baseline' >&2
-fi
 
 if [ -d "$STATE_DIR" ]; then
     find "$STATE_DIR" -maxdepth 1 -type f \( \
@@ -77,47 +75,4 @@ if [ "$SOURCE" = "compact" ] && [ -n "$SESSION" ] && [ -f "$REINJECT" ]; then
     fi
 fi
 
-HANDOFF_FILE="$HOME/.claude/handoffs/latest.md"
-
-# repo 안에서 시작한 세션은 그 repo 의 handoff 만 받는다. 전역 latest.md 는 마지막에
-# 끝난 아무 repo 의 상태라, 다른 repo 세션에 주입되면 무관한 컨텍스트일 뿐이다.
-# latest.md 는 Directory 가 이 repo 안을 가리킬 때만(손으로 쓴 narrative 포함) 쓴다.
-if REPO_HANDOFF=$(handoff_repo_path "$CWD"); then
-    LATEST="$HANDOFF_FILE"
-    HANDOFF_FILE="$REPO_HANDOFF"
-    HANDOFF_REPO=$(git -C "$CWD" rev-parse --show-toplevel)
-    LATEST_DIR=$(sed -n 's/^- \*\*Directory:\*\* //p' "$LATEST" 2>/dev/null | head -n1 || true)
-    if [ -n "$LATEST_DIR" ] && [ "$(git -C "$LATEST_DIR" rev-parse --show-toplevel 2>/dev/null || true)" = "$HANDOFF_REPO" ] \
-        && { [ ! -f "$HANDOFF_FILE" ] || [ "$(portable_mtime "$LATEST")" -gt "$(portable_mtime "$HANDOFF_FILE")" ]; }; then
-        HANDOFF_FILE="$LATEST"
-    fi
-fi
-
-# handoff 파일이 없으면 스킵
-if [ ! -f "$HANDOFF_FILE" ]; then
-    echo '{}'
-    exit 0
-fi
-
-# 24시간 이상 지난 handoff는 무시
-HANDOFF_MTIME=$(portable_mtime "$HANDOFF_FILE")
-FILE_AGE=$(( $(date +%s) - HANDOFF_MTIME ))
-if [ "$FILE_AGE" -gt 86400 ]; then
-    echo '{}'
-    exit 0
-fi
-
-CONTENT=$(cat "$HANDOFF_FILE")
-
-# handoff 내용을 stderr로 출력 (사용자에게 보임)
-cat >&2 << EOF
-[handoff] Previous session context loaded ($(portable_fmtdate "$HANDOFF_MTIME"))
-EOF
-
-# additionalContext로 주입 (SessionStart는 hookEventName 필수)
-jq -nc --arg content "$CONTENT" '{
-  "hookSpecificOutput": {
-    "hookEventName": "SessionStart",
-    "additionalContext": ("## Previous Session Context\n\nThe following handoff was saved from the previous session. Use this to understand what was being worked on. Do not repeat this information unless asked.\n\n" + $content)
-  }
-}'
+echo '{}'

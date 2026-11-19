@@ -3,13 +3,13 @@
 #
 #   PreToolUse  Bash: track-bash-edit.sh pre   — stamp the time the command starts
 #   PostToolUse Bash: track-bash-edit.sh post  — repository files changed since the stamp
-#                     go to dirty-<session>.log (review reminders) and post-typecheck.sh
+#                     go to dirty-<session>.log (verification gate) and post-typecheck.sh
 #
 # Why: agents often edit through `python3 - <<'PY' … write_text(…)`, `sed -i` or `cat >`.
 # On the work machine that was 6,188 edits in four months (27% of Bash input); on the
 # mac-mini, Bash file writes outnumbered Edit/Write calls. None of them reached
 # track-edit.sh or post-typecheck.sh, which only match Edit|Write, so a type error made
-# that way was never reported and the review reminder never fired.
+# that way was never reported.
 #
 # Detection is by result, not by parsing the command: after the command, every tracked
 # modified or untracked (non-ignored) file in the cwd's repository whose mtime is at or

@@ -11,8 +11,8 @@ CLAUDE = Path(__file__).resolve().parents[2]
 SUPPORTED = {
     "careful-with-judge.sh", "pre-commit-gate.sh", "commit-policy-gate.sh", "block-raw-git.sh",
     "protect-secrets.sh", "freeze.sh", "plan-ssot-gate.sh", "session-start.sh",
-    "surface-open-loops.sh", "pre-compact.sh", "remind-cross-review.sh", "contract-inject.sh",
-    "verification-gate.sh", "auto-cross-review.sh", "auto-handoff.sh", "track-edit.sh",
+    "surface-open-loops.sh", "pre-compact.sh", "contract-inject.sh",
+    "verification-gate.sh", "auto-handoff.sh", "track-edit.sh",
     "post-typecheck.sh", "ssot-check-mark.sh",
 }
 READ_ONLY_HOOKS = {"careful-with-judge.sh", "protect-secrets.sh", "freeze.sh"}

@@ -26,7 +26,7 @@ untracked 파일은 리뷰에도 커밋 게이트에도 들어가지 않는다. 
 `~/.claude/state/codex-delegate-pending-<repo-hash>`가 있으면 부모와 위임자의 코드가
 섞일 수 있으므로 **Claude와 Codex 양쪽**을 같은 스테이징 tree로 리뷰시킨다.
 위임 작업이 끝난 뒤 `--reviewer claude`, `--reviewer codex`를 각각 실행한다.
-한쪽 APPROVED만으로는 커밋 게이트가 열리지 않으며 기준점도 전진하지 않는다.
+한쪽 APPROVED만으로는 커밋 게이트가 열리지 않는다.
 수정으로 스테이징 tree가 바뀌면 양쪽 모두 새 내용에 대한 승인이 필요하다.
 
 모든 호출에 `--reviewer "$REVIEWER"`를 전달한다. `codex-review.sh`는 호환성을 위해
@@ -36,8 +36,7 @@ Claude 리뷰어는 Read/Glob/Grep만 제공하고 Bash·Edit·Write·MCP·훅·
 관련 파일은 직접 읽지만 테스트 실행은 구현 주체가 맡고 리뷰어는 그 결과를 검증한다.
 
 현재 저장소와 세션 ID를 확인한다. `--session`은 HEAD → index만 검토하므로 기준점·`--base`가
-필요 없다(`--base`를 주면 거부한다). 세션 기준점은 리마인더용이며, 승인되면 승인한 스테이징
-tree로 전진한다.
+필요 없다(`--base`를 주면 거부한다).
 
 ```bash
 . "$HOME/.claude/hooks/_lib.sh"

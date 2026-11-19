@@ -61,18 +61,16 @@ moving, makes the pair stop matching. Unstaged edits never invalidate it. `--fil
 `--uncommitted` and branch mode are advisory and never approve. Markers older than 7 days are
 GC'd by `session-start.sh`.
 
-The commit, Stop and prompt hooks share path eligibility. Documentation-only changes may skip;
+Path eligibility: documentation-only changes may skip;
 single-file implementation, configuration and dependency changes still require review. A
 repo-root `.reviewignore` (bash globs, `*` crosses `/`) marks automation-written data (bot memory,
 sync metadata) as doc-like; protected paths (`SKILL.md`, `AGENTS.md`, `CLAUDE.md`, `.claude/*`,
 `.codex/*`, `.reviewignore` itself) always require review.
-The commit gate counts every staged path, whoever wrote it (Bash edits leave no log). The prompt
-and Stop reminders count only files **this session** wrote through Edit/Write
-(`dirty-<session>.log`) that changed since its baseline (working tree at SessionStart, advanced
-to the approved staged tree on approval), in every repo it edited plus its cwd repo. They
-de-duplicate on the fingerprint of that session-own diff, so another session editing the same
-repo neither triggers nor re-arms them. Stop additionally fires at most once per
-`AUTO_REVIEW_STOP_COOLDOWN` (20 min) while changes keep landing; a new approval re-arms it.
+The commit gate counts every staged path, whoever wrote it (Bash edits leave no log).
+There are no review reminders: the commit gate already enforces approval. The Stop block
+(`auto-cross-review.sh`) and the per-prompt reminder (`remind-cross-review.sh`), with the
+session baseline and session-scoped diff they needed, were removed 2026-11-19 — in their last
+30 days they cost 409 extra turns, 2276 dedup skips and 618 prompt injections.
 `pre-commit-gate` judges the repository each command really commits in
 (`hooks/_commit_targets.py`): reading `save.sh` (`grep`/`head`/`cat`) is not a commit, and
 `cd ~/docs && ~/save.sh` is judged in `~/docs`; any shape it cannot fully parse falls back to the
@@ -109,8 +107,7 @@ only invalid or out-of-scope findings remain (new issues in code the fixes did n
 `CODEX_REVIEW_MAX_ROUNDS` (default 10, `0` = none) is a runaway guard, not a convergence target. The skill defines this workflow for automatic and manual calls alike.
 
 Snapshots (and the index tree, written through a copy of the index) create unreferenced Git
-tree/blob objects; the user's index file and branches are unchanged. They follow normal Git object retention. If Git pruning removes
-a reminder baseline, that session's reminders go quiet (the commit gate needs none). Do not prune
+tree/blob objects; the user's index file and branches are unchanged. They follow normal Git object retention. Do not prune
 objects during an active review.
 Usage telemetry records round, snapshot, resume, verdict, elapsed time and cached tokens; missing
 usage is explicitly marked. The actual model remains unknown unless reported by the CLI.
@@ -153,11 +150,9 @@ inline-brief mode, which covers most of the value.
 | `track-bash-edit.sh` | PreToolUse + PostToolUse | Bash | `pre` stamps the start time; `post` sends repository files the command changed (mtime ≥ stamp, `git ls-files -m -o`) to the dirty log and to `post-typecheck.sh` (once). Skips subagents, scratchpad and file-moving git commands (pull/checkout/rebase…). Exists because heredoc/sed edits bypassed every Edit/Write sensor. |
 | `ssot-check-mark.sh` | PostToolUse | Bash | Detect `dn search`/`tag`/`related` and touch `ssot-checked-<session>`; this is what clears `plan-ssot-gate.sh` |
 | `post-typecheck.sh` | PostToolUse | Edit/Write | **The computational sensor.** Runs the project's `tsc --noEmit` / `cargo check` / `go vet ./...` once per edit and feeds errors back as `additionalContext`. Requires a *local* `tsc` (walks up for workspace hoisting) — bare `npx tsc` resolves to an unrelated binary and silently reports clean. Yarn PnP projects (`.pnp.cjs`) run `yarn tsc --incremental` with build info cached in `~/.cache/post-typecheck` once `yarn bin tsc` resolves. Unchecked file types record one `heartbeat` event a day. Logs every outcome (pass/fail/skip/timeout/checker_error) to the event ledger. **Was silently dead 2026-04-21 → 2026-08-31**: `set -e` + an unguarded pipefail pipeline killed it on the error path only. Runs without `set -e` now — do not re-add it. Opt-out: `post-typecheck-disabled` |
-| `session-start.sh` | SessionStart | — | Load this repo's handoff (`handoffs/repo-<hash>.md`; `latest.md` only outside a repo or when it points into this repo) into systemPrompt; GC stale state files (incl. `intent-active-*` older than 7d); rotate `hooks-debug.log` + the two JSONL ledgers |
-| `remind-cross-review.sh` | UserPromptSubmit | — | Inject additionalContext reminding Claude to run codex-review before concluding |
+| `session-start.sh` | SessionStart | — | GC stale state files (incl. `intent-active-*` older than 7d); rotate `hooks-debug.log` + the two JSONL ledgers; after compaction, re-inject the `pre-compact.sh` snapshot. The handoff is no longer injected (it duplicated Claude Code's gitStatus) |
 | `contract-inject.sh` | UserPromptSubmit | — | On `/goal`·`/loop` activation, inject the per-work-unit autonomous-loop contract as additionalContext so the user need not retype it (non-blocking). Opt-out: `contract-inject-disabled` |
-| `verification-gate.sh` | Stop | — | Block stop once/session when code changed but no test/e2e/run/deploy command was actually executed this session (scans executed Bash commands, not output text; excludes build/typecheck). Single-shot, so a genuinely-N/A change is handled by stating the reason once. Sibling to auto-cross-review (did *you* run it? vs. did a reviewer see it?). Opt-out: `verify-gate-disabled` |
-| `auto-cross-review.sh` | Stop | — | Remind (block once) per state of this session's own unreviewed Edit/Write files, at most once per 20-min cooldown; avoids recursive Stop hooks |
+| `verification-gate.sh` | Stop | — | Block stop once/session when code changed but no test/e2e/run/deploy command was actually executed this session (scans executed Bash commands, not output text; excludes build/typecheck). Single-shot, so a genuinely-N/A change is handled by stating the reason once. Opt-out: `verify-gate-disabled` |
 | `auto-handoff.sh` | Stop | — | Capture git status + branch + recent log to `~/.claude/handoffs/latest.md` and `repo-<hash>.md` for the next session in that repo |
 | `harness-report.sh --tripwire` | SessionStart | — | Trip wires over the two ledgers: codex spend >2x the 6-day mean, a sensor erroring/timing out, a component that used to emit events going silent for 7d (post-typecheck only when the machine edited files that week), and install drift (hook files missing vs the dotfiles source, settings.json referencing missing hooks or diverged from dotfiles, macOS LaunchAgents pointing at deleted `~/.claude` files). Silent unless something trips. Opt-out: `tripwire-disabled` |
 

@@ -2,6 +2,7 @@
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
+  "disableClaudeAiConnectors": true,
   "attribution": {
     "commit": "",
     "pr": ""
@@ -149,11 +150,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $HOME/.claude/hooks/remind-cross-review.sh",
-            "timeout": 15
-          },
-          {
-            "type": "command",
             "command": "bash $HOME/.claude/hooks/contract-inject.sh",
             "timeout": 5
           },
@@ -172,11 +168,6 @@
             "type": "command",
             "command": "bash $HOME/.claude/hooks/verification-gate.sh",
             "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "bash $HOME/.claude/hooks/auto-cross-review.sh",
-            "timeout": 15
           },
           {
             "type": "command",
@@ -256,7 +247,7 @@
     "gopls-lsp@claude-plugins-official": true,
     "typescript-lsp@claude-plugins-official": true,
     "clangd-lsp@claude-plugins-official": true,
-    "figma@claude-plugins-official": true,
+    "figma@claude-plugins-official": false,
     "swift-lsp@claude-plugins-official": true
   },
   "alwaysThinkingEnabled": true,

@@ -8,9 +8,9 @@
 
 별도 행동 불필요. **SessionStart hook**이 자동으로:
 
-- 이전 세션의 handoff(`~/.claude/handoffs/latest.md`)를 읽어 system prompt에 주입
-- 24시간 이상 지난 handoff는 무시
-- 어제 작업 흐름이 자동으로 이어짐
+- 오래된 state 파일 정리, 로그·원장 로테이션
+- compaction 직후라면 `pre-compact.sh`가 남긴 스냅샷 재주입
+- 이전 세션 handoff는 더 이상 주입하지 않는다 (Claude Code 기본 gitStatus와 중복). 이어서 할 맥락이 필요하면 직접 `~/.claude/handoffs/latest.md`를 읽게 한다
 
 수동으로 더 상세한 맥락이 필요하면:
 
@@ -28,11 +28,9 @@ claude --resume          # 이전 세션 자체를 이어서
 |------|------|--------|
 | **post-typecheck** | `tsc --noEmit` / `cargo check` / `go vet` 자동 실행 | 파일 편집 후 |
 | **track-edit** | 세션별 편집 파일 목록 기록 + repo reviewed marker 무효화 | 파일 편집 후 |
-| **remind-cross-review** | 편집 진행 중이면 매 user turn 시작 시 리뷰 리마인더 주입 | User prompt 도착 시 |
 | **pre-commit-gate** | `save.sh`/`git commit`/`git push` 감지 → 리뷰 안 됐으면 **차단** | Bash 실행 전 |
 | **careful-with-judge** | `rm -rf`, `git push --force` 등 위험 명령 감지 → LLM 판단 | Bash 실행 전 |
 | **protect-secrets** | `.env`, `*.key` 등 민감 파일 편집 차단 | 파일 편집 전 |
-| **auto-cross-review** | 비자명한 변경이 있으면 Stop 시 자동으로 codex 리뷰 지시 주입 | 턴 종료 직전 |
 
 타입 에러가 나면 Claude가 즉시 알고 수정을 제안한다.
 
@@ -154,7 +152,7 @@ freeze ~/dev/my-project
 claude -p "TODO.md에 있는 작업들을 순서대로 구현해줘" \
   --max-turns 50 \
   --permission-mode acceptEdits
-# 다음 날 아침 — 세션 시작하면 handoff가 자동 로드됨
+# 다음 날 아침 — 필요하면 ~/.claude/handoffs/latest.md를 읽어 이어가게 한다
 ```
 
 ---
@@ -165,8 +163,7 @@ claude -p "TODO.md에 있는 작업들을 순서대로 구현해줘" \
 
 세션을 끝내면 **Stop hook**이 자동으로:
 - 현재 branch, 최근 커밋 5개, staged/unstaged 변경 사항 캡처
-- `~/.claude/handoffs/latest.md`에 저장
-- 다음 세션에서 자동 복원
+- `~/.claude/handoffs/latest.md`에 저장 (`/catchup`이 읽음, 자동 주입은 안 함)
 
 ### 수동 (상세 핸드오프가 필요할 때)
 
@@ -228,15 +225,13 @@ claude -p "이 프로젝트의 테스트 커버리지를 80%로 올려줘" \
 
 | Hook | 타이밍 | 역할 |
 |------|--------|------|
-| session-start | SessionStart | 이전 handoff 자동 로드 + state cleanup |
-| remind-cross-review | UserPromptSubmit | 편집 진행 중이면 리뷰 리마인더 주입 |
+| session-start | SessionStart | state cleanup + compaction 후 스냅샷 재주입 |
 | careful-with-judge | PreToolUse (Bash) | 위험 명령 LLM 판단 |
 | pre-commit-gate | PreToolUse (Bash) | save.sh/git commit/push 전 리뷰 강제 (차단형) |
 | protect-secrets | PreToolUse (Edit/Write) | 민감 파일 보호 |
 | freeze | PreToolUse (Edit/Write) | 편집 범위 제한 |
 | track-edit | PostToolUse (Edit/Write) | 세션별 편집 파일 추적 + reviewed marker 무효화 |
 | post-typecheck | PostToolUse (Edit/Write) | 자동 타입 체크 |
-| auto-cross-review | Stop | 비자명한 변경 시 codex 리뷰 자동 지시 |
 | auto-handoff | Stop | 세션 상태 저장 |
 
 ### Skills (수동 호출)

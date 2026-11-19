@@ -3,11 +3,6 @@
 # that tests / e2e / the app were actually run, block the stop once and tell
 # Claude to verify before concluding (or to state why verification is N/A).
 #
-# Sibling to auto-cross-review.sh: that gate asks "did an *external* reviewer
-# see this?"; this one asks "did *you* actually run it?" — one step earlier.
-# Both are single-shot per session and independent; on a turn that trips both,
-# Claude simply receives both instructions.
-#
 # Fires at most once per session (verify-blocked-<session> marker).
 # Skips if:
 #   - ~/.claude/state/auto-review-disabled exists (master opt-out)
