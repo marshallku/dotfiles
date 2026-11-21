@@ -160,6 +160,15 @@ if [[ $git_rc -eq 0 ]]; then
     if [[ ${leftover:-0} -gt 0 ]]; then
         echo "[save.sh] note: $leftover path(s) still uncommitted in the working tree" >&2
     fi
+    # Ledger of successful saves, keyed by the Claude Code session that ran them, so a hook can
+    # tell "this session committed a work unit" without guessing from transcripts
+    # (hooks/session-size.sh). Best-effort; bash 3.2 safe (macOS /bin/bash).
+    if command -v jq >/dev/null 2>&1 && mkdir -p "$HOME/.claude/state" 2>/dev/null; then
+        jq -cn --arg ts "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" --arg session "${CLAUDE_CODE_SESSION_ID:-}" \
+            --arg repo "$toplevel" --arg branch "$branch" --arg sha "$(git rev-parse HEAD 2>/dev/null)" \
+            '{ts:$ts, session:$session, repo:$repo, branch:$branch, sha:$sha}' \
+            >> "$HOME/.claude/state/save-ledger.jsonl" 2>/dev/null || true
+    fi
 fi
 
 # After a successful main push, persist the intent file into ~/docs so the

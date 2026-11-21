@@ -176,6 +176,11 @@
           },
           {
             "type": "command",
+            "command": "bash $HOME/.claude/hooks/session-size.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
             "command": "bash $HOME/.claude/hooks/notify-stop.sh",
             "timeout": 15
           },
