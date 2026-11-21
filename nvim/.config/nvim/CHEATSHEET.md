@@ -8,6 +8,8 @@
 | `<leader>ff` | Find files |
 | `<leader>fg` | Search text in project |
 | `<leader>fr` | Recent files |
+| `<leader>fR` | Find and replace in project (grug-far; word under cursor, or the selection) |
+| `<leader>fF` | Find and replace in this file |
 | `<leader>e` | Toggle file explorer |
 | `<C-s>` | Save file |
 | `<leader>q` | Quit |
@@ -55,6 +57,25 @@ without waiting `timeoutlen` for a follow-up key.
 |-----|--------|------|
 | `<leader>yr` | Yank `@path:line` (visual: `@path:start-end`) | n, v |
 | `<leader>yc` | Yank selection as a code block headed by `@path:start-end` | v |
+
+grug-far: edit the search / replace / flags / files fields at the top, results
+update live; `<Space>r` replaces all, `<Space>s` syncs edited result
+lines back to the files, `g?` all keys.
+
+### Claude side panel
+| Key | Action | Mode |
+|-----|--------|------|
+| `<M-a>` / `<leader>aa` | Toggle Claude Code in a right side panel (keeps running when hidden) | n, t |
+| `<leader>ar` | Put `@path:line` (visual: `@path:start-end`) into Claude's input | n, v |
+| `<leader>ac` | Put the selection as a code block into Claude's input | v |
+| `<leader>aj` | Pick one of the file refs in Claude's recent output and open it | n |
+| `gd` / `gf` / `<CR>` | In the panel (terminal normal mode): open the ref under the cursor | n |
+| `<C-\><C-n>` | Panel terminal → normal mode, to move over its output | t |
+
+Sent text is pasted, not submitted: add your words, then Enter. Refs open in
+the code window beside the panel. Claude starts in the Git root of the file it
+was first opened from, so `@paths` resolve there. A first-run prompt in Claude
+(trust, a new feature) takes the first paste; answer it and send again.
 
 ### Git
 | Key | Action |
@@ -106,6 +127,10 @@ for a range), `F` file comment, `r` mark file reviewed, `]n`/`[n` next comment,
 repository (`comux send --paste --enter`) and submits it. With several, a picker
 lists them, agents in Neovim's own comux tab first (`*`). Outside a review tab it
 sends without closing anything. The export is always on the clipboard too.
+
+Multi-cursor: Vim's answer to VS Code's Cmd+D is `*` (search the word), `cgn`
+(change the match), then `.` for each next one (`n` to skip). Column edits:
+`<C-v>` block select, then `I` / `A` / `c`.
 
 ### Text case (parity with `change-case`)
 Prefix `gA` (uppercase, so built-in `ga` ASCII inspect is preserved). Examples: `gAu` upper, `gAl` lower, `gAs` snake, `gAc` camel, `gAp` pascal, `gAd` dash (kebab), `gAn` constant.

@@ -1,0 +1,216 @@
+-- Claude Code in a side panel beside the code: hand it @path:line refs and
+-- code blocks from the buffer while writing, and jump from the file refs in
+-- its replies back into the code. One panel per Neovim, started in the Git
+-- root of the file it was first opened from, so @paths resolve there.
+local ref = require("config.ref")
+
+local M = {}
+
+local WIDTH = 0.4 -- share of the columns
+local SCAN_LINES = 500 -- panel output searched for refs, newest first
+local PICK_LIMIT = 30
+-- Text sent before Claude's input is up is lost, so a new panel waits until
+-- its screen stops changing
+local READY_POLL_MS = 100
+local READY_QUIET_MS = 600
+local READY_TIMEOUT_MS = 8000
+
+local term -- the panel's toggleterm Terminal
+local ready = false
+
+local function width()
+    return math.floor(vim.o.columns * WIDTH)
+end
+
+local function running()
+    return term ~= nil and term.job_id ~= nil and vim.api.nvim_buf_is_valid(term.bufnr or -1)
+end
+
+-- Run fn once Claude's input is up
+local function when_ready(fn)
+    if ready then return fn() end
+    local tick, quiet, waited = -1, 0, 0
+    local timer = vim.uv.new_timer()
+    timer:start(READY_POLL_MS, READY_POLL_MS, vim.schedule_wrap(function()
+        waited = waited + READY_POLL_MS
+        if not running() then
+            timer:close()
+            return
+        end
+        local now = vim.api.nvim_buf_get_changedtick(term.bufnr)
+        quiet = (now == tick and now > 2) and quiet + READY_POLL_MS or 0
+        tick = now
+        if quiet >= READY_QUIET_MS or waited >= READY_TIMEOUT_MS then
+            timer:close()
+            ready = true
+            fn()
+        end
+    end))
+end
+
+-- Window to open a ref in: the current one if it shows a file, else the one
+-- used before the panel, else any file window in this tab; nil if none
+local function code_window()
+    local function usable(win)
+        if win == 0 or not vim.api.nvim_win_is_valid(win) then return false end
+        if vim.api.nvim_win_get_config(win).relative ~= "" then return false end
+        return vim.bo[vim.api.nvim_win_get_buf(win)].buftype == ""
+    end
+    for _, win in ipairs({ vim.api.nvim_get_current_win(), vim.fn.win_getid(vim.fn.winnr("#")) }) do
+        if usable(win) then return win end
+    end
+    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        if usable(win) then return win end
+    end
+    return nil
+end
+
+local function open_ref(found)
+    local win = code_window()
+    if win then
+        vim.api.nvim_set_current_win(win)
+    else
+        vim.cmd("aboveleft vnew")
+    end
+    vim.cmd.edit(vim.fn.fnameescape(found.file))
+    pcall(vim.api.nvim_win_set_cursor, 0, { found.line, 0 })
+    vim.cmd("normal! zvzz")
+end
+
+local function panel_dir()
+    return term and term.dir or vim.uv.cwd()
+end
+
+-- Claude writes paths relative to its own directory; others may be relative
+-- to Neovim's
+local function ref_dirs()
+    return { panel_dir(), vim.uv.cwd() }
+end
+
+-- Terminal-normal mode in the panel: open the ref under the cursor, or the
+-- first one on the line
+local function jump_at_cursor()
+    local refs = ref.parse(vim.api.nvim_get_current_line(), ref_dirs())
+    if #refs == 0 then
+        vim.notify("No file reference on this line", vim.log.levels.WARN)
+        return
+    end
+    local col = vim.api.nvim_win_get_cursor(0)[2] + 1
+    local pick = refs[1]
+    for _, found in ipairs(refs) do
+        if col >= found.start and col < found.stop then pick = found end
+    end
+    open_ref(pick)
+end
+
+-- File refs in the panel's recent output, newest first, without repeats
+local function recent_refs()
+    local count = vim.api.nvim_buf_line_count(term.bufnr)
+    local lines = vim.api.nvim_buf_get_lines(term.bufnr, math.max(0, count - SCAN_LINES), -1, false)
+    local seen, list = {}, {}
+    for i = #lines, 1, -1 do
+        local on_line = ref.parse(lines[i], ref_dirs())
+        for j = #on_line, 1, -1 do
+            local found = on_line[j]
+            local key = found.file .. ":" .. found.line
+            if not seen[key] then
+                seen[key] = true
+                table.insert(list, found)
+                if #list >= PICK_LIMIT then return list end
+            end
+        end
+    end
+    return list
+end
+
+local function on_open(t)
+    local opts = { buffer = t.bufnr, silent = true }
+    for _, key in ipairs({ "gd", "gf", "<CR>" }) do
+        vim.keymap.set("n", key, jump_at_cursor, vim.tbl_extend("force", opts, { desc = "Open the file ref here" }))
+    end
+    -- toggleterm maps a bare <C-\> in terminals, which hides Vim's own way
+    -- out of terminal mode; this longer mapping wins when typed in full
+    vim.keymap.set("t", "<C-\\><C-n>", "<C-\\><C-n>", vim.tbl_extend("force", opts, { desc = "Terminal normal mode" }))
+    vim.cmd("startinsert!")
+end
+
+local function ensure()
+    if term then return term end
+    local here = vim.bo.buftype == "" and vim.fn.expand("%:p:h") or ""
+    local dir = (here ~= "" and ref.git_root(here)) or ref.git_root(vim.uv.cwd()) or vim.uv.cwd()
+    local Terminal = require("toggleterm.terminal").Terminal
+    term = Terminal:new({
+        cmd = "claude",
+        dir = dir,
+        direction = "vertical",
+        hidden = true, -- keep <C-\> for the floating shell
+        display_name = "Claude",
+        on_open = on_open,
+        on_exit = function() ready = false end,
+    })
+    return term
+end
+
+function M.toggle()
+    ensure():toggle(width())
+end
+
+-- Show the panel, focus it in insert mode, and paste text into Claude's
+-- input without submitting it. Bracketed paste keeps an @ from opening the
+-- file picker and newlines from sending the message.
+local function deliver(text)
+    if not text then return end
+    local t = ensure()
+    if not t:is_open() then t:open(width()) end
+    t:focus()
+    vim.cmd("startinsert!")
+    when_ready(function()
+        vim.api.nvim_chan_send(t.job_id, "\27[200~" .. text .. "\27[201~")
+    end)
+end
+
+-- Refs are relative to the panel's directory, where Claude runs, even when
+-- the file is in another repository (then absolute)
+function M.send_ref(range)
+    local text = ref.ref(range, ensure().dir)
+    deliver(text and text .. " ")
+end
+
+function M.send_block(range)
+    deliver(ref.block(range, ensure().dir))
+end
+
+-- Pick one of the file refs in the panel's recent output and open it
+function M.pick()
+    if not running() then
+        vim.notify("The Claude panel is not running", vim.log.levels.WARN)
+        return
+    end
+    local list = recent_refs()
+    if #list == 0 then
+        vim.notify("No file references in the Claude panel", vim.log.levels.WARN)
+        return
+    end
+    local dir = panel_dir()
+    vim.ui.select(list, {
+        prompt = "Open from Claude",
+        format_item = function(found)
+            local shown = vim.startswith(found.file, dir .. "/") and found.file:sub(#dir + 2) or found.file
+            return ("%s:%d"):format(shown, found.line)
+        end,
+    }, function(found)
+        if found then open_ref(found) end
+    end)
+end
+
+function M.setup()
+    local map = vim.keymap.set
+    map({ "n", "t" }, "<M-a>", M.toggle, { desc = "Toggle Claude panel" })
+    map("n", "<leader>aa", M.toggle, { desc = "Toggle Claude panel" })
+    map("n", "<leader>ar", function() M.send_ref(nil) end, { desc = "Send @path:line to Claude" })
+    map("x", "<leader>ar", function() M.send_ref(ref.visual_range()) end, { desc = "Send @path:start-end to Claude" })
+    map("x", "<leader>ac", function() M.send_block(ref.visual_range()) end, { desc = "Send selection to Claude" })
+    map("n", "<leader>aj", M.pick, { desc = "Open a file ref from Claude" })
+end
+
+return M

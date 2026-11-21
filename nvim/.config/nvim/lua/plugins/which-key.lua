@@ -19,7 +19,8 @@ return {
             {"<leader>b", group = "Buffer"}, {"<leader>e", group = "Explorer"},
             {"<leader>m", group = "Format"}, {"<leader>g", group = "Git"},
             {"<leader>v", group = "Review"}, {"<leader>x", group = "Trouble"},
-            {"<leader>p", group = "Peek"}, {"<leader>y", group = "Yank ref"}
+            {"<leader>p", group = "Peek"}, {"<leader>y", group = "Yank ref"},
+            {"<leader>a", group = "Agent panel"}
         })
     end
 }

@@ -59,49 +59,24 @@ for _, dir in ipairs({ "h", "j", "k", "l" }) do
     keymap.set("t", "<M-" .. dir .. ">", "<cmd>wincmd " .. dir .. "<CR>", { desc = "Move to window " .. dir })
 end
 
--- Current file's path relative to its Git root (or cwd), or nil for no file
-local function ref_path()
-    local abs = vim.fn.expand("%:p")
-    if abs == "" then
-        vim.notify("No file in this buffer", vim.log.levels.WARN)
-        return nil
-    end
-    local root = vim.fn.systemlist("git -C " .. vim.fn.shellescape(vim.fn.expand("%:p:h")) .. " rev-parse --show-toplevel")[1]
-    if vim.v.shell_error == 0 and root and root ~= "" then
-        return abs:sub(#root + 2) -- strip "<root>/"
-    end
-    return vim.fn.fnamemodify(abs, ":.")
-end
-
--- Visual selection's line range, leaving visual mode
-local function visual_range()
-    local s, e = vim.fn.line("v"), vim.fn.line(".")
-    if s > e then s, e = e, s end
-    vim.cmd("normal! \27")
-    return { s, e }
-end
+local ref = require("config.ref")
 
 -- Yank file reference as @path:line or @path:start-end (for Claude / chat paste)
 local function yank_ref(range)
-    local path = ref_path()
-    if not path then return end
-    local ref = range and ("@%s:%d-%d"):format(path, range[1], range[2]) or ("@%s:%d"):format(path, vim.fn.line("."))
-    vim.fn.setreg("+", ref)
-    vim.notify(ref)
+    local text = ref.ref(range)
+    if not text then return end
+    vim.fn.setreg("+", text)
+    vim.notify(text)
 end
 
 -- Yank the selected lines as a fenced code block headed by their @path:start-end
 local function yank_block(range)
-    local path = ref_path()
-    if not path then return end
-    local lines = vim.api.nvim_buf_get_lines(0, range[1] - 1, range[2], false)
-    local block = { ("@%s:%d-%d"):format(path, range[1], range[2]), "```" .. vim.bo.filetype }
-    vim.list_extend(block, lines)
-    table.insert(block, "```")
-    vim.fn.setreg("+", table.concat(block, "\n") .. "\n")
-    vim.notify(("Yanked %s:%d-%d as a code block"):format(path, range[1], range[2]))
+    local text = ref.block(range)
+    if not text then return end
+    vim.fn.setreg("+", text)
+    vim.notify(("Yanked %s as a code block"):format(text:match("^@(%S+)")))
 end
 
 keymap.set("n", "<leader>yr", function() yank_ref(nil) end, { desc = "Yank @path:line ref" })
-keymap.set("x", "<leader>yr", function() yank_ref(visual_range()) end, { desc = "Yank @path:start-end ref" })
-keymap.set("x", "<leader>yc", function() yank_block(visual_range()) end, { desc = "Yank selection as code block" })
+keymap.set("x", "<leader>yr", function() yank_ref(ref.visual_range()) end, { desc = "Yank @path:start-end ref" })
+keymap.set("x", "<leader>yc", function() yank_block(ref.visual_range()) end, { desc = "Yank selection as code block" })

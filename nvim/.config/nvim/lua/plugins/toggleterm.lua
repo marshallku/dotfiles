@@ -82,5 +82,7 @@ return {
 
         vim.keymap.set("n", "<leader>gg", "<cmd>lua _lazygit_toggle()<CR>",
                        {desc = "Toggle lazygit"})
+
+        require("config.agent_panel").setup()
     end
 }
