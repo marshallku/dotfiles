@@ -34,6 +34,12 @@
 #       callers should retry with a fresh prompt
 #   124 timed out
 #
+# Live view: every run's event stream stays at ~/.claude/state/codex-live/<key>-<run>.jsonl
+# with a <key>-<run>.status.json beside it (running → done, exit, verdict), so another pane
+# (codex-tail.sh) or a Claude Code mod can follow a review that used to run unseen in a temp
+# file deleted on exit (work Mac: 1,054 runs, 29.8 h of "waiting"). session-start.sh drops
+# them after 7 days.
+#
 # Thread ids live in ~/.claude/state/codex-threads/<key>. Keys are chosen by
 # the caller (e.g. plan-<repo_hash>, review-<repo_hash>-<session>) so that
 # unrelated codex calls can no longer hijack a resume — the failure mode of
@@ -100,25 +106,62 @@ if [[ ! -f "$PROMPT_FILE" ]]; then
 fi
 
 MSG_FILE=$(mktemp "${TMPDIR:-/tmp}/codex-exec-msg.XXXXXX")
-EVENTS_FILE=$(mktemp "${TMPDIR:-/tmp}/codex-exec-events.XXXXXX")
 ERR_FILE=$(mktemp "${TMPDIR:-/tmp}/codex-exec-err.XXXXXX")
-cleanup() {
-    rm -f "$MSG_FILE" "$EVENTS_FILE" "$ERR_FILE"
-    [[ "$CLEANUP_PROMPT" -eq 1 ]] && rm -f "$PROMPT_FILE"
-    return 0
-}
-trap cleanup EXIT
+RENDERER="$(dirname "$0")/codex-render.jq"
 
 SANDBOX="read-only"
 [[ "$WRITE" -eq 1 ]] && SANDBOX="workspace-write"
 
 THREAD_DIR="$HOME/.claude/state/codex-threads"
 THREAD_FILE=""
+SAFE_KEY=""
 if [[ -n "$THREAD_KEY" ]]; then
     # Keys land in a filename; keep them to a safe charset.
     SAFE_KEY=$(printf '%s' "$THREAD_KEY" | tr -c 'A-Za-z0-9._-' '_')
     THREAD_FILE="$THREAD_DIR/$SAFE_KEY"
 fi
+
+LIVE_DIR="$HOME/.claude/state/codex-live"
+LIVE_BASE="${SAFE_KEY:-adhoc}-$(date -u '+%Y%m%dT%H%M%SZ')-$$"
+EVENTS_FILE="$LIVE_DIR/$LIVE_BASE.jsonl"
+STATUS_FILE="$LIVE_DIR/$LIVE_BASE.status.json"
+LIVE=1
+# Events hold diffs, command output and model text: private, like the mktemp file they replace.
+# umask only in subshells — a write delegate's repository files must keep normal permissions.
+if ! (umask 077 && mkdir -p "$LIVE_DIR" && chmod 700 "$LIVE_DIR" && : > "$EVENTS_FILE") 2>/dev/null; then
+    LIVE=0
+    EVENTS_FILE=$(mktemp "${TMPDIR:-/tmp}/codex-exec-events.XXXXXX")
+fi
+STARTED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+
+# write_status <state> [exit] — best-effort, atomic; never fails the run.
+write_status() {
+    [[ "$LIVE" -eq 1 ]] || return 0
+    local verdict="" tmp
+    [[ -f "$MSG_FILE" ]] && verdict=$(sed -nE 's/^VERDICT: (APPROVED|REVISE)$/\1/p' "$MSG_FILE" 2>/dev/null | tail -n 1)
+    tmp="$STATUS_FILE.$$"
+    (umask 077; jq -n --arg state "$1" --arg exit "${2:-}" --arg key "${THREAD_KEY:-}" --arg review "${CODEX_REVIEW_ID:-}" \
+        --arg round "${CODEX_REVIEW_ROUND:-}" --arg started "$STARTED_AT" --arg cwd "$PWD" --arg sandbox "$SANDBOX" \
+        --arg events "$EVENTS_FILE" --arg verdict "$verdict" --argjson pid "$$" \
+        --arg ended "$([[ "$1" == running ]] || date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+        '{state:$state, thread_key:$key, review_id:$review, round:($round | tonumber? // null), pid:$pid,
+          started_at:$started, ended_at:(if $ended == "" then null else $ended end), cwd:$cwd, sandbox:$sandbox,
+          events:$events, exit:($exit | tonumber? // null), verdict:(if $verdict == "" then null else $verdict end)}' \
+        > "$tmp") 2>/dev/null && mv -f "$tmp" "$STATUS_FILE" 2>/dev/null
+    rm -f "$tmp" 2>/dev/null
+    return 0
+}
+
+cleanup() {
+    local code=$?
+    write_status done "$code"
+    rm -f "$MSG_FILE" "$ERR_FILE"
+    [[ "$LIVE" -eq 1 ]] || rm -f "$EVENTS_FILE"
+    [[ "$CLEANUP_PROMPT" -eq 1 ]] && rm -f "$PROMPT_FILE"
+    return 0
+}
+trap cleanup EXIT
+write_status running
 
 # Resume needs a stored thread id. Missing one is not an error — it is the
 # "round 1 hasn't happened (or was GC'd)" case, which callers handle by
@@ -157,29 +200,7 @@ render_events() {
         cat > /dev/null
         return 0
     fi
-    jq -r --unbuffered '
-        def clip($n): if (.|length) > $n then .[0:$n] + "…" else . end;
-        def firstline: (. // "") | split("\n")[0] | clip(200);
-        try (
-            if .type == "thread.started" then "🧵 thread \(.thread_id)"
-            elif .type == "turn.started" then "🟢 turn started"
-            elif .type == "item.started" and .item.type == "command_execution" then
-                "▶ " + ((.item.command // "") | sub("^/[^ ]*/(ba|z)?sh -lc "; "") | clip(160))
-            elif .type == "item.completed" and .item.type == "command_execution" then
-                "  ✓ exit \(.item.exit_code // "?")"
-            elif .type == "item.completed" and .item.type == "agent_message" then
-                "💬 " + (.item.text | firstline)
-            elif .type == "item.completed" and .item.type == "reasoning" then
-                "🧠 " + ((.item.text // .item.summary // "") | firstline)
-            elif .type == "turn.completed" then
-                "🔵 turn completed (\(.usage.input_tokens // 0) in / \(.usage.output_tokens // 0) out)"
-            elif .type == "turn.failed" then
-                "❌ turn failed: " + ((.error.message // "unknown") | firstline)
-            elif .type == "error" then
-                "❌ " + ((.message // "error") | firstline)
-            else empty end
-        ) catch empty
-    ' 2>/dev/null || true
+    jq -r --unbuffered -f "$RENDERER" 2>/dev/null || true
 }
 
 START_SECONDS=$SECONDS
@@ -210,6 +231,19 @@ set -e
 # leaves a row with usage_reported=false. This is not a full accounting
 # of a hard timeout mid-turn.
 # Best-effort throughout — never let accounting fail a codex run.
+#
+# With no --model/--effort the ledger used to say "default" for every run (740 of them were
+# really high effort). Record what ~/.codex/config.toml resolves to as effective_*.
+codex_config_value() {
+    local config="${CODEX_HOME:-$HOME/.codex}/config.toml"
+    [[ -f "$config" ]] || return 0
+    awk -v key="$1" '
+        /^[[:space:]]*\[/ { exit }
+        $0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
+            sub(/^[^=]*=[[:space:]]*/, ""); sub(/[[:space:]]*(#.*)?$/, ""); gsub(/^"|"$/, ""); print; exit
+        }' "$config" 2>/dev/null
+}
+
 record_usage() {
     command -v jq >/dev/null 2>&1 || return 0
     local ledger="${CODEX_USAGE_LEDGER:-$HOME/.claude/state/codex-usage.jsonl}"
@@ -236,6 +270,8 @@ record_usage() {
         --arg thread   "${THREAD_KEY:-}" \
         --arg model    "${MODEL:-default}" \
         --arg requested_effort "${EFFORT:-default}" \
+        --arg effective_model "${MODEL:-$(codex_config_value model)}" \
+        --arg effective_effort "${EFFORT:-$(codex_config_value model_reasoning_effort)}" \
         --arg review_id "${CODEX_REVIEW_ID:-}" \
         --arg work_unit "${CODEX_REVIEW_UNIT:-}" \
         --argjson critical_count "$(awk '/^## CRITICAL/{f=1;next} /^## /{f=0} f && /^- /{n++} END{print n+0}' "$MSG_FILE")" \
@@ -254,6 +290,8 @@ record_usage() {
         '{ts:$ts, day:$day, thread_key:$thread, model:$model, sandbox:$sandbox,
           repo:$repo, status:$status, turns:$turns, usage_reported:($turns > 0),
           actual_model:null, requested_effort:$requested_effort,
+          effective_model:(if $effective_model == "" then null else $effective_model end),
+          effective_effort:(if $effective_effort == "" then null else $effective_effort end),
           review_id:$review_id, work_unit:$work_unit, critical_count:$critical_count, snapshot:$snapshot, round:$round, resumed:($resumed == 1),
           elapsed_seconds:$elapsed, verdict:$verdict,
           input_tokens:$input, output_tokens:$output, cached_input_tokens:$cached,

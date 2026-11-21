@@ -453,6 +453,41 @@ if [[ "$RESUME" == "1" ]]; then
     fi
 fi
 
+# Round 3+ starts a new thread instead of resuming. A resumed thread replays everything before
+# it, so input doubled each round (work Mac, 1,054 runs: 329k → 680k → 1.2M → 1.9M → 3.5M).
+# The new thread gets the full current diff plus a short history of earlier findings and the
+# author's responses. CODEX_REVIEW_RESTART_ROUND=0 keeps resuming every round.
+RESTART=0
+RESTART_ROUND=${CODEX_REVIEW_RESTART_ROUND:-3}
+[[ "$RESTART_ROUND" =~ ^[0-9]+$ ]] || RESTART_ROUND=3
+HISTORY_JSON='[]'
+if [[ "$RESUME" == "1" ]]; then
+    HISTORY_JSON=$(jq -c '.history // []' "$REVIEW_STATE" 2>/dev/null) || HISTORY_JSON='[]'
+    [[ -n "$HISTORY_JSON" ]] || HISTORY_JSON='[]'
+    if [[ "$RESTART_ROUND" -gt 0 && "$ROUND" -ge "$RESTART_ROUND" ]]; then
+        RESTART=1
+        RESUME=0
+        echo "[codex-review] round ${ROUND}: new thread with a findings summary instead of a resume (CODEX_REVIEW_RESTART_ROUND=${RESTART_ROUND})" >&2
+    fi
+fi
+# Optional cheaper effort for verification rounds only (first review and plans keep theirs).
+if [[ "$RESUME" == "1" && "$REVIEWER" == codex && -n "${CODEX_REVIEW_RESUME_EFFORT:-}" ]]; then
+    MODEL_ARGS+=(--effort "$CODEX_REVIEW_RESUME_EFFORT")
+fi
+
+build_history_section() {
+    cat <<EOF
+
+--- EARLIER ROUNDS (this is round ${ROUND}; a new thread replaces the long one to keep input small) ---
+$(jq -r '.[] | "Round \(.round) findings:\n\(.findings // "" | if . == "" then "(none recorded)" else . end)\nAuthor response:\n\(.response // "" | if . == "" then "(none)" else . end)\n"' <<< "$HISTORY_JSON" 2>/dev/null)
+Latest author response (claims to verify, not trusted conclusions):
+${RESPONSE:-No response supplied; independently verify the prior findings.}
+--- END EARLIER ROUNDS ---
+Check each earlier CRITICAL against the current diff: fixed, validly refuted, or still open.
+Do not re-raise a finding the author refuted unless the refutation is wrong; say why it is wrong.
+EOF
+}
+
 build_resume_prompt() {
     cat <<EOF
 Continue the previous review, round ${ROUND}$([[ ${MAX_ROUNDS:-10} -gt 0 ]] && echo "/${MAX_ROUNDS:-10}"). Scope: ${DIFF_DESC}.
@@ -479,6 +514,7 @@ read working files for context, and disclose that you cannot run commands or tes
 
 Scope: ${DIFF_DESC}
 Baseline: ${REVIEW_BASE}. Snapshot: ${REVIEW_TREE}. Verify against these trees if working files change.
+For repository status use \`git status --short -uno\`; full untracked listings are large and add nothing.
 ${FOCUS_LINE}
 ${CONTEXT_SECTION}
 ${INTENT_CHECK}
@@ -487,6 +523,8 @@ ${INTENT_CHECK}
 ${DIFF}
 --- END DIFF ---
 EOF
+    [[ "$RESTART" == "1" ]] && build_history_section
+    return 0
 }
 
 if [[ "$RESUME" == "1" ]]; then
@@ -575,10 +613,33 @@ VERDICT_LINE=$(echo "$OUTPUT" | tail -n 20 | grep -E "^VERDICT: (APPROVED|REVISE
 # notify_codex_done calls that remain cover only the paths where no codex turn
 # completes — empty diff, timeout, spawn failure.
 
+# History for a later restart round: this round's CRITICAL section, and the response that
+# answered the previous round. Clipped so a summary never grows into the thread it replaces.
+HISTORY_CLIP=3000
+HISTORY_KEEP=6
+FINDINGS=$(printf '%s\n' "$OUTPUT" | awk '/^## CRITICAL/{f=1;next} /^## /{f=0} f' | sed '/^[[:space:]]*$/d')
+
+# Warn (never block) when a finding comes back at the same file:line: the fix or the
+# refutation did not land, and the skill says to stop and show both sides.
+anchors() { { grep -oE '[A-Za-z0-9_./-]+\.[A-Za-z0-9]+:[0-9]+' || true; } | sed 's|.*/||' | sort -u; }
+if [[ "$VERDICT_LINE" == "VERDICT: REVISE" && "$HISTORY_JSON" != "[]" ]]; then
+    PREVIOUS_ANCHORS=$(jq -r '.[-1].findings // ""' <<< "$HISTORY_JSON" 2>/dev/null | anchors)
+    REPEATED=$(comm -12 <(printf '%s\n' "$PREVIOUS_ANCHORS") <(printf '%s\n' "$FINDINGS" | anchors) | sed '/^$/d' | paste -sd, - | sed 's/,/, /g')
+    [[ -n "$REPEATED" ]] && echo "[codex-review] ⚠ finding repeated at ${REPEATED} — if your fix or refutation stands, stop and show both sides to the user" >&2
+fi
+
 STATE_TMP=$(mktemp "$STATE_DIR/.review-round.XXXXXX")
-jq -n --arg tree "$REVIEW_TREE" --arg context "$CONTEXT_HASH" --argjson round "$ROUND" \
+if ! jq -n --arg tree "$REVIEW_TREE" --arg context "$CONTEXT_HASH" --argjson round "$ROUND" \
     --arg verdict "${VERDICT_LINE#VERDICT: }" --arg reviewer "$REVIEWER" \
-    '{tree:$tree, context:$context, round:$round, verdict:$verdict, reviewer:$reviewer}' > "$STATE_TMP"
+    --argjson history "$HISTORY_JSON" --arg findings "$FINDINGS" --arg response "$RESPONSE" \
+    --argjson clip "$HISTORY_CLIP" --argjson keep "$HISTORY_KEEP" \
+    '{tree:$tree, context:$context, round:$round, verdict:$verdict, reviewer:$reviewer,
+      history: (($history | if length > 0 then .[-1].response = $response[0:$clip] else . end)
+                + [{round:$round, findings:$findings[0:$clip]}])[-$keep:]}' > "$STATE_TMP"; then
+    jq -n --arg tree "$REVIEW_TREE" --arg context "$CONTEXT_HASH" --argjson round "$ROUND" \
+        --arg verdict "${VERDICT_LINE#VERDICT: }" --arg reviewer "$REVIEWER" \
+        '{tree:$tree, context:$context, round:$round, verdict:$verdict, reviewer:$reviewer}' > "$STATE_TMP"
+fi
 mv -f "$STATE_TMP" "$REVIEW_STATE"
 
 case "$VERDICT_LINE" in

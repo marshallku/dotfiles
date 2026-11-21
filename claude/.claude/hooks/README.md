@@ -26,6 +26,17 @@ All four user-facing skills (`/ask-codex`, `/codex-plan`, `/codex-delegate`, `/c
 
 - **Thread resume is by explicit id.** `--thread-key KEY` persists the thread id under `~/.claude/state/codex-threads/<key>`; `--resume` continues exactly that thread. Keys are `plan-<repo_hash>` and `review-<repo_hash>-<session_hash>`, so an `/ask-codex` between VERDICT rounds can no longer hijack a resume — the failure mode of the old workspace-wide `--resume-last`. A missing or GC'd thread exits `3` and the wrapper degrades to a fresh round instead of failing.
 - **Delegate jobs are plain files** at `~/.claude/state/codex-jobs/<repo-hash>/<id>.{meta,log,out,prompt}`. A background job is its own process group (`setsid`, or perl `POSIX::setsid` on macOS; the job confirms startup before the parent hands over the active lock), so `--cancel` takes down codex and its tool commands together; liveness is verified against the recorded process start time, so a recycled pid can't fake a running job.
+- **Runs are visible while they run.** Each run keeps its event stream at
+  `~/.claude/state/codex-live/<key>-<run>.jsonl` with `<key>-<run>.status.json` (state, round,
+  pid, exit, verdict). `bash ~/.claude/scripts/codex-tail.sh [key-substring]` follows the newest
+  run from another pane with the same renderer (`codex-render.jq`); `--list` shows recent runs.
+  `session-start.sh` drops files older than 7 days. The ledger also records `effective_model` /
+  `effective_effort` from `~/.codex/config.toml` when the call passes none.
+- **Read-only sandbox limits are in `~/.codex/AGENTS.md`.** Nothing is writable (zsh heredocs, Go
+  builds fail); codex ignores `$SHELL` and its shell snapshot resets PATH, so no wrapper env can
+  fix it. AGENTS.md tells codex to use `python3 -c` / `bash -c` heredocs, skip Go builds, and
+  silence the macOS xcrun-shim git warnings.
+- `/ask-codex` runs at `medium` effort (`CODEX_ASK_EFFORT`); high ran p50 145 s for a 30 s consult.
 - **Notifications are native again.** `codex exec` invokes the `notify` program from `~/.codex/config.toml`, so a finished turn pings the user by itself. Wrappers call `notify_codex_done` only for outcomes codex never reports (empty diff, timeout, spawn failure) — adding it to a success path double-pings.
 
 > Migrated 2026-08-02 from the @openai/codex-plugin-cc app-server runtime (`~/dev/codex-plugin-cc` + `codex-companion.sh`). It was never installed as a Claude Code plugin (only its `codex-companion.mjs` was used, as a node CLI), its background job manager had 11 uses total — all on setup day — and its broker daemon had no idle timeout, leaking an 85–290 MB process pair per workspace until reboot. That leak was the sole reason `reap-codex-brokers.sh` + a launchd timer existed; both are gone.
@@ -104,6 +115,12 @@ and send dispositions/evidence using `--resume --response-file`. Resume sends on
 from the prior snapshot. There is no fixed round cap: keep going while each round brings valid,
 in-scope findings. Stop and present both sides' evidence on a repeated unresolved finding, or when
 only invalid or out-of-scope findings remain (new issues in code the fixes did not touch).
+From round 3 (`CODEX_REVIEW_RESTART_ROUND`, `0` = always resume) the review starts a new thread
+with the full current diff plus the earlier rounds' CRITICAL sections and responses (clipped,
+last 6), instead of resuming: a resumed thread replays everything, and input doubled per round
+(329k → 680k → 1.2M → 1.9M on the work Mac). A finding that comes back at the same `file:line`
+prints a warning (never blocks). `CODEX_REVIEW_RESUME_EFFORT` optionally lowers effort for
+resumed rounds only.
 `CODEX_REVIEW_MAX_ROUNDS` (default 10, `0` = none) is a runaway guard, not a convergence target. The skill defines this workflow for automatic and manual calls alike.
 
 Snapshots (and the index tree, written through a copy of the index) create unreferenced Git

@@ -203,6 +203,22 @@ Keep the total response under ~150 words unless the question genuinely demands m
 
 ---
 
+## Read-only sandbox (reviews, plans, consults)
+
+Nothing is writable there, `/tmp` and `$TMPDIR` included (reproduced on Linux and macOS). The shell
+is the user's zsh, whatever `$SHELL` says. Commands that need a temp file fail, and the failures
+used to fill reviews (157 sandbox failures in a month, 31% of heredocs):
+
+- No zsh heredocs (`cat <<EOF`, `python3 - <<EOF`). Use `python3 -c '…'`, or wrap the heredoc in
+  `bash -c` — bash 5 sends a small heredoc through a pipe.
+- Do not run `go build/test/vet` or anything else that needs a cache or work dir. Say the check
+  needs a writable sandbox and read the code instead.
+- macOS: `/usr/bin/git` is an xcrun shim that prints `confstr()`/`xcrun_db` warnings on every call
+  here. Add `2>/dev/null` to git calls whose stderr you do not need.
+- Use `git status --short -uno`; untracked listings are large and tell a review nothing.
+
+---
+
 ## What NOT to do
 
 - Do not suggest rewrites for working code.

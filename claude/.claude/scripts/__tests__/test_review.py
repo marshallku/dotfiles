@@ -38,6 +38,7 @@ if os.environ.get("FAKE_DELEGATE_START"):
     (state / ("codex-delegate-active-" + scope)).mkdir()
     (state / ("codex-delegate-pending-" + scope)).touch()
 args = sys.argv[1:]
+pathlib.Path(os.environ["PROMPT_CAPTURE"] + ".codex-args").write_text(json.dumps(args))
 if os.environ.get("FAKE_FAIL"):
     print("simulated CLI failure", file=sys.stderr)
     sys.exit(1)
@@ -46,7 +47,9 @@ if os.environ.get("FAKE_MUTATE"):
     if os.environ["FAKE_MUTATE"] == "stage":
         import subprocess; subprocess.run(["git", "add", "code.py"], check=True)
 verdict = os.environ.get("FAKE_VERDICT", "APPROVED")
-pathlib.Path(args[args.index("-o") + 1]).write_text("## Summary\\nDone.\\nVERDICT: " + verdict + "\\n")
+finding = os.environ.get("FAKE_FINDING", "")
+critical = ("## CRITICAL\\n\\n- [C1] " + finding + "\\n\\n") if finding else ""
+pathlib.Path(args[args.index("-o") + 1]).write_text(critical + "## Summary\\nDone.\\nVERDICT: " + verdict + "\\n")
 print(json.dumps({"type":"thread.started", "thread_id":"test-thread"}))
 print(json.dumps({"type":"turn.completed", "usage":{"input_tokens":100,"output_tokens":10,"cached_input_tokens":50}}))
 ''')
@@ -194,6 +197,82 @@ print(json.dumps({"type":"result", "subtype":"success", "session_id":session,
         self.assertEqual(rows[-1]["round"], 2)
         self.assertTrue(rows[-1]["resumed"])
         self.assertEqual(rows[-1]["verdict"], "APPROVED")
+
+    def codex_args(self):
+        return json.loads((self.root / "prompt.codex-args").read_text())
+
+    def revise_rounds(self, count, response_text="C1 refuted: see test."):
+        self.write("code.py", "feature = True\n")
+        self.env["FAKE_VERDICT"] = "REVISE"
+        response = self.root / "response"
+        response.write_text(response_text)
+        for round_number in range(1, count + 1):
+            self.env["FAKE_FINDING"] = f"code.py:{round_number} — issue from round {round_number}"
+            extra = () if round_number == 1 else ("--resume", "--response-file", str(response))
+            result = self.review("--session", "s1", *extra, status=1)
+        return result
+
+    def test_round_three_starts_a_new_thread_with_a_findings_summary(self):
+        self.revise_rounds(2)
+        self.assertIn("resume", self.codex_args(), "round 2 still resumes")
+        self.env["FAKE_FINDING"] = "code.py:3 — issue from round 3"
+        result = self.review("--session", "s1", "--resume", "--response-file", str(self.root / "response"), status=1)
+        self.assertNotIn("resume", self.codex_args())
+        prompt = (self.root / "prompt").read_text()
+        self.assertIn("+feature = True", prompt, "a new thread needs the full diff")
+        self.assertIn("EARLIER ROUNDS", prompt)
+        self.assertIn("issue from round 1", prompt)
+        self.assertIn("C1 refuted", prompt)
+        self.assertIn("new thread with a findings summary", result.stderr)
+        rows = [json.loads(line) for line in (self.home / ".claude/state/codex-usage.jsonl").read_text().splitlines()]
+        self.assertEqual(rows[-1]["round"], 3)
+        self.assertFalse(rows[-1]["resumed"])
+
+    def test_restart_round_zero_keeps_resuming(self):
+        self.env["CODEX_REVIEW_RESTART_ROUND"] = "0"
+        self.revise_rounds(3)
+        self.assertIn("resume", self.codex_args())
+
+    def test_repeated_finding_warns_without_blocking(self):
+        self.write("code.py", "feature = True\n")
+        self.env["FAKE_VERDICT"] = "REVISE"
+        self.env["FAKE_FINDING"] = "code.py:7 — same issue"
+        self.review("--session", "s1", status=1)
+        result = self.review("--session", "s1", "--resume", status=1)
+        self.assertIn("finding repeated at code.py:7", result.stderr)
+
+    def test_live_status_and_events_survive_the_run(self):
+        (self.home / ".codex/config.toml").write_text('model = "gpt-test"\nmodel_reasoning_effort = "high"\n[x]\nmodel = "no"\n')
+        self.write("code.py", "feature = True\n")
+        self.review("--session", "s1")
+        live = self.home / ".claude/state/codex-live"
+        statuses = sorted(live.glob("*.status.json"))
+        self.assertEqual(len(statuses), 1)
+        status = json.loads(statuses[0].read_text())
+        self.assertEqual((status["state"], status["exit"], status["verdict"], status["round"]), ("done", 0, "APPROVED", 1))
+        self.assertIn("thread.started", Path(status["events"]).read_text())
+        rows = [json.loads(line) for line in (self.home / ".claude/state/codex-usage.jsonl").read_text().splitlines()]
+        self.assertEqual((rows[-1]["effective_model"], rows[-1]["effective_effort"]), ("gpt-test", "high"))
+        tail = self.run_cmd(["bash", str(ROOT / "scripts/codex-tail.sh"), "review"], timeout=20)
+        self.assertEqual(tail.returncode, 0, tail.stderr)
+        self.assertIn("🧵 thread test-thread", tail.stdout)
+        self.assertIn("verdict APPROVED", tail.stdout)
+        # Events carry diffs and model text: private like the mktemp file they replaced.
+        self.assertEqual(live.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(Path(status["events"]).stat().st_mode & 0o077, 0)
+        self.assertEqual(statuses[0].stat().st_mode & 0o077, 0)
+
+    def test_codex_tail_picks_the_newest_start_not_the_latest_write(self):
+        live = self.home / ".claude/state/codex-live"
+        live.mkdir(parents=True)
+        for name, started in (("review-new-1", "2026-11-22T10:00:00Z"), ("review-old-1", "2026-11-22T09:00:00Z")):
+            (live / f"{name}.jsonl").write_text(json.dumps({"type": "thread.started", "thread_id": name}) + "\n")
+            (live / f"{name}.status.json").write_text(json.dumps({
+                "state": "done", "started_at": started, "thread_key": name, "exit": 0,
+                "events": str(live / f"{name}.jsonl")}))
+        # The older run finished last, so its status file has the newest mtime.
+        tail = self.run_cmd(["bash", str(ROOT / "scripts/codex-tail.sh"), "review"], timeout=20)
+        self.assertIn("thread review-new-1", tail.stdout)
 
     def test_new_work_unit_reviews_only_new_changes(self):
         self.write("first.py", "first = True\n")

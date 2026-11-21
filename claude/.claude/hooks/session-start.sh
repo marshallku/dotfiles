@@ -20,8 +20,15 @@ STATE_DIR="$HOME/.claude/state"
 if [ -d "$STATE_DIR" ]; then
     find "$STATE_DIR" -maxdepth 1 -type f \( \
         -name "dirty-*.log" -o -name "dirty-*.log.resolved" -o -name "stop-blocked-*" -o -name "verify-blocked-*" \
-        -o -name "ssot-checked-*" -o -name "compact-reinject-*" \
+        -o -name "ssot-checked-*" -o -name "compact-reinject-*" -o -name "bash-mark-*" \
+        -o -name "review-reminded-*" -o -name "review-stop-*" \
         \) -mtime +1 -delete 2>/dev/null || true
+
+    # codex-exec.sh keeps each run's event stream and status for codex-tail / a live view.
+    # A week is enough to look back at a review; older runs are only disk.
+    if [ -d "$STATE_DIR/codex-live" ]; then
+        find "$STATE_DIR/codex-live" -maxdepth 1 -type f -mtime +7 -delete 2>/dev/null || true
+    fi
 
     # intent-active-* 는 원래 live enforcement 상태라 나이 기준 삭제에서
     # 빼 두었는데, intent-capture 훅이 2026-06-30 에 비활성화되면서 아무도

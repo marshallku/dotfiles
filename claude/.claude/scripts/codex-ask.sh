@@ -13,6 +13,8 @@
 # Environment overrides:
 #   CODEX_ASK_MODEL   — override model passed to codex (-m)
 #   CODEX_ASK_TIMEOUT — seconds before the call is aborted (default 180)
+#   CODEX_ASK_EFFORT  — reasoning effort (default medium; high ran p50 145 s and timed out
+#                       3 of 21 consults on the work Mac — a consult is meant to take ~30 s)
 
 set -euo pipefail
 
@@ -74,4 +76,5 @@ else
 Question: ${QUESTION}"
 fi
 
-exec "$RUNNER" --timeout "$TIMEOUT" ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} --prompt "$PROMPT" </dev/null
+exec "$RUNNER" --timeout "$TIMEOUT" --effort "${CODEX_ASK_EFFORT:-medium}" ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} \
+    --prompt "$PROMPT" </dev/null
