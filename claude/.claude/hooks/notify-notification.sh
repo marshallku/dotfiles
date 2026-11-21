@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @hook-event: Notification
 # Notification hook: fires when Claude pauses for user input
 # (permission prompts, idle timeout). More precise "needs attention" signal
 # than Stop — Stop fires after every turn whether or not input is required.

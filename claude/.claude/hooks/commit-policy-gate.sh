@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @hook-event: PreToolUse
 # PreToolUse Bash hook — enforce commit-message policy at the Claude tool layer.
 #
 # Catches co-author trailers (any `Co-Authored-By:`, whoever it names) and

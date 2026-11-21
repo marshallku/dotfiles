@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @hook-event: PreCompact
 # PreCompact hook: preserve re-injectable state across a context compaction.
 #
 # Why: an autonomous loop (/goal, /loop) has its work-unit contract injected by

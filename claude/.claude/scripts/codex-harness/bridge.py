@@ -13,8 +13,10 @@ SUPPORTED = {
     "protect-secrets.sh", "freeze.sh", "plan-ssot-gate.sh", "session-start.sh",
     "surface-open-loops.sh", "pre-compact.sh", "contract-inject.sh",
     "verification-gate.sh", "auto-handoff.sh", "track-edit.sh",
-    "post-typecheck.sh", "ssot-check-mark.sh",
+    "post-typecheck.sh",
 }
+# Hooks that read executed Bash commands from a Claude transcript get Codex's command ledger.
+LEDGER_HOOKS = {"verification-gate.sh", "plan-ssot-gate.sh"}
 READ_ONLY_HOOKS = {"careful-with-judge.sh", "protect-secrets.sh", "freeze.sh"}
 DELEGATE_HOOKS = READ_ONLY_HOOKS | {
     "post-typecheck.sh", "track-edit.sh", "pre-commit-gate.sh", "commit-policy-gate.sh", "block-raw-git.sh",
@@ -114,7 +116,7 @@ def dispatch(payload):
             if os.environ.get("HARNESS_DELEGATE_CHILD") == "1" and name not in DELEGATE_HOOKS:
                 continue
             hook_input = normalized
-            if name == "verification-gate.sh":
+            if name in LEDGER_HOOKS:
                 hook_input = {**normalized, "transcript_path": str(ledger)}
             outputs.append(run_hook(name, hook_input, timeout))
     for output in outputs:

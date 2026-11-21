@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
+# @hook-event: PreToolUse
 # PreToolUse ExitPlanMode hook — blocks presenting a plan until this session
 # has consulted the ~/docs SSoT at least once (a `dn search`/`tag`/`related`
-# query, recorded as ssot-checked-<session> by ssot-check-mark.sh).
+# Bash command in this session's transcript; Codex passes its command ledger).
+#
+# The gate reads the transcript only when a plan is presented. It used to rely on
+# ssot-check-mark.sh, a PostToolUse Bash hook that ran on every command (27,273 runs
+# in a month on the work Mac, p50 88 ms) for a gate that fired zero times.
 #
 # Rationale: free-form planning otherwise skips ~/docs entirely — only the
 # /codex-plan skill wired it in. Gating on ExitPlanMode catches every plan
@@ -12,7 +17,8 @@
 # Allows when:
 #   - ~/.claude/state/ssot-gate-disabled exists (session-wide opt-out)
 #   - the `dn` SSoT tool is not installed / ~/docs is absent (no SSoT here)
-#   - ssot-checked-<session> marker exists (already consulted this session)
+#   - the transcript holds a `dn search|tag|related` command (already consulted)
+#   - ssot-checked-<session> marker exists (manual clear for this session)
 
 set -euo pipefail
 
@@ -20,6 +26,8 @@ set -euo pipefail
 
 INPUT=$(cat)
 SESSION=$(echo "$INPUT" | jq -r '.session_id // "default"')
+TRANSCRIPT=$(echo "$INPUT" | jq -r '.transcript_path // empty')
+DN_RE='(^|[^[:alnum:]_/])(dn|[^[:space:]]*/dn)[[:space:]]+(search|tag|related)([[:space:]]|$)'
 
 STATE_DIR="$HOME/.claude/state"
 DISABLED="$STATE_DIR/ssot-gate-disabled"
@@ -43,6 +51,13 @@ fi
 
 # Already consulted SSoT this session
 [ -f "$MARKER" ] && { log "allow: ssot-checked marker present"; echo '{}'; exit 0; }
+if [ -f "$TRANSCRIPT" ] && jq -r '.. | objects | select(.type? == "tool_use" and .name? == "Bash")
+        | .input.command? // empty' "$TRANSCRIPT" 2>/dev/null | grep -E "$DN_RE" >/dev/null; then
+    # Not grep -q: an early exit breaks jq's pipe, and pipefail turns a found consult into a deny.
+    log "allow: dn consult found in transcript"
+    echo '{}'
+    exit 0
+fi
 
 log "BLOCK: ExitPlanMode without an SSoT consult this session"
 

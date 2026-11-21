@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @hook-event: SessionStart
 # SessionStart hook: state GC, ledger/log rotation, and post-compaction re-injection.
 # The previous-session handoff is no longer injected: it repeated the gitStatus Claude
 # Code already provides (672 injections × ~1.4 KB in 30 days). auto-handoff.sh still

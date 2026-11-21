@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
+# @hook-event: PreToolUse
 # PreToolUse hook: freeze 디렉토리 외 편집 차단
 # 야간 에이전트 편집 범위 제한용
 
 set -euo pipefail
 
+FREEZE_FILE="$HOME/.claude/freeze-dir.txt"
+
+# freeze 설정이 없으면 즉시 통과 — _lib.sh·stdin 읽기 전에. 거의 모든 호출이 이 경로다
+# (work Mac 한 달 2,730회 중 차단 0회, 그런데 p50 117ms였다).
+[ ! -f "$FREEZE_FILE" ] && echo '{}' && exit 0
+
 . "$(dirname "$0")/_lib.sh"
 
 INPUT=$(cat)
-FREEZE_FILE="$HOME/.claude/freeze-dir.txt"
-
-# freeze 설정이 없으면 즉시 통과
-[ ! -f "$FREEZE_FILE" ] && echo '{}' && exit 0
 
 FREEZE_DIR=$(cat "$FREEZE_FILE")
 [ -z "$FREEZE_DIR" ] && echo '{}' && exit 0

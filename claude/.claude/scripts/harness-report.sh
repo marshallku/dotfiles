@@ -124,6 +124,22 @@ if [ -f "$HOME/.claude/settings.json" ]; then
     done < <(jq -r '.. | .command? // empty' "$HOME/.claude/settings.json" 2>/dev/null \
         | grep -oE '\.claude/hooks/[A-Za-z0-9_.-]+' | sed 's|.*/||' | sort -u)
 fi
+# A hook registered under the wrong event runs at the wrong time or never (track-bash-edit
+# post under UserPromptSubmit on the work Mac, 2026-11-14 →). Each script declares its event.
+if [ -f "$HOME/.claude/settings.json" ] && [ -d "$HOOKS" ]; then
+    while IFS= read -r problem; do
+        [ -n "$problem" ] && INSTALL+=("hook event: $problem")
+    done < <(python3 -I "$(dirname "$0")/hook-contract.py" "$HOME/.claude/settings.json" "$HOOKS" 2>&1)
+fi
+# Settings edited in the dotfiles working tree but never committed exist on this machine only.
+# Compared as JSON (jq -S), because Claude Code itself rewrites the file and reorders keys.
+if [ -n "${SRC_SETTINGS:-}" ] && [ -f "$SRC_SETTINGS" ]; then
+    SRC_DIR=$(dirname "$SRC_SETTINGS")
+    if HEAD_SETTINGS=$(git -C "$SRC_DIR" show "HEAD:./settings.json" 2>/dev/null) \
+        && ! cmp -s <(printf '%s' "$HEAD_SETTINGS" | jq -S . 2>/dev/null) <(jq -S . "$SRC_SETTINGS" 2>/dev/null); then
+        INSTALL+=("settings.json has uncommitted changes in $SRC_DIR (commit or revert them)")
+    fi
+fi
 if [ "$(uname -s)" = Darwin ]; then
     for plist in "$HOME"/Library/LaunchAgents/*.plist; do
         [ -f "$plist" ] || continue
@@ -141,7 +157,7 @@ if [ "$MODE" = "tripwire" ]; then
     for t in "${TRIPS[@]}"; do OUT="$OUT"$'\n'"  • $t"; done
     OUT="$OUT"$'\n'"  (detail: bash ~/.claude/scripts/harness-report.sh · mute: touch ~/.claude/state/tripwire-disabled)"
     jq -n --arg ctx "$OUT" '{hookSpecificOutput:{hookEventName:"SessionStart", additionalContext:$ctx}}' 2>/dev/null || true
-    hook_log harness-tripwire "TRIPPED: ${#TRIPS[@]} condition(s)"
+    hook_log harness-tripwire "TRIPPED: ${#TRIPS[@]} condition(s): $(printf '%s | ' "${TRIPS[@]}" | cut -c1-600)"
     exit 0
 fi
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @hook-event: Stop
 # Stop hook: 세션 종료 시 자동 핸드오프 저장
 # git 상태를 캡처하여 다음 세션에서 참조 가능
 
@@ -22,7 +23,7 @@ fi
 BRANCH=$(git -C "$CWD" branch --show-current 2>/dev/null || echo "detached")
 DIFF_STAT=$(git -C "$CWD" diff --stat 2>/dev/null)
 STAGED_STAT=$(git -C "$CWD" diff --cached --stat 2>/dev/null)
-RECENT_LOG=$(git -C "$CWD" log --oneline -5 2>/dev/null)
+RECENT_LOG=$(git -C "$CWD" log --oneline -5 2>/dev/null || true)
 REPO_NAME=$(basename "$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null)")
 TIMESTAMP=$(date +"%Y-%m-%d %H:%M")
 
@@ -52,7 +53,19 @@ ${STAGED_STAT:-No staged changes}
 \`\`\`
 EOF
 
+# 시각 줄만 다르고 내용이 같으면 다시 쓰지 않는다 — Stop마다 같은 파일을 덮어썼다
+# (work Mac 한 달 2,500회, p50 541ms).
+REPO_FILE=$(handoff_repo_path "$CWD" 2>/dev/null || true)
+same_body() { [ -f "$2" ] && cmp -s <(grep -v '^- \*\*Time:\*\*' "$1") <(grep -v '^- \*\*Time:\*\*' "$2"); }
+if [ -n "$REPO_FILE" ] && same_body "$HANDOFF_TMP" "$REPO_FILE" && same_body "$HANDOFF_TMP" "$HANDOFF_DIR/latest.md"; then
+    rm -f "$HANDOFF_TMP"
+    hook_log auto-handoff "skip: unchanged ($REPO_NAME)"
+    echo '{}'
+    exit 0
+fi
+
 # 같은 내용을 repo 별 파일에도 둔다 — 다음 세션은 자기 repo 것만 주입받는다.
 handoff_publish "$HANDOFF_TMP" "$CWD"
+hook_log auto-handoff "wrote ($REPO_NAME)"
 
 echo '{}'

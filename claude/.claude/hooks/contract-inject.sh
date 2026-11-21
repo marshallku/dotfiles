@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @hook-event: UserPromptSubmit
 # UserPromptSubmit hook — auto-inject the autonomous work-unit contract when an
 # autonomous loop is being started, so the user no longer has to retype the
 # "plan -> review -> code -> test -> e2e -> cross-review -> save.sh" sequence

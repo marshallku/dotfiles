@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @hook-event: PreToolUse
 # PreToolUse hook: 민감 파일 편집/쓰기 차단
 # Edit, Write 도구에서 .env, .secrets, credentials 등 보호
 

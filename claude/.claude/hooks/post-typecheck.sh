@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @hook-event: PostToolUse
 # PostToolUse (Edit|Write) — the harness's computational sensor.
 #
 # Runs the edited project's type checker and feeds any errors back to Claude as

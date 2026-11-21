@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @hook-event: PreToolUse
 # PreToolUse Bash hook — hard-block raw `git commit` issued directly through
 # the Bash tool. All commits MUST go through ~/save.sh, which wraps commit+push
 # atomically with the project's guards (and runs git internally, so its own

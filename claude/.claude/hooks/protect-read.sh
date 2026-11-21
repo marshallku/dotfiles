@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @hook-event: PreToolUse
 # PreToolUse hook: agent-deny-paths 안의 경로를 읽기·목록·검색하지 못하게 한다.
 #
 # 목록: ~/.claude/agent-deny-paths (git 밖, 선택). 한 줄에 `~/…` 또는 `/abs`, `*`·`?`·`**` glob.

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @hook-event: PreToolUse
 # PreToolUse hook: 위험 명령 탐지 + 결정론적 분류기
 #
 # 동작 (ask는 쓰지 않는다):

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @hook-event: PostToolUse
 # PostToolUse Edit|Write: retain touched paths for session reporting.
 # Review gates independently compare Git content.
 

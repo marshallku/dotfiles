@@ -87,6 +87,8 @@ Never background it, and never poll a local codex job with Monitor/ScheduleWakeu
   irreversible and has an alternative (say the alternative in the reason); allow and record
   (`hook_event … decision=flagged`) what is merely risky.
 - A gate whose helper is missing or fails must deny, never allow.
+- Declare the event on line 2 (`# @hook-event: PostToolUse`); the trip wire checks settings.json
+  against it.
 - Log every exit path with `hook_log` / `hook_event`; never hand-roll `log()`.
 - Sensors (`post-typecheck.sh`) do not use `set -e`.
 - Hooks and wrappers must run on Linux and macOS (bash ≥ 4 on PATH, BSD/GNU `stat`, `date`,

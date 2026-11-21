@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @hook-event: Stop
 # Stop hook — if this session changed code but the transcript shows no evidence
 # that tests / e2e / the app were actually run, block the stop once and tell
 # Claude to verify before concluding (or to state why verification is N/A).

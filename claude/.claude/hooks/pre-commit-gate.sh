@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @hook-event: PreToolUse
 # PreToolUse Bash hook — blocks commit commands until (a) the staged diff that
 # save.sh will commit (HEAD -> index) has a cross-review approval, and (b) this
 # session captured a valid intent file in ~/docs/sources/sessions/ (hard-gate

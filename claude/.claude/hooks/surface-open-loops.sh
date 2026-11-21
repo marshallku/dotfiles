@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @hook-event: SessionStart
 # SessionStart hook: surface overdue open-loops once per day.
 #
 # The open-loops registry (life-assistant memory) is faithfully maintained but

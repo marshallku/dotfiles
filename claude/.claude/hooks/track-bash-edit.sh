@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @hook-event: PreToolUse=pre PostToolUse=post
 # Bash edits get the same sensors as Edit/Write.
 #
 #   PreToolUse  Bash: track-bash-edit.sh pre   — stamp the time the command starts
