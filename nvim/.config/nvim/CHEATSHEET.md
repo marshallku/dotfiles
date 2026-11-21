@@ -75,8 +75,12 @@ screen, so it works the same for every agent.
 | `<leader>aj` | Pick one of the file refs in the panel's recent output and open it | n |
 | `<C-l>` / `<C-w>l` | Go over to the panel, ready to type | n |
 | `<M-h>` | Back to the code from the panel | t |
+| `<M-,>` / `<M-.>` | Widen / narrow the panel from inside it (normal mode: `<C-Left>` / `<C-Right>`, or drag the border) | t |
 | `<C-\><C-n>` | Panel → normal mode, to move over its output | t |
 | `gd` / `gf` / `<CR>` | In panel normal mode: open the ref under the cursor in the code window | n |
+
+The panel takes 40% of the width and follows the screen size; resizing it by
+hand sets a new share. The code keeps at least 60 columns, the panel at least 30.
 
 Collect a few refs with `<leader>ar` while reading, go over, write the message,
 Enter. Nothing is submitted for you. A first-run prompt in the agent (trust, a

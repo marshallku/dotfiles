@@ -9,7 +9,12 @@ local ref = require("config.ref")
 
 local M = {}
 
-local WIDTH = 0.4 -- share of the columns
+-- Width as a share of the columns, so the panel follows the screen size.
+-- Resizing the panel by hand (keys, mouse) sets a new share.
+local DEFAULT_SHARE = 0.4
+local MIN_PANEL = 30 -- columns the panel keeps on a narrow screen
+local MIN_CODE = 60 -- columns the code keeps before the panel gives way
+local RESIZE_STEP = 5
 local SCAN_LINES = 500 -- panel output searched for refs, newest first
 local PICK_LIMIT = 30
 -- Text sent before the shell is up is lost, so a new panel waits until its
@@ -21,8 +26,18 @@ local READY_TIMEOUT_MS = 8000
 local term -- the panel's toggleterm Terminal
 local ready = false
 
+local share = DEFAULT_SHARE
+
+-- A panel width within the minimums for this screen size
+local function clamp(w)
+    local columns = vim.o.columns
+    local low = math.min(MIN_PANEL, math.floor(columns / 2))
+    local high = math.max(low, columns - MIN_CODE - 1) -- 1: the window separator
+    return math.max(low, math.min(w, high))
+end
+
 local function width()
-    return math.floor(vim.o.columns * WIDTH)
+    return clamp(math.floor(vim.o.columns * share))
 end
 
 local function running()
@@ -126,8 +141,22 @@ local function recent_refs()
     return list
 end
 
+local function panel_win()
+    return term and term:is_open() and term.window or nil
+end
+
+local function resize(delta)
+    local win = panel_win()
+    if win then vim.api.nvim_win_set_width(win, clamp(vim.api.nvim_win_get_width(win) + delta)) end
+end
+
 local function on_open(t)
     local opts = { buffer = t.bufnr, silent = true }
+    -- From inside the panel; in normal mode <C-Left>/<C-Right> work as anywhere
+    vim.keymap.set("t", "<M-,>", function() resize(RESIZE_STEP) end,
+        vim.tbl_extend("force", opts, { desc = "Widen the panel" }))
+    vim.keymap.set("t", "<M-.>", function() resize(-RESIZE_STEP) end,
+        vim.tbl_extend("force", opts, { desc = "Narrow the panel" }))
     for _, key in ipairs({ "gd", "gf", "<CR>" }) do
         vim.keymap.set("n", key, jump_at_cursor, vim.tbl_extend("force", opts, { desc = "Open the file ref here" }))
     end
@@ -136,7 +165,9 @@ local function on_open(t)
     vim.keymap.set("t", "<C-\\><C-n>", "<C-\\><C-n>", vim.tbl_extend("force", opts, { desc = "Terminal normal mode" }))
     -- Going over (<C-w>l, <C-l>, a click) is to type to the agent; reading
     -- its output with gd is the exception, one <C-\><C-n> away
+    -- on_open runs on every show; one autocmd, not one per show
     vim.api.nvim_create_autocmd("BufEnter", {
+        group = vim.api.nvim_create_augroup("agent_panel_enter", { clear = true }),
         buffer = t.bufnr,
         callback = function()
             vim.schedule(function()
@@ -226,6 +257,33 @@ function M.pick()
 end
 
 function M.setup()
+    local group = vim.api.nvim_create_augroup("agent_panel_width", { clear = true })
+    -- Screen size changed: back to the share, within the minimums
+    vim.api.nvim_create_autocmd("VimResized", {
+        group = group,
+        callback = function()
+            local win = panel_win()
+            if win then vim.api.nvim_win_set_width(win, width()) end
+        end,
+    })
+    -- Panel resized by hand (drag, <C-Left>): hold it within the minimums,
+    -- then remember the new share. Widths this module set equal width() and
+    -- are skipped, so a clamp on a small screen doesn't shrink the share for
+    -- when the screen grows again.
+    vim.api.nvim_create_autocmd("WinResized", {
+        group = group,
+        callback = function()
+            local win = panel_win()
+            if not win or not vim.tbl_contains(vim.v.event.windows, win) then return end
+            local w = vim.api.nvim_win_get_width(win)
+            if w ~= clamp(w) then
+                vim.api.nvim_win_set_width(win, clamp(w))
+                w = clamp(w)
+            end
+            if w ~= width() then share = w / vim.o.columns end
+        end,
+    })
+
     local map = vim.keymap.set
     map({ "n", "t" }, "<M-a>", M.toggle, { desc = "Toggle agent panel" })
     map("n", "<leader>aa", M.toggle, { desc = "Toggle agent panel" })
