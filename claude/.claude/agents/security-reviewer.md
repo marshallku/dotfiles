@@ -1,4 +1,5 @@
 ---
+name: security-reviewer
 description: OWASP 중심 보안 리뷰어 (읽기 전용)
 model: sonnet
 maxTurns: 15

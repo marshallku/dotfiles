@@ -1,4 +1,5 @@
 ---
+name: doc-updater
 description: 코드 변경에 따른 문서 자동 업데이트
 model: sonnet
 effort: medium

@@ -51,6 +51,8 @@ git -C <cwd> log --since="$SINCE" --pretty='format:%h %ad %s' --date=short 2>/de
 - Claude Code: `type != user/assistant`, `isSidechain == true`, 또는 content가 `Respond ONLY 'allow' or 'deny'.` / `<system-reminder>` / `<task-notification>` / `<command-message>` / `<command-name>` / `<local-command-stdout>` / `Stop hook feedback:` / `[auto-review]` / `Caveat: The messages below` / `[Request interrupted by user` 로 시작.
 - Codex: `type != response_item`, `payload.role ∈ {developer, reasoning}`, 또는 content가 `# AGENTS.md instructions for` / `<permissions instructions>` / `<user_instructions>` / `<system_instructions>` 로 시작.
 
+- Codex Desktop 일괄 import 사본: `turn_id`가 `external-import-`로 시작하는 rollout은 Claude 세션을 옮겨 온 복제본이다. 사람이 친 것이 아니니 통째로 뺀다(같은 내용은 Claude 원본에서 이미 읽힌다).
+
 이 목록은 가이드일 뿐 — 새 패턴 보이면 판단해서 거르고, 사용자가 직접 타이핑한 걸로 보이는 건 무조건 보존.
 
 ### 4. 노트 업데이트 — AIDE로 쓰기

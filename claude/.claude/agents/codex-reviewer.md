@@ -1,4 +1,5 @@
 ---
+name: codex-reviewer
 description: External cross-check reviewer via Codex CLI. Use PROACTIVELY after implementing non-trivial changes to get an independent senior-engineer review from a different model family. Returns a structured finding list and a VERDICT.
 model: sonnet
 maxTurns: 5

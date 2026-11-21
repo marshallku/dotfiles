@@ -31,7 +31,7 @@ effort: high
 
 ## Step 2 — Explore fan-out (병렬 서브에이전트)
 
-Agent(subagent_type: Explore)를 **한 메시지에서 병렬로** 띄운다. 기본 4개 렌즈, focus 인자가 있으면 해당 렌즈를 심화하고 무관한 렌즈는 줄인다:
+Agent(subagent_type: scout)(없으면 `Explore`에 `model: "sonnet"`)를 **한 메시지에서 병렬로** 띄운다. 탐색은 Sonnet으로 충분하다 — 종합·우선순위 판단(Step 3)만 부모가 한다. 기본 4개 렌즈, focus 인자가 있으면 해당 렌즈를 심화하고 무관한 렌즈는 줄인다:
 
 | 렌즈 | 찾는 것 |
 |---|---|

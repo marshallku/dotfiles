@@ -50,6 +50,12 @@ All of them run through `~/.claude/scripts/codex-exec.sh`: stdout is the final m
 `VERDICT:` there), stderr is progress; exit `0` ok · `1` REVISE · `2` error · `3` resume
 unavailable · `124` timeout.
 
+### Subagent models
+
+Name the model on every Agent call. Search, extraction and summary fan-out → the `scout` agent or
+`model: "sonnet"`; implementation, design judgment and independent review → `model: "opus"`.
+An unnamed model runs on the parent's (Opus), which is where 91% of subagent spend went.
+
 ### Waiting on codex
 
 Run a gating review/plan **in the foreground with Bash `timeout: 600000`** and block on it.
