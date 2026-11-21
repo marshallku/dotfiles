@@ -1,7 +1,10 @@
--- Claude Code in a side panel beside the code: hand it @path:line refs and
--- code blocks from the buffer while writing, and jump from the file refs in
--- its replies back into the code. One panel per Neovim, started in the Git
--- root of the file it was first opened from, so @paths resolve there.
+-- A terminal side panel beside the code for an agent CLI (claude, codex, or
+-- anything else run in it): hand it @path:line refs and code blocks from the
+-- buffer while writing, and jump from the file refs in its replies back into
+-- the code. It is a plain shell, so nothing here depends on one agent: refs go
+-- in as a paste, and refs coming out are read from the terminal's text. One
+-- panel per Neovim, its shell started in the Git root of the file it was first
+-- opened from, so @paths resolve there.
 local ref = require("config.ref")
 
 local M = {}
@@ -9,8 +12,8 @@ local M = {}
 local WIDTH = 0.4 -- share of the columns
 local SCAN_LINES = 500 -- panel output searched for refs, newest first
 local PICK_LIMIT = 30
--- Text sent before Claude's input is up is lost, so a new panel waits until
--- its screen stops changing
+-- Text sent before the shell is up is lost, so a new panel waits until its
+-- screen stops changing
 local READY_POLL_MS = 100
 local READY_QUIET_MS = 600
 local READY_TIMEOUT_MS = 8000
@@ -26,7 +29,7 @@ local function running()
     return term ~= nil and term.job_id ~= nil and vim.api.nvim_buf_is_valid(term.bufnr or -1)
 end
 
--- Run fn once Claude's input is up
+-- Run fn once the shell is up
 local function when_ready(fn)
     if ready then return fn() end
     local tick, quiet, waited = -1, 0, 0
@@ -81,7 +84,7 @@ local function panel_dir()
     return term and term.dir or vim.uv.cwd()
 end
 
--- Claude writes paths relative to its own directory; others may be relative
+-- The agent writes paths relative to its own directory; others may be relative
 -- to Neovim's
 local function ref_dirs()
     return { panel_dir(), vim.uv.cwd() }
@@ -131,6 +134,18 @@ local function on_open(t)
     -- toggleterm maps a bare <C-\> in terminals, which hides Vim's own way
     -- out of terminal mode; this longer mapping wins when typed in full
     vim.keymap.set("t", "<C-\\><C-n>", "<C-\\><C-n>", vim.tbl_extend("force", opts, { desc = "Terminal normal mode" }))
+    -- Going over (<C-w>l, <C-l>, a click) is to type to the agent; reading
+    -- its output with gd is the exception, one <C-\><C-n> away
+    vim.api.nvim_create_autocmd("BufEnter", {
+        buffer = t.bufnr,
+        callback = function()
+            vim.schedule(function()
+                -- deliver() opens the panel and steps straight back to the
+                -- code; only start insert if we are still in the panel
+                if vim.api.nvim_get_current_buf() == t.bufnr then vim.cmd("startinsert") end
+            end)
+        end,
+    })
     vim.cmd("startinsert!")
 end
 
@@ -140,11 +155,10 @@ local function ensure()
     local dir = (here ~= "" and ref.git_root(here)) or ref.git_root(vim.uv.cwd()) or vim.uv.cwd()
     local Terminal = require("toggleterm.terminal").Terminal
     term = Terminal:new({
-        cmd = "claude",
-        dir = dir,
+        dir = dir, -- no cmd: the user's shell
         direction = "vertical",
         hidden = true, -- keep <C-\> for the floating shell
-        display_name = "Claude",
+        display_name = "Agent",
         on_open = on_open,
         on_exit = function() ready = false end,
     })
@@ -155,45 +169,53 @@ function M.toggle()
     ensure():toggle(width())
 end
 
--- Show the panel, focus it in insert mode, and paste text into Claude's
--- input without submitting it. Bracketed paste keeps an @ from opening the
--- file picker and newlines from sending the message.
-local function deliver(text)
+-- Paste text into whatever runs in the panel, without submitting it, and
+-- stay in the code: collect a few refs, then go over (<M-l>) to write the
+-- message. Bracketed paste keeps an @ from opening an agent's file picker and
+-- newlines from sending the message early.
+local function deliver(text, label)
     if not text then return end
     local t = ensure()
-    if not t:is_open() then t:open(width()) end
-    t:focus()
-    vim.cmd("startinsert!")
+    if not t:is_open() then
+        local code = vim.api.nvim_get_current_win()
+        t:open(width())
+        if vim.api.nvim_win_is_valid(code) then
+            vim.api.nvim_set_current_win(code)
+            vim.cmd("stopinsert")
+        end
+    end
     when_ready(function()
         vim.api.nvim_chan_send(t.job_id, "\27[200~" .. text .. "\27[201~")
+        vim.notify("Agent panel ← " .. label)
     end)
 end
 
--- Refs are relative to the panel's directory, where Claude runs, even when
--- the file is in another repository (then absolute)
+-- Refs are relative to the panel's directory, where the agent runs, even
+-- when the file is in another repository (then absolute)
 function M.send_ref(range)
     local text = ref.ref(range, ensure().dir)
-    deliver(text and text .. " ")
+    deliver(text and text .. " ", text)
 end
 
 function M.send_block(range)
-    deliver(ref.block(range, ensure().dir))
+    local text = ref.block(range, ensure().dir)
+    deliver(text, text and text:match("^(%S+)") .. " (code)")
 end
 
 -- Pick one of the file refs in the panel's recent output and open it
 function M.pick()
     if not running() then
-        vim.notify("The Claude panel is not running", vim.log.levels.WARN)
+        vim.notify("The agent panel is not running", vim.log.levels.WARN)
         return
     end
     local list = recent_refs()
     if #list == 0 then
-        vim.notify("No file references in the Claude panel", vim.log.levels.WARN)
+        vim.notify("No file references in the agent panel", vim.log.levels.WARN)
         return
     end
     local dir = panel_dir()
     vim.ui.select(list, {
-        prompt = "Open from Claude",
+        prompt = "Open from the agent panel",
         format_item = function(found)
             local shown = vim.startswith(found.file, dir .. "/") and found.file:sub(#dir + 2) or found.file
             return ("%s:%d"):format(shown, found.line)
@@ -205,12 +227,12 @@ end
 
 function M.setup()
     local map = vim.keymap.set
-    map({ "n", "t" }, "<M-a>", M.toggle, { desc = "Toggle Claude panel" })
-    map("n", "<leader>aa", M.toggle, { desc = "Toggle Claude panel" })
-    map("n", "<leader>ar", function() M.send_ref(nil) end, { desc = "Send @path:line to Claude" })
-    map("x", "<leader>ar", function() M.send_ref(ref.visual_range()) end, { desc = "Send @path:start-end to Claude" })
-    map("x", "<leader>ac", function() M.send_block(ref.visual_range()) end, { desc = "Send selection to Claude" })
-    map("n", "<leader>aj", M.pick, { desc = "Open a file ref from Claude" })
+    map({ "n", "t" }, "<M-a>", M.toggle, { desc = "Toggle agent panel" })
+    map("n", "<leader>aa", M.toggle, { desc = "Toggle agent panel" })
+    map("n", "<leader>ar", function() M.send_ref(nil) end, { desc = "Send @path:line to the agent panel" })
+    map("x", "<leader>ar", function() M.send_ref(ref.visual_range()) end, { desc = "Send @path:start-end to the agent panel" })
+    map("x", "<leader>ac", function() M.send_block(ref.visual_range()) end, { desc = "Send selection to the agent panel" })
+    map("n", "<leader>aj", M.pick, { desc = "Open a file ref from the agent panel" })
 end
 
 return M

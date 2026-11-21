@@ -62,20 +62,25 @@ grug-far: edit the search / replace / flags / files fields at the top, results
 update live; `<Space>r` replaces all, `<Space>s` syncs edited result
 lines back to the files, `g?` all keys.
 
-### Claude side panel
+### Agent side panel
+A shell in a right side panel, started in the Git root: run `claude`, `codex`
+or any agent in it. Refs go in as a paste and refs coming out are read from the
+screen, so it works the same for every agent.
+
 | Key | Action | Mode |
 |-----|--------|------|
-| `<M-a>` / `<leader>aa` | Toggle Claude Code in a right side panel (keeps running when hidden) | n, t |
-| `<leader>ar` | Put `@path:line` (visual: `@path:start-end`) into Claude's input | n, v |
-| `<leader>ac` | Put the selection as a code block into Claude's input | v |
-| `<leader>aj` | Pick one of the file refs in Claude's recent output and open it | n |
-| `gd` / `gf` / `<CR>` | In the panel (terminal normal mode): open the ref under the cursor | n |
-| `<C-\><C-n>` | Panel terminal → normal mode, to move over its output | t |
+| `<M-a>` / `<leader>aa` | Toggle the panel (keeps running when hidden) | n, t |
+| `<leader>ar` | Put `@path:line` (visual: `@path:start-end`) into the panel, stay in the code | n, v |
+| `<leader>ac` | Put the selection as a code block into the panel | v |
+| `<leader>aj` | Pick one of the file refs in the panel's recent output and open it | n |
+| `<C-l>` / `<C-w>l` | Go over to the panel, ready to type | n |
+| `<M-h>` | Back to the code from the panel | t |
+| `<C-\><C-n>` | Panel → normal mode, to move over its output | t |
+| `gd` / `gf` / `<CR>` | In panel normal mode: open the ref under the cursor in the code window | n |
 
-Sent text is pasted, not submitted: add your words, then Enter. Refs open in
-the code window beside the panel. Claude starts in the Git root of the file it
-was first opened from, so `@paths` resolve there. A first-run prompt in Claude
-(trust, a new feature) takes the first paste; answer it and send again.
+Collect a few refs with `<leader>ar` while reading, go over, write the message,
+Enter. Nothing is submitted for you. A first-run prompt in the agent (trust, a
+new feature) takes the first paste; answer it and send again.
 
 ### Git
 | Key | Action |
