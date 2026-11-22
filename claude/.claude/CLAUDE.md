@@ -59,7 +59,7 @@ the why, the hook registry, the ledgers and the history of what broke are in
 | Quick design question | `/ask-codex "q"` | read-only, one turn. Not for things you are 80%+ sure of. |
 | Plan pressure test | `/codex-plan` | read-only, multi-round; stop at ~3 rounds. Use for risky or wide plans, not every plan. |
 | Delegate a sub-task | `/codex-delegate` | background, **writes files**; only when the user opts in. Review its diff yourself. |
-| Review before commit | `/cross-review` | read-only VERDICT loop over the staged index. |
+| Review before commit | `/cross-review` | read-only VERDICT loop over the staged index; runs `comment_review.py` first. |
 
 All of them run through `~/.claude/scripts/codex-exec.sh`: stdout is the final message (parse
 `VERDICT:` there), stderr is progress; exit `0` ok · `1` REVISE · `2` error · `3` resume

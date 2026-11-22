@@ -147,20 +147,25 @@ class Comment:
         return [h for h in self.hits if h in REASONS]
 
 
-def lang_for(path: str) -> Optional[str]:
+def lang_from_source(source: bytes) -> Optional[str]:
+    first = source.split(b"\n", 1)[0]
+    return "bash" if first.startswith(b"#!") and (b"bash" in first or b"/sh" in first) else None
+
+
+def lang_for(path: str, source: Optional[bytes] = None) -> Optional[str]:
+    """By extension; an extensionless file by the shebang of `source`, or of the file on disk."""
     p = Path(path)
     if p.suffix in LANG_BY_EXT:
         return LANG_BY_EXT[p.suffix]
-    if p.suffix or not p.is_file():
+    if p.suffix:
         return None
-    try:
-        with p.open("rb") as fh:
-            first = fh.readline()
-    except OSError:
-        return None
-    if first.startswith(b"#!") and (b"bash" in first or b"/sh" in first):
-        return "bash"
-    return None
+    if source is None:
+        try:
+            with p.open("rb") as fh:
+                source = fh.readline()
+        except OSError:
+            return None
+    return lang_from_source(source)
 
 
 def strip_markers(raw: str) -> str:
@@ -295,22 +300,74 @@ def git(cwd: str, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["git", "-C", cwd, *args], capture_output=True, text=True, errors="replace")
 
 
+C_ESCAPES = {ord("n"): 10, ord("t"): 9, ord('"'): 34, ord("\\"): 92, ord("a"): 7, ord("b"): 8, ord("f"): 12,
+             ord("r"): 13, ord("v"): 11}
+
+
+def c_unquote(quoted: str) -> str:
+    """Undo git's C-style path quoting; octal escapes are raw UTF-8 bytes."""
+    data, out, i = quoted.encode("utf-8"), bytearray(), 0
+    while i < len(data):
+        if data[i] != 92 or i + 1 >= len(data):
+            out.append(data[i])
+            i += 1
+        elif 48 <= data[i + 1] <= 55:
+            out.append(int(data[i + 1 : i + 4], 8))
+            i += 4
+        else:
+            out.append(C_ESCAPES.get(data[i + 1], data[i + 1]))
+            i += 2
+    return out.decode("utf-8", "replace")
+
+
+def diff_path(header: str) -> Optional[str]:
+    """`+++ b/x` or git's C-quoted `+++ "b/\\303\\251"`; None for /dev/null."""
+    raw = header[4:].rstrip("\t")
+    if raw.startswith('"') and raw.endswith('"'):
+        raw = c_unquote(raw[1:-1])
+    return raw[2:] if raw.startswith("b/") else None
+
+
+HUNK = re.compile(r"^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+
+
 def parse_added(diff: str) -> Dict[str, Set[int]]:
+    """Header lines are only read between hunks: an added `++x;` shows up as `+++x;` inside one."""
     added: Dict[str, Set[int]] = {}
-    current = None
+    current, old_left, new_left = None, 0, 0
     for line in diff.splitlines():
+        if old_left > 0 or new_left > 0:
+            if line.startswith("+"):
+                new_left -= 1
+            elif line.startswith("-"):
+                old_left -= 1
+            elif line.startswith(" "):
+                old_left, new_left = old_left - 1, new_left - 1
+            continue
         if line.startswith("+++ "):
-            current = line[6:] if line.startswith("+++ b/") else None
-        elif line.startswith("@@") and current:
-            plus = line.split("+", 1)[1].split(" ", 1)[0]
-            first, _, count = plus.partition(",")
-            added.setdefault(current, set()).update(range(int(first), int(first) + int(count or 1)))
+            current = diff_path(line)
+            continue
+        hunk = HUNK.match(line)
+        if not hunk:
+            continue
+        first, count = int(hunk.group(2)), int(hunk.group(3) if hunk.group(3) is not None else 1)
+        old_left = int(hunk.group(1) if hunk.group(1) is not None else 1)
+        new_left = count
+        if current:
+            added.setdefault(current, set()).update(range(first, first + count))
     return added
+
+
+class GitError(Exception):
+    pass
 
 
 def diff_added(cwd: str, *args: str) -> Dict[str, Set[int]]:
     """Added line numbers per path; mnemonicPrefix and friends are overridden so paths parse."""
-    out = git(cwd, "diff", "-U0", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/", *args)
+    out = git(cwd, "-c", "core.quotePath=false", "diff", "-U0", "--no-color", "--no-ext-diff", "--src-prefix=a/",
+              "--dst-prefix=b/", *args)
+    if out.returncode != 0:
+        raise GitError(f"git diff {' '.join(args)}: {out.stderr.strip()}")
     return parse_added(out.stdout)
 
 
@@ -370,16 +427,26 @@ def cmd_hook(session: str, files: List[str]) -> int:
     return 0
 
 
-def source_at(cwd: str, rel: str, mode: List[str]) -> Optional[bytes]:
+def target_revision(rev_range: str) -> Optional[str]:
+    """The revision whose content a range's added lines refer to; None means the working tree."""
+    for sep in ("...", ".."):
+        if sep in rev_range:
+            return rev_range.split(sep, 1)[1] or "HEAD"
+    return None
+
+
+def source_at(cwd: str, rel: str, mode: List[str]) -> bytes:
+    revision = target_revision(mode[0]) if mode and mode[0] != "--cached" else None
     if "--cached" in mode:
         spec = f":{rel}"
-    elif mode and ".." in mode[0]:
-        spec = f"{mode[0].split('..', 1)[1] or 'HEAD'}:{rel}"
+    elif revision:
+        spec = f"{revision}:{rel}"
     else:
-        path = Path(cwd) / rel
-        return path.read_bytes() if path.is_file() else None
+        return (Path(cwd) / rel).read_bytes()
     out = subprocess.run(["git", "-C", cwd, "show", spec], capture_output=True)
-    return out.stdout if out.returncode == 0 else None
+    if out.returncode != 0:
+        raise GitError(f"git show {spec}: {out.stderr.decode('utf-8', 'replace').strip()}")
+    return out.stdout
 
 
 def cmd_diff(mode: List[str]) -> int:
@@ -387,10 +454,22 @@ def cmd_diff(mode: List[str]) -> int:
     if not cwd:
         print("comment_guard: not a git repository", file=sys.stderr)
         return 2
-    for rel, lines in diff_added(cwd, *mode).items():
-        lang = lang_for(str(Path(cwd) / rel))
-        source = source_at(cwd, rel, mode) if lang else None
-        if not source:
+    try:
+        added = diff_added(cwd, *mode)
+    except GitError as exc:
+        print(f"comment_guard: {exc}", file=sys.stderr)
+        return 2
+    for rel, lines in added.items():
+        suffix = Path(rel).suffix
+        if suffix and suffix not in LANG_BY_EXT:
+            continue
+        try:
+            source = source_at(cwd, rel, mode)
+        except (GitError, OSError) as exc:
+            print(f"comment_guard: {exc}", file=sys.stderr)
+            return 2
+        lang = lang_for(rel, source)
+        if not lang:
             continue
         src_lines = source.decode("utf-8", "replace").splitlines()
         for c in extract(rel, source, lang):
