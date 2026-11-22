@@ -124,7 +124,14 @@ e2e_evidence_in_transcript() {
 if [ -n "${PRE_COMMIT_GATE_DIR:-}" ]; then
     CWD="$PRE_COMMIT_GATE_DIR"
 else
-    TARGETS=$(printf '%s' "$CMD" | python3 "$(dirname "$0")/_commit_targets.py" "${CWD:-$PWD}" 2>/dev/null) || TARGETS=""
+    # Most Bash calls mention neither; skip starting python for them (~25 ms each). This is a
+    # superset of the helper's own early `none` (save.sh, or git … commit), so no answer changes.
+    case "$CMD" in
+        *save.sh*|*git*commit*)
+            TARGETS=$(printf '%s' "$CMD" | python3 "$(dirname "$0")/_commit_targets.py" "${CWD:-$PWD}" 2>/dev/null) \
+                || TARGETS="" ;;
+        *) TARGETS="none" ;;
+    esac
     if [ -z "$TARGETS" ]; then
         case "$CMD" in
             *save.sh*|*"git commit"*) TARGETS="dir $CWD" ;;

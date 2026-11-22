@@ -45,8 +45,14 @@ log() {
 # least 5 of 11 blocks in a month were such reads). Anything it cannot parse, or a helper that
 # fails, falls through to the regex below, which is the old behaviour.
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
-KINDS=$(printf '%s' "$CMD" | python3 "$(dirname "$0")/_commit_targets.py" --kinds "${CWD:-$PWD}" 2>/dev/null) \
-    || KINDS="error"
+# Skip python when the command cannot commit by the helper's own first test (no save.sh, no
+# git … commit): the regex below could not match either.
+case "$CMD" in
+    *save.sh*|*git*commit*)
+        KINDS=$(printf '%s' "$CMD" | python3 "$(dirname "$0")/_commit_targets.py" --kinds "${CWD:-$PWD}" 2>/dev/null) \
+            || KINDS="error" ;;
+    *) KINDS="none" ;;
+esac
 if [ "$KINDS" = "none" ] || { [ -n "$KINDS" ] && ! printf '%s\n' "$KINDS" | grep -qvE '^save '; }; then
     log "allow: parser found no raw git commit"
     echo '{}'

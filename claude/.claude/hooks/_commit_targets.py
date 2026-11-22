@@ -96,6 +96,11 @@ def scan(cmd):
         if quote == "'":
             if c == "'":
                 quote = None
+        elif c == "\\" and nxt == "\n":
+            # Line continuation (outside single quotes): the shell joins the lines, so must we —
+            # `git \<newline> commit` is a commit.
+            i += 2
+            continue
         elif c == "\\":
             out.append(c + nxt)
             i += 2

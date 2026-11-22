@@ -159,6 +159,16 @@ inline-brief mode, which covers most of the value.
 
 ## Complete hook registry
 
+**Bash hook cost.** Every Bash call runs five PreToolUse hooks. The work-Mac audit measured
+p50 337 ms per call and proposed one `pre-bash.sh` dispatcher. Not done: Claude Code runs matching
+hooks in parallel (per its docs, not measured here), so wall time is the slowest hook, and a
+dispatcher would merge five fail-closed gates into one failure domain. Instead the two gates that
+started python on every call skip it when the command cannot commit (no `save.sh` and no
+`git … commit`, a superset of the parser's own first test): `pre-commit-gate` 35 → 15 ms and
+`block-raw-git` 32 → 12 ms per call on Linux, 58 → 39 and 51 → 37 ms on macOS (2026-11-22).
+`protect-read` (~35 ms) keeps running its python policy on every call: a recursive walk rooted
+above a protected path never names it, so no substring test can skip it safely.
+
 Every registered hook declares its event on line 2 — `# @hook-event: Stop`, or
 `# @hook-event: PreToolUse=pre PostToolUse=post` when the argument picks the mode.
 `scripts/hook-contract.py` checks settings.json against those lines (test + trip wire).

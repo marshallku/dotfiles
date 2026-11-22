@@ -817,6 +817,9 @@ print(json.dumps({"type":"result", "subtype":"success", "session_id":session,
     def test_raw_git_commit_is_denied_in_the_hook_output_format(self):
         self.assertTrue(self.policy("block-raw-git.sh", "cd /tmp && git commit -m x"))
         self.assertFalse(self.policy("block-raw-git.sh", '~/save.sh "Fix git commit wording"'))
+        # The bash fast path (no save.sh, no git…commit → skip python) must still see split forms.
+        self.assertTrue(self.policy("block-raw-git.sh", "git \\\n  commit -m x"))
+        self.assertTrue(self.policy("block-raw-git.sh", "echo start\ngit -C /tmp commit -m x"))
         # The shared parser: reads that only mention a raw commit are not blocked.
         self.assertFalse(self.policy("block-raw-git.sh", 'grep -rn "git commit" hooks/ | head'))
         self.assertFalse(self.policy("block-raw-git.sh", "rg -n 'git commit -m' hooks/ | head -3"))

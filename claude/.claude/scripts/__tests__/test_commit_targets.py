@@ -87,6 +87,9 @@ CASES = [
     (f"python3 -I - <<'PYEOF'\nopen('t.py','w').write('~/{S} \"Add x\"')\nPYEOF", "FALLBACK"),
     ("python3 -c \"import pathlib; pathlib.os.system('git " + "commit -m x')\"", "FALLBACK"),
     ("printf \"import os; os.system('git " + "commit -m x')\" | python3 -", "FALLBACK"),
+    # A line continuation joins the words, as the shell does.
+    ("git \\\n  " + "commit -m x", CW),
+    (f"cd ~/docs && \\\n  ~/{S} x", "/home/u/docs"),
     # ssh options run locally, and a pipe reaches the remote shell.
     ("ssh -o 'ProxyCommand=git " + "commit -m x' host true", "FALLBACK"),
     ("echo \"git " + "commit -m x\" | ssh host sh", "FALLBACK"),
