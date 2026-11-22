@@ -127,8 +127,11 @@ def transcripts(since_days, name_contains=""):
     """(path, reader) for transcripts modified within since_days (None = any age) whose file name
     contains name_contains (session ids are in both CLIs' file names)."""
     cutoff = None if since_days is None else time.time() - since_days * DAY
-    roots = [(home() / ".claude/projects", f"*/*{name_contains}*.jsonl", claude_session),
-             (home() / ".codex/sessions", f"*/*/*/rollout-*{name_contains}*.jsonl", codex_session)]
+    # One `*` when there is no filter: `**` inside a component is an error on Python < 3.12 (macOS
+    # ships 3.9) and a recursive glob on newer ones.
+    middle = f"*{name_contains}*" if name_contains else "*"
+    roots = [(home() / ".claude/projects", f"*/{middle}.jsonl", claude_session),
+             (home() / ".codex/sessions", f"*/*/*/rollout-{middle}.jsonl", codex_session)]
     for root, pattern, reader in roots:
         if not root.is_dir():
             continue

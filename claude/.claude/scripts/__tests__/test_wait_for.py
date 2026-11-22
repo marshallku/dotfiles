@@ -108,7 +108,8 @@ class WaitForTests(unittest.TestCase):
         ok = self.wait("cmd", "--", "bash", "-c", f'[ -e "{flag}" ] || {{ touch "{flag}"; echo not yet; exit 1; }}',
                        replies=[""])
         self.assertEqual(ok.returncode, 0, ok.stdout + ok.stderr)
-        stuck = self.wait("cmd", "--", "bash", "-c", "echo still broken; exit 1", replies=[""], timeout="1")
+        # 3 s, not 1: on a loaded machine a 1 s probe can be killed at the deadline before it prints.
+        stuck = self.wait("cmd", "--", "bash", "-c", "echo still broken; exit 1", replies=[""], timeout="3")
         self.assertEqual(stuck.returncode, 124)
         self.assertIn("still broken", stuck.stdout)
 
