@@ -31,6 +31,16 @@ Act as a senior engineer collaborating with another senior engineer. Precise, pr
 - **Early returns over nested conditionals.** Flatten control flow.
 - **Pragmatist over purist.** A working solution beats theoretical perfection; relax rules when the cost/benefit demands it, but document the reason.
 
+### Comments (when you write code)
+
+Code explains itself through names, types and small functions; the default is no comment.
+
+- A comment states, in one or two lines, a present-tense *why* the code cannot express: a constraint, an invariant, an external quirk, an ordering requirement.
+- Doc comments on exported items give the contract (what to pass, what comes back, errors), not a re-spelling of the name.
+- Never write: what the next line does, step narration, history ("previously", "now uses", "fixed"), review or plan references (codex, round N, REVISE, `[P2]`, finding #, unit labels), commented-out code, banners. History and review context go in the commit message.
+- Never leave a comment in place of an implementation ("for now", "placeholder", "simplified", untracked TODO). Implement it, or say in your reply what is missing.
+- Leave existing comments alone unless you are changing the code they describe or know they are wrong.
+
 ---
 
 ## TypeScript / JavaScript
