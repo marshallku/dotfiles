@@ -4,6 +4,7 @@ Runs the real hooks from an isolated HOME with fake type checkers on PATH.
 """
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import tempfile
@@ -12,6 +13,8 @@ import unittest
 
 
 CLAUDE = Path(__file__).resolve().parents[2]
+UV_CACHE = (subprocess.run(["uv", "cache", "dir"], capture_output=True, text=True).stdout.strip()
+            if shutil.which("uv") else "")
 TS_ERROR = "src/a.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'."
 
 
@@ -27,7 +30,7 @@ class SensorTests(unittest.TestCase):
         self.bin = self.root / "bin"
         self.bin.mkdir()
         self.env = {**os.environ, "HOME": str(self.home), "PATH": f"{self.bin}:{os.environ['PATH']}",
-                    "XDG_CACHE_HOME": str(self.root / "cache")}
+                    "XDG_CACHE_HOME": str(self.root / "cache"), "UV_CACHE_DIR": UV_CACHE}
         self.repo = self.root / "repo"
         (self.repo / "src").mkdir(parents=True)
         (self.repo / "tsconfig.json").write_text("{}")

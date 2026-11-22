@@ -107,6 +107,14 @@ printf '%s\n' "${CHANGED[@]}" >> "$STATE_DIR/dirty-${SESSION}.log"
 hook_log track-bash-edit "${#CHANGED[@]} file(s) changed by Bash in $REPO"
 hook_event track-bash-edit tracked files="${#CHANGED[@]}" repo="$REPO"
 
+# The comment sensor runs alongside the type check: both share this hook's 30s budget.
+COMMENTS_OUT=$(mktemp "${TMPDIR:-/tmp}/track-bash-comments.XXXXXX" 2>/dev/null) || COMMENTS_OUT=""
+if [ -n "$COMMENTS_OUT" ]; then
+    jq -nc --arg s "$SESSION" '{session_id:$s}' \
+        | bash "$(dirname "$0")/comment-guard.sh" "${CHANGED[@]}" > "$COMMENTS_OUT" 2>/dev/null &
+    COMMENTS_PID=$!
+fi
+
 # Type-check through the same sensor Edit/Write uses: ONE run, for the first checkable file.
 # It checks that file's whole project, and its 25s budget is what fits this hook's 30s
 # timeout — a second run could be killed mid-way and lose the first run's diagnostics.
@@ -119,9 +127,22 @@ for f in "${CHANGED[@]}"; do
     break
 done
 
+COMMENTS=""
+if [ -n "$COMMENTS_OUT" ]; then
+    wait "$COMMENTS_PID" 2>/dev/null
+    COMMENTS=$(jq -r '.hookSpecificOutput.additionalContext // empty' "$COMMENTS_OUT" 2>/dev/null)
+    rm -f "$COMMENTS_OUT"
+fi
+
+[ -n "$CONTEXT" ] && CONTEXT="[track-bash-edit] A Bash command changed files; type check:
+$CONTEXT"
+if [ -n "$COMMENTS" ]; then
+    CONTEXT="${CONTEXT:+$CONTEXT
+
+}[track-bash-edit] $COMMENTS"
+fi
 if [ -n "$CONTEXT" ]; then
-    jq -nc --arg ctx "[track-bash-edit] A Bash command changed files; type check:
-$CONTEXT" '{hookSpecificOutput:{hookEventName:"PostToolUse", additionalContext:$ctx}}'
+    jq -nc --arg ctx "$CONTEXT" '{hookSpecificOutput:{hookEventName:"PostToolUse", additionalContext:$ctx}}'
     exit 0
 fi
 done_ok
