@@ -198,6 +198,23 @@ transcript itself now).
 | `auto-handoff.sh` | Stop | — | Capture git status + branch + recent log to `~/.claude/handoffs/latest.md` and `repo-<hash>.md` for the next session in that repo; skips the write when only the time line would change |
 | `harness-report.sh --tripwire` | SessionStart | — | Trip wires over the two ledgers: codex spend >2x the 6-day mean, a sensor erroring/timing out, a component that used to emit events going silent for 7d (post-typecheck only when the machine edited files that week), and install drift (hook files missing vs the dotfiles source, settings.json referencing missing hooks or diverged from dotfiles, a hook registered under an event its `# @hook-event:` header does not declare (`scripts/hook-contract.py`), settings.json changed in the dotfiles working tree but not committed (compared as JSON, so Claude Code's key reorders stay quiet), macOS LaunchAgents pointing at deleted `~/.claude` files). Silent unless something trips; every trip is logged with its reasons. Opt-out: `tripwire-disabled` |
 
+## Codex Lens — mods/codex-lens
+
+A Claude Code mod (hooks module, not a shell hook) that shows the codex run working for the
+session's folder as one dim line above the prompt — `⟳ codex review r2 · 1:12 · ▶ rg -n …` — and
+toasts its verdict when it ends (`codex plan: REVISE (3:41)`). It polls
+`~/.claude/state/codex-live/` once a second through `$.fs` (no process of its own); a run counts
+when its `cwd` and the session's are the same folder or one holds the other, and a "running"
+status whose event stream has been quiet for 15 minutes is ignored (a wrapper that died). A run
+is toasted when the session saw it running and then sees it done — no timestamp comparison, so
+nothing that ended before the session is toasted and no boundary drops one that ends after; the
+watched list is in `$.state`, so a run that ends during a mod reload is still toasted.
+Loaded in every session by `env.CLAUDE_CODE_PLUGIN_DIRS` in settings.json
+(`~/dotfiles/claude/.claude/mods/codex-lens`; `claude plugin list` shows `codex-lens@inline`).
+Check: `claude plugin validate` and `claude plugin test` in `mods/` (tests stand in for the
+engine's band, so they pass on 2.1.311 and 2.1.330). The engine writes `.claude-plugin/types/`
+at each load; it is git-ignored.
+
 ## Transcripts — cctx.py
 
 `scripts/cctx.py` reads `~/.claude/projects/*/*.jsonl` and `~/.codex/sessions/**/rollout-*.jsonl`:
