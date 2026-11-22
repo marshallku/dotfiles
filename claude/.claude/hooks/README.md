@@ -188,6 +188,15 @@ transcript itself now).
 | `auto-handoff.sh` | Stop | — | Capture git status + branch + recent log to `~/.claude/handoffs/latest.md` and `repo-<hash>.md` for the next session in that repo; skips the write when only the time line would change |
 | `harness-report.sh --tripwire` | SessionStart | — | Trip wires over the two ledgers: codex spend >2x the 6-day mean, a sensor erroring/timing out, a component that used to emit events going silent for 7d (post-typecheck only when the machine edited files that week), and install drift (hook files missing vs the dotfiles source, settings.json referencing missing hooks or diverged from dotfiles, a hook registered under an event its `# @hook-event:` header does not declare (`scripts/hook-contract.py`), settings.json changed in the dotfiles working tree but not committed (compared as JSON, so Claude Code's key reorders stay quiet), macOS LaunchAgents pointing at deleted `~/.claude` files). Silent unless something trips; every trip is logged with its reasons. Opt-out: `tripwire-disabled` |
 
+## Transcripts — cctx.py
+
+`scripts/cctx.py` reads `~/.claude/projects/*/*.jsonl` and `~/.codex/sessions/**/rollout-*.jsonl`:
+`sessions` (recent, per folder), `find <text>` (sessions whose typed prompts contain it, with the
+`claude --resume` / `codex resume` command) and `prompts <id>`. Only typed prompts count — tool
+results, reminders, hook feedback, command wrappers, skill bodies, sidechains and Codex
+`external-import-` copies are skipped; `claude -p` / `codex exec` sessions only with `--all`.
+Agents had re-written a parser for this 195 times in a month.
+
 ## Disk — reap-disk.sh
 
 Disk that refills by itself is a scheduler's job, not an agent turn's (49 agent `rm -r` denials

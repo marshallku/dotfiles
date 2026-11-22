@@ -68,6 +68,12 @@ Do not hand-write `for …; sleep` polling loops. Use
 [--workflow W] [--sha S]`, `url <u> [--status 200]` or `cmd -- <command>`: exponential backoff,
 one final line, exit `0` reached · `1` failed · `124` timeout (`--timeout`, default 600 s).
 
+### Past sessions
+
+To find which session did something, or what the owner typed there, use
+`python3 ~/.claude/scripts/cctx.py find <text>` / `sessions` / `prompts <id>` (Claude Code and
+Codex, typed prompts only, with the resume command) instead of writing a transcript parser.
+
 ### Work units, review and commits
 
 - A work unit is the staged index. `git add <exact paths>`, then `/cross-review`; `save.sh`
