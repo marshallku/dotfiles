@@ -130,7 +130,7 @@ scan_claude_scratch() {
 scan_config_targets() {
     local file="$CONFIG_DIR/targets" pattern days match
     [ -f "$file" ] || return 0
-    while read -r pattern days _; do
+    while read -r pattern days _ || [ -n "$pattern" ]; do
         case "$pattern" in ''|'#'*) continue ;; esac
         case "$days" in ''|*[!0-9]*) echo "[reap-disk] skip '$pattern': days must be a number" >&2; continue ;; esac
         pattern="${pattern/#\~/$HOME}"
@@ -159,7 +159,7 @@ scan_worktrees() {
     command -v git >/dev/null 2>&1 || return 0
     local roots_file="$CONFIG_DIR/worktree-roots" roots=() root repo line wt branch
     if [ -f "$roots_file" ]; then
-        while read -r root; do
+        while read -r root || [ -n "$root" ]; do
             case "$root" in ''|'#'*) continue ;; esac
             roots+=("${root/#\~/$HOME}")
         done < "$roots_file"

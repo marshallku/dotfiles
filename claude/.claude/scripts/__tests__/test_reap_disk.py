@@ -101,7 +101,7 @@ class ReapDiskTests(unittest.TestCase):
         for name, days in (("herald-1", 5), ("herald-2", 1)):
             (agent / name).mkdir(parents=True)
             age(agent / name, days)
-        (self.config / "targets").write_text(f"# company agents\n{agent}/herald-* 3\nbad-line x\n")
+        (self.config / "targets").write_text(f"# company agents\nbad-line x\n{agent}/herald-* 3")  # no final newline
         paths = [i["path"] for i in self.reap()["items"]]
         self.assertEqual(paths, [str(agent / "herald-1")])
 

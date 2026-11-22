@@ -5,9 +5,10 @@ The source of truth stays in `~/dotfiles/claude/.claude/`. Skills under
 review snapshots, open loops, and handoffs use the same existing paths.
 Do not copy skills to make Codex-specific versions.
 
-At session start, read `~/.claude/profile/900-quick-reference.md` and
-`~/.claude/profile/910-anti-patterns.md`. Read the remaining profile files
-on demand. The current AGENTS.md review suppression rules and `~/save.sh`
+`~/.codex/AGENTS.md` already carries the coding profile's rules. Read
+`~/.claude/profile/*` files only when the task needs one (900 quick reference,
+910 anti-patterns for a code review); on the work Mac the "read at session start"
+rule was followed by 2 of 371 Claude sessions and cost the rest nothing but noise. The current AGENTS.md review suppression rules and `~/save.sh`
 commit policy override old profile examples (including AI co-author trailers).
 Read a repository's CLAUDE.md when present for its existing local conventions,
 in addition to its AGENTS.md. Do not import Claude's global orchestration index
