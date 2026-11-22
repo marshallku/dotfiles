@@ -1,0 +1,13 @@
+# Routes for hooks/skill-route.sh. Copy to ~/.claude/skill-routes (private, per machine) and edit.
+# One route per line: <extended regex, case-insensitive><TAB><skill name>. First match wins; only
+# prompts of up to 40 characters are routed; a skill that is not installed is skipped.
+#
+# Work machine (skills that live there):
+#(^|[[:space:]])PR[[:space:]]*(올려|만들어|열어)	ship-pr
+#티켓[[:space:]]*(따|만들|파)	ticket
+#(worktree|워크트리|서버)[[:space:]]*정리	cleanup
+#
+# Any machine:
+#(교차|크로스)[[:space:]]*리뷰|cross-?review	cross-review
+#(열린|밀린)[[:space:]]*(거|것|루프)	loops
+#(갭|미비한|남은)[[:space:]]*(감사|작업|부분)	audit
