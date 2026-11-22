@@ -61,6 +61,13 @@ An unnamed model runs on the parent's (Opus), which is where 91% of subagent spe
 Run a gating review/plan **in the foreground with Bash `timeout: 600000`** and block on it.
 Never background it, and never poll a local codex job with Monitor/ScheduleWakeup.
 
+### Waiting on anything else
+
+Do not hand-write `for …; sleep` polling loops. Use
+`bash ~/.claude/scripts/wait-for.sh pr <n> --checks|--merged|--approved`, `run --branch B
+[--workflow W] [--sha S]`, `url <u> [--status 200]` or `cmd -- <command>`: exponential backoff,
+one final line, exit `0` reached · `1` failed · `124` timeout (`--timeout`, default 600 s).
+
 ### Work units, review and commits
 
 - A work unit is the staged index. `git add <exact paths>`, then `/cross-review`; `save.sh`

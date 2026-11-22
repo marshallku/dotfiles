@@ -59,6 +59,8 @@ edit tracking and type checks, but skip session handoff and review lifecycle gat
 - `Bash`, `Read`, `Edit`, `Write`, `Glob`, `Grep` mean the equivalent available
   shell, file, patch and search tools. Claude `allowed-tools`, `effort`, `model`,
   `context`, `isolation` metadata do not configure Codex permissions or models.
+- To wait for a PR, a CI run, a URL or a command, call `bash ~/.claude/scripts/wait-for.sh`
+  (pr/run/url/cmd, backoff, one final line) instead of writing a sleep loop.
 - For long shell commands retain the returned execution session and wait on it
   to completion. Claude's `timeout: 600000` / `run_in_background` are not Codex
   tool arguments. Keep gating reviews attached to the active turn.

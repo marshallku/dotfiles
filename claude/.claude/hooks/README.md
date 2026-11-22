@@ -84,8 +84,15 @@ session baseline and session-scoped diff they needed, were removed 2026-11-19 �
 30 days they cost 409 extra turns, 2276 dedup skips and 618 prompt injections.
 `pre-commit-gate` judges the repository each command really commits in
 (`hooks/_commit_targets.py`): reading `save.sh` (`grep`/`head`/`cat`) is not a commit, and
-`cd ~/docs && ~/save.sh` is judged in `~/docs`; any shape it cannot fully parse falls back to the
-old substring match. Empty/legacy `reviewed-*` markers are not approvals. Global opt-out remains
+`cd ~/docs && ~/save.sh` is judged in `~/docs`; `bash -n FILE` only parses; `ssh host CMD` is
+judged by its remote command (a remote commit, a commit-mentioning option such as ProxyCommand, or
+a pipe into ssh falls back); a program fed by a pipe falls back when the line mentions a commit
+(`echo "git commit" | bash` used to pass). Python is never treated as inert — allowed modules
+reach `os` (`pathlib.os`) — so a python patch whose text mentions save.sh, run while unreviewed
+content is staged, is still judged as a commit: write such patches with Edit/Write or a file.
+Any shape it cannot fully parse falls back to the old substring match. `block-raw-git` asks the
+same parser first (`--kinds`: `save`/`git`/`fallback` per directory), so `grep "git commit"`
+and other reads no longer trip it; a fallback still goes through its regex. Empty/legacy `reviewed-*` markers are not approvals. Global opt-out remains
 `~/.claude/state/auto-review-disabled`, only when requested by the user.
 
 **Attribution is blocked at commit time** in three layers: `commit-policy-gate.sh`, `~/save.sh`
