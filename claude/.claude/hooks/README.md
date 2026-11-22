@@ -187,6 +187,28 @@ transcript itself now).
 | `auto-handoff.sh` | Stop | — | Capture git status + branch + recent log to `~/.claude/handoffs/latest.md` and `repo-<hash>.md` for the next session in that repo; skips the write when only the time line would change |
 | `harness-report.sh --tripwire` | SessionStart | — | Trip wires over the two ledgers: codex spend >2x the 6-day mean, a sensor erroring/timing out, a component that used to emit events going silent for 7d (post-typecheck only when the machine edited files that week), and install drift (hook files missing vs the dotfiles source, settings.json referencing missing hooks or diverged from dotfiles, a hook registered under an event its `# @hook-event:` header does not declare (`scripts/hook-contract.py`), settings.json changed in the dotfiles working tree but not committed (compared as JSON, so Claude Code's key reorders stay quiet), macOS LaunchAgents pointing at deleted `~/.claude` files). Silent unless something trips; every trip is logged with its reasons. Opt-out: `tripwire-disabled` |
 
+## Disk — reap-disk.sh
+
+Disk that refills by itself is a scheduler's job, not an agent turn's (49 agent `rm -r` denials
+in a month, 33 on scratch paths; four hand clean-ups in three weeks on the work Mac).
+`scripts/reap-disk.sh` is a dry run by default; `--apply` only ever moves to the trash
+(`/usr/bin/trash` or `~/.Trash` on macOS, `gio trash` or the freedesktop Trash on Linux):
+
+- `chrome-clone` (macOS): `code_sign_clone` copies older than 1 h with no file open per `lsof`.
+  Chrome runs from `/Applications`, so its command line never names the clone in use; no lsof →
+  the target is skipped.
+- `claude-scratch`: `/tmp/claude-<uid>/<project>/<session>` with nothing modified for 3 days.
+- `~/.config/reap-disk/targets` (private, not in git): `<path glob> <days>` lines for
+  machine-specific agent temp dirs.
+- Listed only, never moved: clean linked worktrees whose branch is merged (ancestor of
+  `origin/HEAD`, or a merged PR per `gh`) under `~/.config/reap-disk/worktree-roots` (default
+  `~/dev ~/workspace`), and reclaimable Docker build cache.
+
+Each run writes `~/.claude/state/reap-disk.json` and a `reap-disk` ledger event.
+`bash ~/.claude/scripts/reap-disk-install.sh` schedules `--apply --quiet` daily at 12:30
+(launchd LaunchAgent / systemd `--user` timer with `Persistent=true`); `--remove` undoes it,
+`--print` shows the unit.
+
 ## Observability — the two ledgers
 
 Everything the harness does is recorded in three places. This layer exists
