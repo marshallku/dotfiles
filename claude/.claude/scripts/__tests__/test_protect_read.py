@@ -148,8 +148,52 @@ class ProtectReadTests(unittest.TestCase):
         self.assertEqual(self.bash("cd src\nrg SECRET"), "deny")  # cd may fail; the walk can still start here
         self.assertEqual(self.bash("python3 -c 'a = 1\nprint(a)'"), "allow")
 
+    def test_backticks_are_command_substitution(self):
+        self.assertEqual(self.bash("echo `cat ./*/a/caption.txt`"), "deny")
+        self.assertEqual(self.bash("echo `rg SECRET`"), "deny")
+        self.assertEqual(self.bash("echo `date`"), "allow")
+        # A closing backtick or parenthesis glued to a separator still ends the command.
+        self.assertEqual(self.bash("echo `date`; grep -r SECRET ."), "deny")
+        self.assertEqual(self.bash("(echo hi); grep -r SECRET ."), "deny")
+
     def test_globs_inside_quoted_text_are_not_expanded(self):
         self.assertEqual(self.bash("python3 -c \"print('/**')\"", cwd=self.home / "dotfiles"), "allow")
+
+    def test_heredoc_bodies_are_not_globs_unless_a_shell_may_run_them(self):
+        js = "/**\n * Doc comment.\n */\nexport const a = 1;"
+        for cwd in (self.home / "dotfiles", self.repo):  # the repo holds the denied dir
+            for opener in ("cat > out.ts <<'EOF'", "cat > out.ts << EOF", "cat > out.ts <<-EOF", "tee out.ts <<\"EOF\""):
+                self.assertEqual(self.bash(f"{opener}\n{js}\nEOF\necho done", cwd=cwd), "allow", (cwd, opener))
+        # A literal path in the body still counts.
+        self.assertEqual(self.bash(f"python3 - <<'PY'\nopen('{self.repo}/vault/a/caption.txt')\nPY"), "deny")
+        # Commands in a body still count: fed to a shell, through $(...), or piped on.
+        for command in ("bash <<'EOF'\nrg SECRET\nEOF", "cat <<EOF\n$(rg SECRET)\nEOF",
+                        "cat <<'EOF' | bash\nrg SECRET\nEOF", "cd ..; bash <<'EOF'\ngrep -r SECRET proj\nEOF"):
+            self.assertEqual(self.bash(command), "deny", command)
+        # A body run by a shell, or a command substitution in an unquoted body, keeps its globs.
+        self.assertEqual(self.bash("cat <<EOF\n$(cat ./*/a/caption.txt)\nEOF"), "deny")
+        self.assertEqual(self.bash("cat <<EOF\n`cat ./*/a/caption.txt`\nEOF"), "deny")
+        self.assertEqual(self.bash("cat <<EOF\n$\\\n(cat ./*/a/caption.txt)\nEOF"), "deny")
+        self.assertEqual(self.bash("cat <<EOF\nE\\\nOF\ncat ./*/a/caption.txt\nEOF"), "deny")  # joined delimiter
+        self.assertEqual(self.bash("cat <<'EOF'\n$(cat ./*/a/caption.txt)\nEOF"), "allow")  # quoted: literal text
+        self.assertEqual(self.bash("bash <<'EOF'\ncat ~/dev/proj/**/caption.txt\nEOF"), "deny")
+        self.assertEqual(self.bash("cat <<'EOF' | sh\ncat ./*/a/caption.txt\nEOF"), "deny")
+        self.assertEqual(self.bash("bash <<'EOF'\nls src\nEOF"), "allow")
+        self.assertEqual(self.bash("bash \\\n  <<'EOF'\ncat ./*/a/caption.txt\nEOF"), "deny")  # continued opener
+        self.assertEqual(self.bash("ba\\\nsh <<'EOF'\ncat ./*/a/caption.txt\nEOF"), "deny")  # inside a word
+        for command in (">/dev/null bash <<'EOF'", "exec sh <<'EOF'", "cat <<'EOF' | xargs -0 bash -c",
+                        ". /dev/stdin <<'EOF'", "awk 1 <<'EOF'", "python3 - <<'EOF'",
+                        "cat <<'EOF' | python3", "tee x <<'EOF' |& node", "cat <<'EOF' > >(python3)", "cat <<'EOF' |(python3);"):  # a shell anywhere, or an unknown receiver
+            self.assertEqual(self.bash(f"{command}\ncat ./*/a/caption.txt\nEOF"), "deny", command)
+        self.assertEqual(self.bash("b\\\nash <<'EOF'\ncat ./*/a/caption.txt\nEOF"), "deny")
+        self.assertEqual(self.bash("cat <<'EOF' |\ncat ./*/a/caption.txt\nEOF\nbash"), "deny")  # shell after the body
+        self.assertEqual(self.bash("cat \\\n  > out.ts <<'EOF'\n/**\nEOF"), "allow")
+        # `<<` in quotes, comments or a here-string opens no heredoc, so the next line is a command.
+        for opener in ("echo '<<EOF'", 'echo "<<EOF"', "echo hi # <<EOF", "cat <<< EOF", "python3 -c 'x\n<<EOF'",
+                       "cat <<EOF+\nhi\nEOF+", "cat <<'EOF'x\nhi\nEOFx"):
+            self.assertEqual(self.bash(f"{opener}\ncat ./*/a/caption.txt"), "deny", opener)
+        # Commands after the delimiter are judged as commands.
+        self.assertEqual(self.bash("cat > x <<'EOF'\nhi\nEOF\ncat ./*/a/caption.txt"), "deny")
 
     def test_unrelated_commands_run(self):
         for command in ("ls", "ls -la", "cat src/run.py", "rg SECRET src", "grep -r x src", "find src",

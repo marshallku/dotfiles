@@ -31,7 +31,7 @@ import sys
 
 GLOB = re.compile(r"[*?\[]")
 PATHISH = re.compile(r"""[^\s'"`();|&<>,=]*/[^\s'"`();|&<>,=]*""")
-SEPARATORS = {";", "&&", "||", "|", "|&", "&", "(", ")", ";;", "\n"}
+SEPARATORS = {";", "&&", "||", "|", "|&", "&", "(", ")", ";;", "\n", "`"}
 WRAPPERS = {"sudo", "env", "nohup", "time", "nice", "command", "exec", "stdbuf", "setsid", "xargs", "timeout",
             "caffeinate", "doas"}
 SHELLS = {"bash", "sh", "zsh", "dash"}
@@ -166,7 +166,7 @@ class Policy:
 
 def tokenize(command):
     try:
-        lex = shlex.shlex(command.replace("\n", " ; "), posix=True, punctuation_chars=";&|()")
+        lex = shlex.shlex(command.replace("\n", " ; "), posix=True, punctuation_chars=";&|()`")
         lex.whitespace_split = True
         lex.commenters = ""
         return list(lex)
@@ -177,7 +177,7 @@ def tokenize(command):
 def simple_commands(tokens):
     cmd = []
     for tok in tokens:
-        if tok in SEPARATORS:
+        if tok in SEPARATORS or (tok and set(tok) <= PUNCT):  # shlex glues runs: `);`, `` `; ``
             if cmd:
                 yield cmd
             cmd = []
@@ -308,8 +308,108 @@ def excludes(word, args, entry):
     return False
 
 
+PUNCT = set(";&|()`")  # shlex glues runs of these into one token (`|(`, `);`)
+CONTINUED = re.compile(r"(?<!\\)(?:\\\\)*\\$")
+# The delimiter must be the whole word (`<<EOF+` is not `EOF`); other shapes open nothing here.
+HEREDOC = re.compile(r"<<(-?)[ \t]*(['\"]?)([A-Za-z_][\w.-]*)\2(?=$|[ \t;&|<>()])")
+
+
+def _heredoc_openers(line, quote):
+    """Heredoc operators on a line that the shell sees: outside quotes and comments, not `<<<`.
+    `quote` is the quote still open from the line before; returns (matches, quote open after)."""
+    found, i = [], 0
+    while i < len(line):
+        c = line[i]
+        if c == "\\" and quote != "'":
+            i += 2
+            continue
+        if quote:
+            quote = None if c == quote else quote
+        elif c in "'\"":
+            quote = c
+        elif c == "#" and (i == 0 or line[i - 1] in " \t;&|("):
+            break
+        elif line.startswith("<<", i) and not line.startswith("<<<", i) and (i == 0 or line[i - 1] != "<"):
+            m = HEREDOC.match(line, i)
+            if m:
+                found.append(m)
+                i = m.end()
+                continue
+        i += 1
+    return found, quote
+
+
+# Receivers whose heredoc body is only copied out, never run. An interpreter's body is code
+# whose glob calls (`glob.glob('/etc/passw?')`) the old shell-glob judgment happened to catch.
+DATA_RECEIVERS = {"cat", "tee"}
+SHELL_WORDS = SHELLS | {"eval", "source", "."}
+
+
+def _may_run_a_shell(command):
+    """Any word anywhere that names a shell (`bash <<EOF`, `cat <<EOF | sh`, `>/dev/null bash`,
+    `exec sh`), raw or with every `\`+newline dropped (`b\` / `ash`), bodies included.
+    Deliberately loose: a false hit only keeps the old, stricter judgment."""
+    for text in (command, command.replace("\\\n", "")):
+        for tok in tokenize(text):
+            if posixpath.basename(re.sub(r"^[0-9]*[<>&|]+", "", tok)) in SHELL_WORDS:
+                return True
+    return False
+
+
+def bash_tokens(command):
+    """Tokens of a command, and the indexes of those that come from heredoc bodies.
+
+    Body words are still judged. They are not globs only when the receiver is a known data
+    command (DATA_RECEIVERS), no word anywhere names a shell, and an unquoted body has no
+    command substitution: a `/**` doc comment written with `cat > f <<'EOF'`
+    was read as zsh `**` rooted at `/` and denied (2026-11-22)."""
+    lines, chunks, code, i, quote = command.split("\n"), [], [], 0, None
+    data = not _may_run_a_shell(command)
+    while i < len(lines):
+        line = lines[i]
+        i += 1
+        # `\` + newline continues the command (`bash \` / `<<'EOF'`): judge the logical line.
+        while CONTINUED.search(line) and quote != "'" and i < len(lines):
+            line = line[:-1] + lines[i]  # the shell drops both characters
+            i += 1
+        code.append(line)
+        openers, quote = _heredoc_openers(line, quote)
+        for m in openers:
+            simple = list(simple_commands(tokenize(line[:m.start()])))
+            receiver = command_word(simple[-1]) if simple else ("", [])
+            # Copied out to a file or the terminal only: no pipe or process substitution takes it on.
+            opener_tokens = tokenize(line)
+            known = receiver[0] in DATA_RECEIVERS and not any(a.startswith(("<", "<(")) for a in receiver[1]) \
+                and not any(set(tok) <= PUNCT and set(tok) & set("|()`") for tok in opener_tokens)
+            strip, delim, body = m.group(1) == "-", m.group(3), []
+            while i < len(lines) and (lines[i].lstrip("\t") if strip else lines[i]) != delim:
+                body.append(lines[i])
+                i += 1
+            i += 1  # the delimiter line
+            text = "\n".join(body)
+            # An unquoted delimiter lets the shell run `$(...)` and backticks in the body.
+            joined = text.replace("\\\n", "")  # `$\` / `(cmd)` is still a substitution
+            # Unquoted, bash also joins `\`+newline before matching the delimiter (`E\` / `OF`),
+            # so where the body ends is uncertain: keep the old judgment for all of it.
+            expands = not m.group(2) and ("$(" in joined or "`" in joined or any(CONTINUED.search(b) for b in body))
+            chunks += [("\n".join(code), False), (text, data and known and not expands)]
+            code = []
+    chunks.append(("\n".join(code), False))
+    tokens, body_idx = [], set()
+    for text, is_body in chunks:
+        if not text:
+            continue
+        if tokens:
+            tokens.append(";")
+        part = tokenize(text)
+        if is_body:
+            body_idx.update(range(len(tokens), len(tokens) + len(part)))
+        tokens += part
+    return tokens, body_idx
+
+
 def judge_bash(policy, command, cwd, depth=0):
-    tokens = tokenize(command)
+    tokens, body_idx = bash_tokens(command)
     bases = [cwd]
     for i, tok in enumerate(tokens[:-1]):
         if tok in ("cd", "pushd") or tok in DIR_OPTS:
@@ -324,7 +424,7 @@ def judge_bash(policy, command, cwd, depth=0):
         for part in [*tok.split("=")[1:], *PATHISH.findall(tok)]:
             words.setdefault(part, False)
         for word, operand in words.items():
-            e = policy.judge_path(word, bases, expand_globs=operand)
+            e = policy.judge_path(word, bases, expand_globs=operand and i not in body_idx)
             if e:
                 return f"deny `{word}` is inside {e.raw}"
     for cmd in simple_commands(tokens):
