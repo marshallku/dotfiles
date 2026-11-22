@@ -260,6 +260,64 @@ Each run writes `~/.claude/state/reap-disk.json` and a `reap-disk` ledger event.
 (launchd LaunchAgent / systemd `--user` timer with `Persistent=true`); `--remove` undoes it,
 `--print` shows the unit.
 
+## Incidents behind the code
+
+The hooks and scripts keep only present-tense whys in their comments (2026-11-23 cleanup, per the
+CLAUDE.md comment policy). The incidents that produced those rules live here.
+
+- **`_lib.sh`**: `portable_timeout` kills after a grace period because a codex turn blocked in a tool
+  call ignored SIGTERM (a 180 s `/ask-codex` ran past 10 min). Its perl fallback exists because macOS
+  without Homebrew on PATH (ssh, launchd) skipped the type checker as `no_timeout_binary`.
+  `hook_log`/`hook_event` replaced 9 hand-rolled `log()` functions that stamped `%H:%M:%S` without a
+  date and lost history at the 5 MB rotation. Per-repo handoffs exist because one global `latest.md`
+  handed repo A's state to a session in repo B. `STOP_REPLY_NOTE` exists because English Stop
+  reasons got English replies ("한글로 말해줘" typed 48 times on two machines).
+- **`post-typecheck.sh`**: once emitted a bare `{"hookSpecificOutput":{"message":…}}` without
+  `hookEventName`. Before Yarn PnP support 1,799 of 2,664 TS edits on the work machine skipped as
+  `no_local_tsc`. The Rust `^error` pattern matched only cargo's summary line ("1 Rust error"); Go
+  `vet: `-prefixed errors never matched and were logged as `checker_error`; `OUTPUT=$(run_checker …)`
+  lost `RUN_STATUS` in the subshell, so timeouts read as clean. The daily heartbeat followed 309 false
+  "gone silent" trips on Linux in November, which is also why harness-report gates that check on a
+  recent `dirty-*.log`.
+- **`verification-gate.sh`**: auto-skipped once on the intent file's `verification.e2e`; removed because
+  parsing YAML in bash kept loosening the gate.
+- **`careful-with-judge.sh`**: a nested `claude -p --model haiku` judge always got "Not logged in", so
+  its `|| echo deny` fallback denied everything (193 deny / 0 allow); deterministic rules replaced it.
+  Whitespace-splitting rm commands treated heredoc bodies, remote commands and `find -exec` as
+  operands (67 denies and 1,242 asks out of 1,487 rm calls).
+- **`commit-policy-gate.sh`** fails closed because per-file hook symlinks without
+  `_gh_merge_policy.py` let `gh pr merge --squash` through on one machine. **`block-raw-git.sh`**:
+  before `_commit_targets.py`, at least 5 of 11 blocks in a month were reads like `grep "git commit"`.
+- **Cost-driven early exits**: `auto-handoff` rewrote the handoff on every Stop (about 2,500 times a
+  month, p50 541 ms) before the unchanged-body skip; `freeze` ran 2,730 times a month with 0 blocks at
+  p50 117 ms before its early exit; session-start's handoff injection cost about 672 × 1.4 KB over 30
+  days.
+- **`session-size.sh`** (work Mac, 10-20 → 11-19): average re-read 274k tokens, 30% of turns over
+  300k, the ten largest sessions 57% of all tokens, cache hits already 98%.
+- **`skill-route.sh`**: ship-pr ran 3 times by slash and 55 by natural language, a raw `gh pr create`
+  17 times; /ticket 21 of 29 from natural language, /cleanup 1 of 8; 28 follow-up screenshot prompts.
+- **`track-bash-edit.sh`**: 6,188 Bash edits in four months (27% of Bash input) on the work machine;
+  on the mac-mini Bash writes outnumbered Edit/Write calls. It sat under UserPromptSubmit on the work
+  Mac from 2026-11-14, which led to the hook-event contract check. **`track-edit.sh`**: subagent
+  edits made the since-removed Stop review reminder block the lead 163 times in one session.
+- **`surface-open-loops.sh`**: 11 loops were 38–56 days overdue on 2026-07-16.
+- **`codex-ask.sh`**: an inherited stdin pipe that never sent EOF hung a bare `cat` (two consults sat
+  5–10 min), hence `CODEX_ASK_STDIN_WAIT`. **`codex-exec.sh`**: runs used to stream into a temp file
+  deleted on exit, so nobody could watch them (1,054 runs, 29.8 h of waiting on the work Mac); 740
+  runs logged as "default" effort were really high before `effective_*`.
+- **`harness-report.sh` install drift**: per-file `~/.claude/hooks` symlinks without the `_*.py`
+  helpers made the merge policy allow everything; a retired launchd job failed every few minutes
+  for months. Neither produced a ledger event.
+- **`jump-attention.sh`**: `tac … 2>/dev/null` on macOS hid the missing binary, so the hotkey did
+  nothing. **`notify-attention.sh`**: `hyprctl … && return` swallowed failures (hyprctl exits 0 on
+  rejected requests), leaving the wmctrl fallback dead; Hyprland 0.57 drops hyprlang, hence the Lua
+  dispatcher attempt.
+- **`reap-disk.sh`**: a Chrome code_sign_clone is 2.2 GB per killed launch (17 clones, 37 GB on the
+  work Mac, once 179); 2 of 6 clones were open on the mac-mini, hence lsof; hand clean-ups went
+  62 → 115 GB and 91 → 243 GB free.
+- **`wait-for.sh`**: hand-written sleep loops added up to 958 sleeps and 8.4 h in a month on the work
+  Mac; one session spent 124 tool calls polling.
+
 ## Observability — the two ledgers
 
 Everything the harness does is recorded in three places. This layer exists

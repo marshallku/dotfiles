@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # codex-ask.sh — Ask Codex for a quick opinion on a design question.
-# Routes through codex-exec.sh so the user sees the progress stream instead
-# of a black box. Read-only sandbox — codex cannot modify files.
+# Routes through codex-exec.sh for the progress stream. Read-only sandbox.
 #
 # One-shot by design: no thread key, so an /ask-codex in the middle of a
 # plan or review loop can never disturb those threads.
@@ -13,8 +12,7 @@
 # Environment overrides:
 #   CODEX_ASK_MODEL   — override model passed to codex (-m)
 #   CODEX_ASK_TIMEOUT — seconds before the call is aborted (default 180)
-#   CODEX_ASK_EFFORT  — reasoning effort (default medium; high ran p50 145 s and timed out
-#                       3 of 21 consults on the work Mac — a consult is meant to take ~30 s)
+#   CODEX_ASK_EFFORT  — reasoning effort (default medium; high is too slow for a ~30 s consult)
 
 set -euo pipefail
 
@@ -32,11 +30,9 @@ fi
 QUESTION="$*"
 TIMEOUT="${CODEX_ASK_TIMEOUT:-180}"
 
-# Piped context is optional. A non-tty stdin that never sends EOF (an agent
-# harness's inherited pipe) made a bare `cat` block forever, before codex even
-# started: two consults in one session sat in `cat` for 5-10 minutes. So wait
-# for the first byte only CODEX_ASK_STDIN_WAIT seconds; a real pipe has data or
-# EOF by then. CODEX_ASK_STDIN_WAIT=0 skips stdin entirely.
+# A non-tty stdin that never sends EOF (an agent harness's inherited pipe) would
+# block a bare `cat` forever, so wait only CODEX_ASK_STDIN_WAIT seconds for the
+# first byte; a real pipe has data or EOF by then. 0 skips stdin entirely.
 STDIN_CONTEXT=""
 STDIN_WAIT="${CODEX_ASK_STDIN_WAIT:-2}"
 if ! [[ -t 0 ]] && [[ "$STDIN_WAIT" != 0 ]]; then

@@ -64,7 +64,7 @@ DIRECTIVE = re.compile(
     r"^\s*(//|#|/\*)\s*("
     r"eslint|@ts-(expect-error|ignore|nocheck)|prettier-ignore|biome-ignore|istanbul|c8|"
     r"nolint|go:|\+build|lint:|shellcheck|@hook-event|noqa|type:\s*ignore|pragma|pylint|"
-    r"rustfmt::|SAFETY:|Safety:|region|endregion|/ <reference|"
+    r"rustfmt::|SAFETY:|Safety:|region|endregion|/ <reference|COPAD_HOOK_PUBLISH|"
     r"///\s*(script)?\s*$|requires-python|dependencies\s*=|\s+\"[\w.-]+[=<>~]"
     r")",
 )
@@ -102,7 +102,7 @@ NARRATION = re.compile(
     r"we (now|then|first))\b|^step \d+[:.)]",
     re.I,
 )
-EMPHASIS = re.compile(r"(\bIMPORTANT\b|\bCRITICAL\b|!!|[✅❌✨🚀💡👉])")
+EMPHASIS = re.compile(r"(\b(IMPORTANT|CRITICAL|NOTE)\b\s*[:!]|!!|^\s*[✅❌✨🚀💡👉⚠️🔥])", re.M)
 BANNER = re.compile(r"^[\s=\-*#~_/]{4,}|[=\-*#~]{4,}\s*$")
 STUB_CODE = re.compile(
     r"(todo!\(|unimplemented!\(|panic!\(\s*\"not implemented|throw new Error\(\s*[\"'`]not implemented|"
@@ -182,7 +182,8 @@ def words(s: str) -> Set[str]:
 
 def restates(body: str, next_code: str) -> bool:
     said = words(body)
-    if not 2 <= len(said) <= 6:
+    tokens = re.findall(r"\w+", body)
+    if not 2 <= len(said) <= 6 or len(WORD.findall(body)) < 0.7 * len(tokens):
         return False
     code = words(next_code)
     return bool(code) and len(said & code) / len(said) >= 0.6

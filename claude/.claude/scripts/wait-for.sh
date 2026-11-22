@@ -10,9 +10,7 @@
 # Exit: 0 reached · 1 reached a failed terminal state (failing checks, failed run, closed PR)
 #       · 124 timed out · 2 usage or tool error. A failed run prints the tail of its failed log.
 #
-# Why: agents re-wrote `for i in $(seq 1 8); do …; sleep 10; done` every time — 958 sleeps and
-# 8.4 h in a month on the work Mac, one session spent 124 tool calls polling. One call, one line.
-# Linux and macOS: bash ≥ 4, gh, curl, jq.
+# Requires bash ≥ 4, gh, curl, jq (Linux and macOS).
 
 set -uo pipefail
 
@@ -21,7 +19,7 @@ INTERVAL=5
 MAX_INTERVAL=60
 LOG_TAIL=40
 
-usage() { sed -n '2,13p' "$0" >&2; exit 2; }
+usage() { awk 'NR > 1 && !/^#/ { exit } NR > 1' "$0" >&2; exit 2; }
 die() { echo "[wait-for] $*" >&2; exit 2; }
 need() { command -v "$1" >/dev/null 2>&1 || die "$1 not found in PATH"; }
 

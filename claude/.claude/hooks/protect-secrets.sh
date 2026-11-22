@@ -26,7 +26,6 @@ case "$BASENAME" in
         ;;
 esac
 
-# 경로에 secrets/credentials 디렉토리 포함 시 차단
 case "$FILE_PATH" in
     */.secrets/*|*/credentials/*|*/.ssh/*)
         hook_permission deny "[protect] Blocked edit in sensitive directory: $FILE_PATH"

@@ -104,6 +104,20 @@ class CommentGuardTests(unittest.TestCase):
         self.assertIn("deploy.sh:9 `# rm -rf \"$TMP\"` — is commented-out code", out)
         self.assertNotIn("grep reads the file", out)
 
+    def test_described_emoji_and_non_latin_prose_are_not_noise(self):
+        (self.repo / "b.sh").write_text(
+            "#!/usr/bin/env bash\nset -e\n:\n# stderr — progress lines (💬 ▶ ✓ ❌), CRITICAL sections\ntrue\n"
+            "# intent-active-* 는 훅이 꺼져 있어 잔해다. 7일 창은 장기 세션 마커를 지우지 않기 위해서다.\n"
+            "find . -name 'intent-active-*' -mtime +7 -delete\n"
+            "# IMPORTANT: run this first!!\ntrue\n"
+            "# COPAD_HOOK_PUBLISH: claude.x $(jq -n '{a:1}')\ntrue\n"
+        )
+        out = self.guard("hook", "--session", "e", "b.sh")
+        self.assertNotIn("progress lines", out)
+        self.assertNotIn("intent-active", out)
+        self.assertIn("b.sh:8 `# IMPORTANT: run this first!!` — is emphasis noise", out)
+        self.assertNotIn("COPAD_HOOK_PUBLISH", out)
+
     def test_diff_cached_reads_the_index_not_the_tree(self):
         target = self.repo / "a.go"
         target.write_text(target.read_text() + "\n// Codex round 3 asked for this guard.\nfunc B() {}\n")

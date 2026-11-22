@@ -2,12 +2,7 @@
 # @hook-event: UserPromptSubmit
 # UserPromptSubmit hook — when a short prompt is the natural-language form of an existing skill
 # ("PR 올려줘", "티켓 따고", "정리해"), name the skill in additionalContext so the agent runs it
-# instead of improvising the steps.
-#
-# Why: on the work Mac ship-pr was invoked by slash 3 times and by natural language 55 times; after
-# "PR 올려줘" the skill ran 17 of 40 times and a raw `gh pr create` ran 17 times, which skipped the
-# skill's evidence step and produced 28 follow-up "스크린샷도 넣어줘" prompts. /ticket ran 21 of 29
-# times from natural language, /cleanup 1 of 8.
+# instead of improvising the steps (and skipping steps such as ship-pr's evidence).
 #
 # Routes are private and per machine (most of these skills are work-only):
 #   ~/.claude/skill-routes — one route per line: <ERE, case-insensitive><TAB><skill name>

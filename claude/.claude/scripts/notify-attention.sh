@@ -1,21 +1,10 @@
 #!/usr/bin/env bash
-# Cross-platform OS notification + attention-queue producer.
+# Cross-platform OS notification + attention-queue producer, called by hooks/notify-*.sh.
 #
-# Used by:
-#   - hooks/notify-stop.sh       (Claude Stop event)
-#   - hooks/notify-notification.sh (Claude Notification event: permission / idle)
-#   - hooks/notify-codex.sh      (codex agent-turn-complete)
-#
-# Side effects:
-#   1. Appends a JSON line to $XDG_CACHE_HOME/claude-attention/queue.jsonl
-#      so `jump-attention.sh` can switch to the source tmux session by hotkey,
-#      independent of the OS notification's click action (notification can
-#      auto-dismiss; the queue entry stays for 1h).
-#   2. Dispatches a platform notification:
-#        - macOS: terminal-notifier (click → activate term + tmux switch-client),
-#                 osascript fallback (no click action).
-#        - Linux: dunstify (default-action → focus term + tmux switch-client),
-#                 notify-send fallback (no click action).
+#   1. Appends a JSON line to $XDG_CACHE_HOME/claude-attention/queue.jsonl for the
+#      jump-attention.sh hotkey; the entry outlives an auto-dismissed notification (kept 1h).
+#   2. Dispatches a platform notification: terminal-notifier / osascript on macOS,
+#      dunstify / notify-send on Linux; only the first of each pair has a click action.
 
 set -u
 
@@ -45,20 +34,9 @@ done
     exit 2
 }
 
-# --- comux fast path ---
-# Inside a comux pane, the mux is the better notifier: it knows WHICH pane raised this,
-# so its toast carries a click action that switches to that pane and raises the terminal
-# window — on Linux and macOS alike. The tmux path below can only ever switch a tmux
-# client, which is nothing here.
-#
-# The event is pushed rather than left to comux's own status sweep because a hook knows
-# the exact moment and the real message, where the sweep infers a transition at ~2 Hz;
-# comux marks (pane, agent pid, kind) as hook-owned, so once an agent has pushed a kind
-# the sweep stops inferring it and the two don't double-toast.
-#
-# Any failure — comux too old to know `notify`, dead socket, a token it can't resolve —
-# falls THROUGH to the tmux path instead of exiting, so a broken mux degrades to the
-# previous behavior rather than swallowing the notification.
+# Inside a comux pane, comux notifies: it knows which pane raised this, so its toast can
+# focus that pane (the tmux path cannot). A pushed kind is hook-owned in comux, so its own
+# status sweep does not double-toast. Any failure falls through to the tmux path.
 if [[ -n "${COPAD_MUX_PANE:-}" ]] && command -v comux >/dev/null 2>&1; then
     case "$kind" in
         notification) mux_kind="blocked" ;;  # permission prompt / idle: needs the user
@@ -70,7 +48,6 @@ if [[ -n "${COPAD_MUX_PANE:-}" ]] && command -v comux >/dev/null 2>&1; then
     fi
 fi
 
-# --- tmux detection ---
 tmux_session=""
 tmux_window_idx=""
 tmux_window_name=""
@@ -112,7 +89,6 @@ if [[ -n "${TMUX:-}" ]] && command -v tmux >/dev/null 2>&1; then
     fi
 fi
 
-# --- queue push ---
 queue_dir="${XDG_CACHE_HOME:-$HOME/.cache}/claude-attention"
 queue_file="$queue_dir/queue.jsonl"
 mkdir -p "$queue_dir"
@@ -142,7 +118,7 @@ entry=$(jq -nc \
       tmux_client_pid:$tmux_client_pid, terminal_pid:$terminal_pid}' 2>/dev/null)
 
 if [[ -n "$entry" ]]; then
-    # Trim entries older than 1h before appending. Atomic via temp+rename.
+    # Drop entries older than 1h; temp+rename keeps the rewrite atomic.
     cutoff=$((now - 3600))
     if [[ -f "$queue_file" ]]; then
         awk -v c="$cutoff" '
@@ -155,7 +131,6 @@ if [[ -n "$entry" ]]; then
     printf '%s\n' "$entry" >> "$queue_file"
 fi
 
-# --- notification dispatch ---
 applescript_escape() {
     printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
 }
@@ -186,11 +161,8 @@ focus_terminal_linux() {
     local pid="${1:-}"
     [[ -z "$pid" ]] && return
     if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] && command -v hyprctl >/dev/null 2>&1; then
-        # hyprctl exits 0 even when it rejects a request, so branch on stdout --
-        # `&& return` here used to swallow every failure and strand the wmctrl
-        # fallback below as dead code. The dispatcher syntax also differs
-        # between the hyprlang and Lua config managers (Hyprland 0.57 drops
-        # hyprlang), hence the two attempts.
+        # hyprctl exits 0 even when it rejects a request, so branch on stdout. Dispatcher
+        # syntax differs between the hyprlang and Lua config managers, hence two attempts.
         local focused
         focused=$(hyprctl dispatch "hl.dsp.focus({ window = \"pid:$pid\" })" 2>/dev/null)
         [[ $focused == ok* ]] || focused=$(hyprctl dispatch focuswindow "pid:$pid" 2>/dev/null)

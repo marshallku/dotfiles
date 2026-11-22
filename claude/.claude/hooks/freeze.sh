@@ -7,8 +7,7 @@ set -euo pipefail
 
 FREEZE_FILE="$HOME/.claude/freeze-dir.txt"
 
-# freeze 설정이 없으면 즉시 통과 — _lib.sh·stdin 읽기 전에. 거의 모든 호출이 이 경로다
-# (work Mac 한 달 2,730회 중 차단 0회, 그런데 p50 117ms였다).
+# freeze 설정이 없으면 _lib.sh·stdin 읽기 전에 통과 — 거의 모든 호출이 이 경로다.
 [ ! -f "$FREEZE_FILE" ] && echo '{}' && exit 0
 
 . "$(dirname "$0")/_lib.sh"
@@ -36,7 +35,6 @@ case "$FREEZE_DIR" in
     *) FREEZE_DIR="$FREEZE_DIR/" ;;
 esac
 
-# freeze 디렉토리 하위인지 검사
 case "$REAL_FILE/" in
     "$FREEZE_DIR"*)
         echo '{}'

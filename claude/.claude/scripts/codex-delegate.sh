@@ -76,7 +76,7 @@ while [[ $# -gt 0 ]]; do
             fi
             ;;
         -h|--help)
-            sed -n '2,20p' "$0"
+            awk 'NR > 1 && !/^#/ { exit } NR > 1' "$0"
             exit 0
             ;;
         --)
@@ -221,7 +221,6 @@ case "$MODE" in
         ;;
 esac
 
-# Run mode — needs a prompt.
 INPUT_TEXT="$*"
 if [[ -z "$INPUT_TEXT" ]]; then
     echo "Usage: $0 [--foreground|--readonly|--raw] <task description>" >&2
@@ -235,10 +234,8 @@ fi
 if [[ "$RAW" -eq 1 ]]; then
     PROMPT="$INPUT_TEXT"
 else
-    # Delegation-specific imperatives (write-capable agent must not expand
-    # scope, must report back). AGENTS.md "What NOT to do" forbids
-    # *suggesting* rewrites in reviews — it does NOT constrain a write-capable
-    # delegate from doing incidental refactors, so we keep that rule inline.
+    # AGENTS.md only forbids *suggesting* rewrites in reviews, not a write-capable
+    # delegate doing incidental refactors, so the scope rule lives here.
     SCOPE_HINT="You may edit files in the cwd repo."
     [[ "$WRITE" -eq 0 ]] && SCOPE_HINT="Read-only: propose a diff, do not modify files."
     PROMPT=$(cat <<EOF
@@ -306,7 +303,6 @@ printf '%s' "$PROMPT" > "$PROMPT_PATH"
     printf 'started_at=%s\n' "$(date +%Y-%m-%dT%H:%M:%S%z)"
     printf 'cwd=%s\n' "${REPO_ROOT:-$PWD}"
     printf 'write=%s\n' "$WRITE"
-    # Single-line task preview for --status listings.
     printf 'summary=%s\n' "$(printf '%s' "$INPUT_TEXT" | tr '\n' ' ' | cut -c1-100)"
 } > "$META"
 

@@ -1,17 +1,14 @@
 #!/usr/bin/env bash
 # @hook-event: UserPromptSubmit
-# UserPromptSubmit hook — auto-inject the autonomous work-unit contract when an
-# autonomous loop is being started, so the user no longer has to retype the
-# "plan -> review -> code -> test -> e2e -> cross-review -> save.sh" sequence
-# into every /goal or /loop (which they were doing on nearly every invocation).
+# UserPromptSubmit hook — inject the autonomous work-unit contract (plan -> review -> code ->
+# test -> e2e -> cross-review -> save.sh) when /goal or /loop starts, so the user need not retype it.
 #
 # Trigger (any of):
 #   - the harness activation string for /goal and /loop:
 #       "session-scoped Stop hook is now active"
 #   - a literal leading /goal or /loop (in case a flow passes it raw)
 #
-# Output is additionalContext only — never blocks. Worst case on a false
-# positive is one extra paragraph of context; on a false negative, status quo.
+# Output is additionalContext only — never blocks, so a false positive costs one paragraph.
 #
 # Opt-out: touch ~/.claude/state/contract-inject-disabled
 
@@ -21,7 +18,6 @@ set -euo pipefail
 
 LOG_FILE="$HOME/.claude/hooks-debug.log"
 log() {
-    # Delegates to _lib.sh so every hook shares one date-stamped format.
     hook_log contract-inject "$@"
 }
 

@@ -1,12 +1,7 @@
 #!/usr/bin/env bash
 # codex-exec.sh — shared `codex exec` runner for the codex-* wrappers.
-#
-# Replaces the old codex-companion.sh (@openai/codex-plugin-cc app-server
-# runtime). That layer existed for background job management, broker reuse,
-# and progress streaming; only the last one was ever load-bearing, and it
-# cost a leaking app-server daemon per workspace plus two behaviour
-# regressions (config.toml `notify` never fired; resume could not target a
-# thread id). `codex exec --json` gives us the same stream natively.
+# Uses `codex exec --json` directly rather than the app-server runtime, so the
+# config.toml `notify` program fires and resume can target a thread id.
 #
 # Contract for callers:
 #   stdout — the final assistant message ONLY (safe to parse for VERDICT)
@@ -36,14 +31,11 @@
 #
 # Live view: every run's event stream stays at ~/.claude/state/codex-live/<key>-<run>.jsonl
 # with a <key>-<run>.status.json beside it (running → done, exit, verdict), so another pane
-# (codex-tail.sh) or a Claude Code mod can follow a review that used to run unseen in a temp
-# file deleted on exit (work Mac: 1,054 runs, 29.8 h of "waiting"). session-start.sh drops
-# them after 7 days.
+# (codex-tail.sh) or a Claude Code mod can follow the run. session-start.sh drops them after
+# 7 days.
 #
-# Thread ids live in ~/.claude/state/codex-threads/<key>. Keys are chosen by
-# the caller (e.g. plan-<repo_hash>, review-<repo_hash>-<session>) so that
-# unrelated codex calls can no longer hijack a resume — the failure mode of
-# the companion's workspace-wide `--resume-last`.
+# Thread ids live in ~/.claude/state/codex-threads/<key>. Callers choose the key (e.g.
+# plan-<repo_hash>, review-<repo_hash>-<session>) so unrelated codex calls cannot hijack a resume.
 
 set -euo pipefail
 
@@ -70,7 +62,7 @@ while [[ $# -gt 0 ]]; do
         --thread-key)  THREAD_KEY="$2"; shift 2 ;;
         --resume)      RESUME=1; shift ;;
         --quiet)       QUIET=1; shift ;;
-        -h|--help)     sed -n '2,40p' "$0"; exit 0 ;;
+        -h|--help)     awk 'NR > 1 && !/^#/ { exit } NR > 1' "$0"; exit 0 ;;
         *)
             echo "[codex-exec] unknown argument: $1" >&2
             exit 2
@@ -87,9 +79,8 @@ if ! command -v jq >/dev/null 2>&1; then
     exit 2
 fi
 
-# Resolve the prompt to a file — it is always fed through stdin (`-`), never
-# argv. A large review diff on argv overflows the exec arg limit, and that is
-# exactly why the old wrapper needed --prompt-file.
+# The prompt always goes to codex through stdin (`-`), never argv: a large review
+# diff on argv overflows the exec arg limit.
 CLEANUP_PROMPT=0
 if [[ -n "$PROMPT_TEXT" ]]; then
     PROMPT_FILE=$(mktemp "${TMPDIR:-/tmp}/codex-exec-prompt.XXXXXX")
@@ -163,9 +154,6 @@ cleanup() {
 trap cleanup EXIT
 write_status running
 
-# Resume needs a stored thread id. Missing one is not an error — it is the
-# "round 1 hasn't happened (or was GC'd)" case, which callers handle by
-# rerunning fresh.
 RESUME_ID=""
 if [[ "$RESUME" -eq 1 ]]; then
     if [[ -z "$THREAD_FILE" ]]; then
@@ -218,22 +206,10 @@ portable_timeout "$TIMEOUT" codex "${ARGS[@]}" < "$PROMPT_FILE" 2>"$ERR_FILE" \
 STATUS=${PIPESTATUS[0]}
 set -e
 
-# --- Cost ledger --------------------------------------------------------------
-# codex reports per-turn token usage in the `turn.completed` event, which until
-# now was rendered to stderr and thrown away. Persist it so cost per task is
-# answerable at all — the harness had no cost telemetry of any kind, which also
-# meant no trip wire could exist. Read from EVENTS_FILE rather than tapping the
-# render pipeline, so a quiet run (--quiet) is still accounted for.
-#
-# Runs before the failure/timeout exits, so a run that burned 40k tokens and
-# then failed is still accounted for — but only to the extent codex reported it:
-# usage comes from `turn.completed`, so a run killed before any turn completed
-# leaves a row with usage_reported=false. This is not a full accounting
-# of a hard timeout mid-turn.
-# Best-effort throughout — never let accounting fail a codex run.
-#
-# With no --model/--effort the ledger used to say "default" for every run (740 of them were
-# really high effort). Record what ~/.codex/config.toml resolves to as effective_*.
+# Cost ledger: token usage comes from `turn.completed` events in EVENTS_FILE, so --quiet runs
+# count too. It runs before the failure/timeout exits; a run killed before any turn completed
+# gets usage_reported=false. Best-effort: accounting must never fail a codex run.
+# effective_* records what ~/.codex/config.toml resolves to when --model/--effort are unset.
 codex_config_value() {
     local config="${CODEX_HOME:-$HOME/.codex}/config.toml"
     [[ -f "$config" ]] || return 0

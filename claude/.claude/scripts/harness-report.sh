@@ -1,18 +1,13 @@
 #!/usr/bin/env bash
 # Harness health scorecard + trip wires.
 #
-# Reads the two ledgers the harness now keeps:
+# Reads the two ledgers:
 #   ~/.claude/state/hook-events.jsonl  — structured hook events (hook_event)
 #   ~/.claude/state/codex-usage.jsonl  — codex token spend per run (codex-exec)
 #
 # Two modes:
 #   (default)    full scorecard on stdout — run it by hand
-#   --tripwire   silent unless something tripped; called from SessionStart, so
-#                an anomaly reaches you when you sit down rather than never
-#
-# Why trip wires exist here: post-typecheck.sh was dead for four months and
-# nothing noticed, because no layer of this harness answered "is a component
-# that used to work still working?". TW3 below is that question, generalized.
+#   --tripwire   silent unless something tripped; called from SessionStart
 #
 # Opt-out: touch ~/.claude/state/tripwire-disabled
 
@@ -31,7 +26,6 @@ command -v jq >/dev/null 2>&1 || exit 0
 [ -f "$STATE/tripwire-disabled" ] && [ "$MODE" = "tripwire" ] && exit 0
 
 TODAY=$(date '+%Y-%m-%d')
-# Trailing baseline window, excluding today.
 BASE_DAYS="${TRIPWIRE_BASELINE_DAYS:-6}"
 SINCE=$(date -d "-${BASE_DAYS} days" '+%Y-%m-%d' 2>/dev/null \
      || date -v-"${BASE_DAYS}"d '+%Y-%m-%d' 2>/dev/null || echo "$TODAY")
@@ -42,9 +36,8 @@ DAY_AGO=$(date -d '-1 day' '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
 
 TRIPS=()
 
-# --- TW1: codex spend today vs the trailing daily mean -----------------------
-# Absolute floor so a quiet baseline (a 2k-token day) cannot make an ordinary
-# day look like a 10x runaway.
+# Codex spend vs the trailing daily mean, with an absolute floor so a quiet baseline
+# (a 2k-token day) cannot make an ordinary day look like a runaway.
 FLOOR="${TRIPWIRE_TOKEN_FLOOR:-150000}"
 MULT="${TRIPWIRE_TOKEN_MULTIPLIER:-2}"
 SPEND_LINE=""
@@ -64,10 +57,8 @@ if [ -n "$SPEND_LINE" ]; then
     [ "${SPEND_FLAG:-ok}" = "TRIP" ] && TRIPS+=("codex spend today ${SPEND_TODAY} tokens vs ${BASE_DAYS}-day avg ${SPEND_AVG} (>${MULT}x) — check for a runaway loop")
 fi
 
-# --- TW2: a sensor that is erroring rather than sensing -----------------------
-# NB: on a missing file jq still prints a result AND exits non-zero, so a
-# trailing `|| echo 0` yields the two-line value "0\n0" and every downstream
-# `[ x -gt 0 ]` becomes a syntax error. Gate on the file, then keep digits only.
+# jq on a missing file prints a result and still exits non-zero, so `|| echo 0` would yield
+# "0\n0" and break `[ -gt ]`: gate on the file, then keep digits only.
 SENSOR_BROKEN=0
 if [ -f "$EVENTS" ]; then
     SENSOR_BROKEN=$(jq -s -r --arg since "$DAY_AGO" '
@@ -78,9 +69,7 @@ fi
 [ -z "$SENSOR_BROKEN" ] && SENSOR_BROKEN=0
 [ "$SENSOR_BROKEN" -gt 0 ] 2>/dev/null && TRIPS+=("post-typecheck hit ${SENSOR_BROKEN} checker_error/timeout in 24h — the sensor is failing, not passing")
 
-# --- TW3: a component that used to report has gone silent --------------------
-# The generalized form of the four-month post-typecheck outage. If a component
-# produced events before the last 7 days but none since, it stopped running.
+# A component with events before the last 7 days but none since has stopped running.
 SILENT=""
 if [ -f "$EVENTS" ]; then
     SILENT=$(jq -s -r --arg since "$WEEK_AGO" '
@@ -91,19 +80,15 @@ if [ -f "$EVENTS" ]; then
         | [.[] | select(.recent == 0 and .older > 0) | .c] | join(", ")
     ' "$EVENTS" 2>/dev/null | head -n1 | tr -d '\n')
 fi
-# post-typecheck runs only on Edit/Write. With a daily heartbeat on every edit, its silence
-# means "dead" only if this machine edited anything this week (Linux tripped 309 times in
-# November while only Bash ran there).
+# post-typecheck runs only on Edit/Write, so its silence means "dead" only if this machine
+# edited anything this week.
 if [ -n "$SILENT" ] && ! find "$STATE" -maxdepth 1 -name 'dirty-*.log' -mtime -7 2>/dev/null | grep -q .; then
     SILENT=$(printf '%s' "$SILENT" | tr ',' '\n' | sed 's/^ *//' | grep -vx 'post-typecheck' | paste -sd, - | sed 's/,/, /g')
 fi
 [ -n "$SILENT" ] && [ "$SILENT" != "null" ] && TRIPS+=("no events in 7 days from: ${SILENT} — component may be dead (see post-typecheck, dead 2026-04→08)")
 
-# --- TW4: the install no longer matches dotfiles -------------------------------
-# A gate can only run if its files are where settings.json points. On one machine
-# ~/.claude/hooks held per-file symlinks without the _*.py helpers, and the merge policy
-# silently allowed everything; on another a retired launchd job failed every few minutes
-# for months. Neither produced a single ledger event.
+# Install drift: a gate runs only if its files are where settings.json points, and a broken
+# install (missing hook helpers, a launchd job on deleted files) emits no ledger event.
 INSTALL=()
 HOOKS="$HOME/.claude/hooks"
 SRC_HOOKS=$(python3 -c 'import os,sys; print(os.path.dirname(os.path.realpath(sys.argv[1])))' "$HOOKS/_lib.sh" 2>/dev/null)
@@ -124,8 +109,8 @@ if [ -f "$HOME/.claude/settings.json" ]; then
     done < <(jq -r '.. | .command? // empty' "$HOME/.claude/settings.json" 2>/dev/null \
         | grep -oE '\.claude/hooks/[A-Za-z0-9_.-]+' | sed 's|.*/||' | sort -u)
 fi
-# A hook registered under the wrong event runs at the wrong time or never (track-bash-edit
-# post under UserPromptSubmit on the work Mac, 2026-11-14 →). Each script declares its event.
+# A hook registered under the wrong event runs at the wrong time or never; each script
+# declares its event.
 if [ -f "$HOME/.claude/settings.json" ] && [ -d "$HOOKS" ]; then
     while IFS= read -r problem; do
         [ -n "$problem" ] && INSTALL+=("hook event: $problem")
@@ -150,7 +135,6 @@ if [ "$(uname -s)" = Darwin ]; then
 fi
 [ ${#INSTALL[@]} -gt 0 ] && TRIPS+=("install drift: $(printf '%s; ' "${INSTALL[@]:0:4}")")
 
-# --- Output -------------------------------------------------------------------
 if [ "$MODE" = "tripwire" ]; then
     [ ${#TRIPS[@]} -eq 0 ] && exit 0
     OUT="⚠️  Harness trip wire"
@@ -191,7 +175,7 @@ fi
 echo
 echo "-- Gate activity, last 7d (blocks) --"
 if [ -f "$HOME/.claude/hooks-debug.log" ]; then
-    # String compare on the "[YYYY-MM-DD" prefix; it used to count the whole log.
+    # String compare on the "[YYYY-MM-DD" prefix.
     WEEK_DAY="${WEEK_AGO%%T*}"
     grep -hoE '^\[[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]+\] [a-z-]+: (BLOCK|INJECT|TRIPPED)' \
         "$HOME/.claude/hooks-debug.log" 2>/dev/null \

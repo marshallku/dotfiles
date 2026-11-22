@@ -339,8 +339,8 @@ def _heredoc_openers(line, quote):
     return found, quote
 
 
-# Receivers whose heredoc body is only copied out, never run. An interpreter's body is code
-# whose glob calls (`glob.glob('/etc/passw?')`) the old shell-glob judgment happened to catch.
+# Receivers whose heredoc body is only copied out, never run. An interpreter's body is code, so
+# its glob calls (`glob.glob('/etc/passw?')`) are still judged.
 DATA_RECEIVERS = {"cat", "tee"}
 SHELL_WORDS = SHELLS | {"eval", "source", "."}
 
@@ -385,12 +385,12 @@ def bash_tokens(command):
             while i < len(lines) and (lines[i].lstrip("\t") if strip else lines[i]) != delim:
                 body.append(lines[i])
                 i += 1
-            i += 1  # the delimiter line
+            i += 1
             text = "\n".join(body)
             # An unquoted delimiter lets the shell run `$(...)` and backticks in the body.
             joined = text.replace("\\\n", "")  # `$\` / `(cmd)` is still a substitution
             # Unquoted, bash also joins `\`+newline before matching the delimiter (`E\` / `OF`),
-            # so where the body ends is uncertain: keep the old judgment for all of it.
+            # so where the body ends is uncertain: judge all of it strictly.
             expands = not m.group(2) and ("$(" in joined or "`" in joined or any(CONTINUED.search(b) for b in body))
             chunks += [("\n".join(code), False), (text, data and known and not expands)]
             code = []

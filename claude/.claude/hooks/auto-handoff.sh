@@ -14,7 +14,6 @@ INPUT=$(cat)
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "unknown"')
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
 
-# CWD가 없거나 git repo가 아니면 스킵
 if [ -z "$CWD" ] || ! git -C "$CWD" rev-parse --is-inside-work-tree &>/dev/null; then
     echo '{}'
     exit 0
@@ -53,8 +52,7 @@ ${STAGED_STAT:-No staged changes}
 \`\`\`
 EOF
 
-# 시각 줄만 다르고 내용이 같으면 다시 쓰지 않는다 — Stop마다 같은 파일을 덮어썼다
-# (work Mac 한 달 2,500회, p50 541ms).
+# 시각 줄만 다르면 다시 쓰지 않는다 — 그러지 않으면 Stop마다 같은 파일을 덮어쓴다.
 REPO_FILE=$(handoff_repo_path "$CWD" 2>/dev/null || true)
 same_body() { [ -f "$2" ] && cmp -s <(grep -v '^- \*\*Time:\*\*' "$1") <(grep -v '^- \*\*Time:\*\*' "$2"); }
 if [ -n "$REPO_FILE" ] && same_body "$HANDOFF_TMP" "$REPO_FILE" && same_body "$HANDOFF_TMP" "$HANDOFF_DIR/latest.md"; then

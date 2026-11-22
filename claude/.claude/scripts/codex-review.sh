@@ -115,7 +115,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -h|--help)
-            sed -n '2,37p' "$0"
+            awk 'NR > 1 && !/^#/ { exit } NR > 1' "$0"
             exit 0
             ;;
         *)
@@ -136,7 +136,6 @@ case "$REVIEWER" in
 esac
 echo "[cross-review] reviewer=$REVIEWER" >&2
 
-# Resolve context input
 if [[ -n "$CONTEXT_FILE" ]]; then
     if [[ ! -f "$CONTEXT_FILE" ]]; then
         echo "[codex-review] context file not found: $CONTEXT_FILE" >&2
@@ -161,7 +160,6 @@ if [[ -n "$INTENT_FILE" ]]; then
         echo "[codex-review] intent file not found: $INTENT_FILE" >&2
         exit 2
     fi
-    # Extract frontmatter once, then pull fields out of it with awk.
     INTENT_FM=$(awk '/^---$/{c++; if(c==2)exit; next} c==1' "$INTENT_FILE")
     INTENT_GOAL=$(awk '/^goal: /{sub(/^goal: /, ""); print; exit}' <<< "$INTENT_FM")
     INTENT_COMMIT_SUMMARY=$(awk '/^commit_summary: /{sub(/^commit_summary: /, ""); print; exit}' <<< "$INTENT_FM")
@@ -255,7 +253,6 @@ mark_repo_reviewed() (
     rm -f "$STATE_DIR/codex-delegate-pending-$REPO_HASH"
 )
 
-# Auto-detect the comparison branch for branch/files queries.
 detect_base() {
     if [[ -n "$BASE" ]]; then return 0; fi
     BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||') \
@@ -273,7 +270,6 @@ detect_base() {
         echo "[codex-review] could not detect default branch (tried main, master)" >&2
         exit 2
     fi
-    # Resolve to origin/ if local branch doesn't exist
     if ! git rev-parse --verify "$BASE" >/dev/null 2>&1; then
         if git rev-parse --verify "origin/$BASE" >/dev/null 2>&1; then
             BASE="origin/$BASE"
@@ -370,9 +366,6 @@ fi
 CONTEXT_SECTION=""
 INTENT_CHECK=""
 if [[ "$INTENT_AVAILABLE" = "1" ]]; then
-    # Structured intent — the review is now primarily a code-vs-intent
-    # comparison. Each acceptance_criteria must be verifiable in the diff;
-    # each out_of_scope must NOT be touched; assumptions must hold.
     CONTEXT_SECTION=$(cat <<EOF
 
 --- TASK INTENT (captured before implementation, SourceItem at ${INTENT_FILE}) ---
@@ -453,10 +446,8 @@ if [[ "$RESUME" == "1" ]]; then
     fi
 fi
 
-# Round 3+ starts a new thread instead of resuming. A resumed thread replays everything before
-# it, so input doubled each round (work Mac, 1,054 runs: 329k → 680k → 1.2M → 1.9M → 3.5M).
-# The new thread gets the full current diff plus a short history of earlier findings and the
-# author's responses. CODEX_REVIEW_RESTART_ROUND=0 keeps resuming every round.
+# From CODEX_REVIEW_RESTART_ROUND on, start a new thread with the full diff and a short findings
+# history: a resumed thread replays all prior input, so it roughly doubles each round. 0 = always resume.
 RESTART=0
 RESTART_ROUND=${CODEX_REVIEW_RESTART_ROUND:-3}
 [[ "$RESTART_ROUND" =~ ^[0-9]+$ ]] || RESTART_ROUND=3
@@ -533,11 +524,7 @@ else
     PROMPT=$(build_fresh_prompt)
 fi
 
-# Run the review through the runner with a timeout. Progress streams to the
-# terminal on stderr in real time; the runner's stdout is the final assistant
-# message only (containing the VERDICT line), captured for parsing.
-# The prompt always goes through a file: a large diff on argv would blow the
-# exec argument limit, and the runner feeds the file to codex via stdin.
+# The prompt goes through a file: a large diff on argv would exceed the exec argument limit.
 PROMPT_FILE=$(mktemp /tmp/codex-review-prompt.XXXXXX)
 STDOUT_FILE=$(mktemp /tmp/codex-review-stdout.XXXXXX)
 printf '%s' "$PROMPT" > "$PROMPT_FILE"
@@ -557,17 +544,14 @@ run_review() {
     OUTPUT=$(cat "$STDOUT_FILE")
 }
 
-# Round 2+ resumes the previous review thread by id; round 1 starts fresh.
 if [[ "$RESUME" == "1" ]]; then
     run_review resume
 else
     run_review fresh
 fi
 
-# Graceful fallback: --resume with no usable thread (round 1 never ran, or the
-# rollout was GC'd) exits 3. Don't hard-fail the review — rebuild the full
-# fresh prompt (with the context/intent the resume prompt omitted) and retry
-# fresh so the commit gate is not blocked by a missing thread.
+# Exit 3 = no resumable thread. Retry with the full fresh prompt (the resume prompt omits
+# context/intent) so a missing thread never blocks the commit gate.
 if [[ "$RESUME" == "1" && $STATUS -eq 3 ]]; then
     echo "[codex-review] no resumable thread found; falling back to a fresh review" >&2
     RESUME=0
@@ -576,8 +560,7 @@ if [[ "$RESUME" == "1" && $STATUS -eq 3 ]]; then
     run_review fresh
 fi
 
-# Resolved above (THREAD_KEY) — reused so every terminal path can ping (a
-# backgrounded review that times out must still notify, not finish silently).
+# Every terminal path pings: a backgrounded review that times out must not finish silently.
 REVIEW_CWD="$REVIEW_REPO_ROOT"
 
 if [[ $STATUS -eq 124 ]]; then
@@ -604,7 +587,7 @@ if [[ "$REVIEWER" == claude ]]; then
     notify_codex_done "Claude cross-review completed" "$REVIEW_CWD"
 fi
 
-# Parse the final verdict — check the last 20 lines so conversational preamble does not confuse us
+# Only the last 20 lines, so a VERDICT quoted in the preamble cannot match.
 VERDICT_LINE=$(echo "$OUTPUT" | tail -n 20 | grep -E "^VERDICT: (APPROVED|REVISE)$" | tail -n 1 || true)
 
 # No manual ping here: a completed codex turn fires the `notify` program from
@@ -613,8 +596,7 @@ VERDICT_LINE=$(echo "$OUTPUT" | tail -n 20 | grep -E "^VERDICT: (APPROVED|REVISE
 # notify_codex_done calls that remain cover only the paths where no codex turn
 # completes — empty diff, timeout, spawn failure.
 
-# History for a later restart round: this round's CRITICAL section, and the response that
-# answered the previous round. Clipped so a summary never grows into the thread it replaces.
+# Clipped so a restart round's history never grows into the thread it replaces.
 HISTORY_CLIP=3000
 HISTORY_KEEP=6
 FINDINGS=$(printf '%s\n' "$OUTPUT" | awk '/^## CRITICAL/{f=1;next} /^## /{f=0} f' | sed '/^[[:space:]]*$/d')
@@ -648,8 +630,7 @@ case "$VERDICT_LINE" in
         # exact content save.sh will commit. Branch/uncommitted/files are advisory.
         mark_repo_reviewed || exit 2
         # COPAD_HOOK_PUBLISH: claude.review_approved $(jq -n --arg s "$SESSION_ID" --arg m "$MODE" '{session:$s,mode:$m}')
-        # Redirect coctl's ack ({"queued":true}) away from stdout so it does not
-        # trail the VERDICT in the review output the caller reads.
+        # coctl's ack ({"queued":true}) must not trail the VERDICT on stdout.
         command -v coctl >/dev/null && coctl event publish claude.review_approved --quiet "$(jq -n --arg s "$SESSION_ID" --arg m "$MODE" '{session:$s,mode:$m}')" >/dev/null 2>&1 &
         # COPAD_HOOK_PUBLISH_END
         exit 0

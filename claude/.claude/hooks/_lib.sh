@@ -21,12 +21,9 @@ repo_hash() {
     printf '%s' "$1" | portable_md5 | head -c 12
 }
 
-# Portable timeout — runs a command with a wall-clock limit.
-# Linux: timeout; macOS: gtimeout (coreutils). Returns 127 if neither exists
-# so callers can distinguish "missing binary" from "command failed".
-# A command that survives SIGTERM (a codex turn blocked in a tool call did: a
-# 180s /ask-codex ran past 10 minutes) is SIGKILLed PORTABLE_TIMEOUT_KILL_AFTER
-# seconds later, so a wall-clock limit really is one.
+# portable_timeout <secs> <cmd...>: timeout, else gtimeout, else perl. Exit 124 on timeout,
+# 127 when no implementation exists (so callers can tell "missing binary" from "failed").
+# A command that survives SIGTERM is SIGKILLed PORTABLE_TIMEOUT_KILL_AFTER (15) seconds later.
 portable_timeout() {
     local secs="$1"; shift
     local grace="${PORTABLE_TIMEOUT_KILL_AFTER:-15}" bin rc
@@ -35,11 +32,9 @@ portable_timeout() {
     elif command -v gtimeout >/dev/null 2>&1; then
         bin=gtimeout
     elif command -v perl >/dev/null 2>&1; then
-        # macOS without Homebrew on PATH (ssh, launchd) has neither binary but always has
-        # perl; without this the type checker skipped as no_timeout_binary there. Same
-        # contract as `timeout -k`: the command runs in its own process group, which gets
-        # TERM at the deadline and KILL after the grace, so descendants (yarn → node → tsc)
-        # cannot outlive it or hold the caller's output pipe open. Exit 124 on timeout.
+        # macOS without Homebrew on PATH (ssh, launchd) has neither binary but has perl.
+        # Same contract as `timeout -k`: its own process group gets TERM at the deadline and
+        # KILL after the grace, so descendants cannot outlive it or hold the output pipe open.
         perl -e '
             my ($secs, $grace) = (shift, shift);
             my $pid = fork() // exit 127;
@@ -71,22 +66,18 @@ portable_timeout() {
     return "$rc"
 }
 
-# Portable mtime — prints file modification time as unix epoch.
 portable_mtime() {
     stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0
 }
 
-# Portable "format epoch as human date".
 portable_fmtdate() {
     local epoch="$1"
     local fmt="${2:-%Y-%m-%d %H:%M}"
     date -d "@$epoch" +"$fmt" 2>/dev/null || date -r "$epoch" +"$fmt" 2>/dev/null || echo ""
 }
 
-# Per-repository handoff file. One global latest.md meant a session in repo A was
-# handed repo B's state; writers now also keep handoffs/repo-<hash>.md, and the
-# reader injects only the one for its own repository. latest.md stays the place
-# for a hand-written narrative handoff and for sessions outside any repository.
+# Per-repository handoff file, so a session is handed only its own repository's state.
+# latest.md holds hand-written handoffs and sessions outside any repository.
 handoff_repo_path() {
     local repo
     repo=$(git -C "$1" rev-parse --show-toplevel 2>/dev/null) || return 1
@@ -94,9 +85,9 @@ handoff_repo_path() {
 }
 
 # handoff_publish <written-temp-file> <cwd>
-# Install a writer's OWN content as its repo handoff and as latest.md, each by an
-# atomic rename. (Copying back from the shared latest.md let a concurrent session
-# in another repo land in this repo's file.) Best-effort; always returns 0.
+# Installs the writer's own content as its repo handoff and as latest.md, each by atomic
+# rename; never copy from the shared latest.md, which another repo's session may have written.
+# Best-effort; always returns 0.
 handoff_publish() {
     local tmp="$1" repo_file
     if repo_file=$(handoff_repo_path "$2"); then
@@ -106,7 +97,6 @@ handoff_publish() {
     return 0
 }
 
-# Review state helpers shared by the commit gate and the review script.
 . "$(dirname "${BASH_SOURCE[0]}")/_review-state.sh"
 
 # Path to notify-codex.sh. Anchored to the deployed ~/.claude/hooks location
@@ -115,19 +105,10 @@ handoff_publish() {
 _NOTIFY_CODEX_SH="$HOME/.claude/hooks/notify-codex.sh"
 
 # notify_codex_done <summary> [cwd]
-# Fire a user-facing completion notification for a codex run that produced no
-# turn of its own.
-#
-# Scope: a completed `codex exec` turn already invokes the `notify` program in
-# ~/.codex/config.toml, so wrappers must NOT call this on the success path —
-# that would double-ping. It exists for the outcomes codex never reports:
-# pre-flight exits (nothing to review), timeouts, and spawn failures. (The old
-# app-server runtime swallowed turn-complete entirely, which is why every
-# wrapper used to call this unconditionally.)
-# Reuses notify-codex.sh formatting via a synthesized agent-turn-complete
-# payload, so the notify-codex-disabled marker still works.
-#
-# Best-effort and non-blocking: never fails the caller, backgrounds the notify.
+# Notifies the user of a codex run that produced no turn: pre-flight exits, timeouts, spawn
+# failures. Not for the success path: a completed `codex exec` turn already runs the
+# config.toml `notify` program, so this would double-ping. Goes through notify-codex.sh, so
+# the notify-codex-disabled marker applies. Best-effort and backgrounded; never fails the caller.
 notify_codex_done() {
     local summary="$1"
     local cwd="${2:-$PWD}"
@@ -141,36 +122,24 @@ notify_codex_done() {
 }
 
 # hook_permission deny <reason>
-# (Do not pass `ask`: it waits for a human and stalls autonomous loops. Deny with the
-#  alternative in the reason, or allow and record decision=flagged.)
-# The one PreToolUse decision shape Claude Code honours. A top-level
-# {permissionDecision, message} is ignored and the tool runs: careful-with-judge,
-# protect-secrets, freeze and plan-ssot-gate emitted it and blocked nothing until
-# 2026-11-14 (commit-policy-gate and block-raw-git until 2026-10-30). Every
-# PreToolUse hook decides through this function; test_hook_contract.py enforces it.
+# The one PreToolUse decision shape Claude Code honours; a top-level {permissionDecision} is
+# ignored and the tool runs. Every PreToolUse hook decides through this (test_hook_contract.py).
+# Never pass `ask`: it stalls autonomous loops waiting for a human. Deny with the alternative
+# in the reason, or allow and record decision=flagged.
 hook_permission() {
     jq -cn --arg d "$1" --arg r "$2" \
         '{hookSpecificOutput:{hookEventName:"PreToolUse", permissionDecision:$d, permissionDecisionReason:$r}}'
 }
 
-# Appended to every Stop-hook block reason. The reason becomes the last input of the
-# turn, so the model answered the (English) hook in English — "한글로 말해줘" was typed
-# 48 times across two machines. The reply is for the user, not for the hook.
+# Appended to every Stop-hook block reason: the reason is the turn's last input, so without
+# it the model replies to the English hook in English instead of in the user's language.
 STOP_REPLY_NOTE="When you reply after doing this, write to the user in the language of their last message, not to this hook."
 
-# --- Observability ------------------------------------------------------------
-# One timestamp format and one machine-readable event stream for the whole
-# harness. Both are best-effort and always return 0 — every hook runs under
-# `set -e`, so a logging failure must never take down the hook it is observing.
-#
+# The harness's one timestamp format and event stream; do not hand-roll another log().
+# Both are best-effort and always return 0: hooks run under `set -e`, so a logging failure
+# must not take down the hook it observes.
 #   hook_log   <component> <message...>      human line -> hooks-debug.log
 #   hook_event <component> <event> [k=v ...] JSONL record -> hook-events.jsonl
-#
-# Why: hooks-debug.log was written by 9 hand-rolled log() functions that all
-# stamped `%H:%M:%S` with no date, so no query could span days and the log
-# rotated its own history away at 5MB. Trend analysis (which sensor fires most,
-# which gate blocks most, is a regression starting) was structurally impossible.
-# New hooks use these; do not hand-roll another log().
 HOOK_LOG_FILE="${HOOK_LOG_FILE:-$HOME/.claude/hooks-debug.log}"
 HOOK_EVENT_LOG="${HOOK_EVENT_LOG:-$HOME/.claude/state/hook-events.jsonl}"
 
@@ -198,7 +167,7 @@ hook_event() {
 
     local kv key val
     for kv in "$@"; do
-        [ "$kv" = "${kv#*=}" ] && continue          # no '=' → not a k=v pair
+        [ "$kv" = "${kv#*=}" ] && continue
         key="${kv%%=*}"
         val="${kv#*=}"
         case "$key" in ''|*[!a-zA-Z0-9_]*) continue ;; esac

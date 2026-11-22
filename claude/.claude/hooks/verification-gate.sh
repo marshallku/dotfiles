@@ -4,18 +4,14 @@
 # that tests / e2e / the app were actually run, block the stop once and tell
 # Claude to verify before concluding (or to state why verification is N/A).
 #
-# Fires at most once per session (verify-blocked-<session> marker).
+# Fires at most once per session (verify-blocked-<session> marker), so a change that needs
+# no verification costs one "verification N/A: <reason>" reply.
 # Skips if:
 #   - ~/.claude/state/auto-review-disabled exists (master opt-out)
 #   - ~/.claude/state/verify-gate-disabled exists (granular opt-out)
 #   - fewer than AUTO_REVIEW_MIN_FILES (default 2) distinct files touched
 #   - the transcript shows a test/e2e/run/deploy command was actually executed
 #   - last assistant message ends with "?" (clarification pause heuristic)
-#
-# Note: a change that legitimately needs no e2e is handled by the block itself —
-# it is single-shot, so Claude just states "verification N/A: <reason>" once and
-# concludes. (An earlier intent-file auto-skip was removed: parsing verification.e2e
-# from YAML in bash was fragile and a recurring source of false-relaxation.)
 #
 # Env overrides:
 #   AUTO_REVIEW_MIN_FILES  (default 2)  — reuse the review gate's threshold
@@ -41,31 +37,21 @@ DISABLED_SELF="$STATE_DIR/verify-gate-disabled"
 
 MIN_FILES="${AUTO_REVIEW_MIN_FILES:-2}"
 
-# Evidence is decided by the INVOKED PROGRAM, not substring presence (see the
-# is_verification awk below). We split each command on shell connectors, strip
-# env-var prefixes, and inspect the first token (the program) plus its sub-
-# command — so `echo cargo test`, `cat vitest.config.ts`, `rg cargo test`, and
-# `ls cypress` do NOT count, while `cargo test`, `FOO=x pnpm run e2e`, and
-# `a && make deploy-remote` do. Build/typecheck/lint are deliberately excluded
-# (post-typecheck.sh covers those); only behavioural runners count.
-#
-# Projects with a bespoke runner can extend the first-token whitelist:
-#   VERIFY_EXTRA_RUNNERS="just bats" (space-separated program names)
+# Evidence is the invoked program, not a substring: the is_verification awk below judges the
+# first token and subcommand of each connector-split command, so `echo cargo test` does not
+# count and `FOO=x pnpm run e2e` does. Build/typecheck/lint are excluded (post-typecheck.sh
+# covers them).
 EXTRA_RUNNERS="${VERIFY_EXTRA_RUNNERS:-}"
 
 log() {
-    # Delegates to _lib.sh so every hook shares one date-stamped format.
     hook_log verification-gate "$@"
 }
 
-# Opt-outs
 [ -f "$DISABLED" ] && { echo '{}'; exit 0; }
 [ -f "$DISABLED_SELF" ] && { echo '{}'; exit 0; }
 
-# No tracked edits this session → nothing to verify
 [ -f "$DIRTY_LOG" ] || { echo '{}'; exit 0; }
 
-# Already fired once this session → let this stop proceed
 [ -f "$BLOCKED" ] && { echo '{}'; exit 0; }
 
 # Trivial change (few files) → skip. Scratchpad files are working notes, not code changes.
@@ -175,7 +161,6 @@ if [ -f "$TRANSCRIPT" ]; then
     fi
 fi
 
-# Clarification-pause heuristic — Claude is asking the user, not finishing.
 if [ -f "$TRANSCRIPT" ]; then
     LAST_TEXT=$(tail -c 16384 "$TRANSCRIPT" 2>/dev/null \
         | jq -rc 'select(.type=="assistant") | .message.content[]? | select(.type=="text") | .text' 2>/dev/null \
@@ -186,7 +171,6 @@ if [ -f "$TRANSCRIPT" ]; then
     fi
 fi
 
-# Block once and inject the verification mandate
 touch "$BLOCKED"
 log "BLOCK: no verification evidence ($FILE_COUNT files touched)"
 

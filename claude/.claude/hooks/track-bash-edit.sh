@@ -6,17 +6,13 @@
 #   PostToolUse Bash: track-bash-edit.sh post  — repository files changed since the stamp
 #                     go to dirty-<session>.log (verification gate) and post-typecheck.sh
 #
-# Why: agents often edit through `python3 - <<'PY' … write_text(…)`, `sed -i` or `cat >`.
-# On the work machine that was 6,188 edits in four months (27% of Bash input); on the
-# mac-mini, Bash file writes outnumbered Edit/Write calls. None of them reached
-# track-edit.sh or post-typecheck.sh, which only match Edit|Write, so a type error made
-# that way was never reported.
+# Agents often edit through `python3 - <<'PY'`, `sed -i` or `cat >`, which the Edit|Write
+# matchers of track-edit.sh and post-typecheck.sh never see.
 #
-# Detection is by result, not by parsing the command: after the command, every tracked
-# modified or untracked (non-ignored) file in the cwd's repository whose mtime is at or
-# after the stamp counts. Git-only commands (pull, checkout, rebase …) are skipped — they
-# move other people's code, not this session's edits. Subagent and scratchpad edits are
-# skipped exactly like track-edit.sh.
+# Detection is by result, not by parsing the command: every tracked modified or untracked
+# (non-ignored) file in the cwd's repository whose mtime is at or after the stamp counts.
+# Git-only commands (pull, checkout, rebase …) are skipped — they move other people's code.
+# Subagent and scratchpad edits are skipped exactly like track-edit.sh.
 #
 # Every exit path logs except "not a repository" and "nothing changed", which happen on
 # most Bash calls; the daily `heartbeat` event covers those.

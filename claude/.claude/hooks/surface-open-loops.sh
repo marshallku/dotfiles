@@ -1,14 +1,7 @@
 #!/usr/bin/env bash
 # @hook-event: SessionStart
-# SessionStart hook: surface overdue open-loops once per day.
-#
-# The open-loops registry (life-assistant memory) is faithfully maintained but
-# nothing surfaces it — items sit past their `review_after` for weeks (measured
-# 2026-07-16: 11 items 38~56 days overdue) while daily evening reviews re-log a
-# subset by hand. This hook closes that gap: a once-per-day nudge listing loops
-# whose review date has passed, pointing at `/loops` to triage them.
-#
-# Design (mirrors the intent-capture noise lesson — a nudge, never a wall):
+# SessionStart hook: once per day, list open-loops past their `review_after` date and point at
+# `/loops` to triage them. A nudge, never a wall:
 #   - throttled to once per calendar day via a state marker
 #   - human summary to stderr; a SHORT additionalContext so the model is aware
 #     when asked, but told not to raise it unprompted (won't derail a session)
@@ -23,15 +16,13 @@ set -euo pipefail
 STATE_DIR="$HOME/.claude/state"
 mkdir -p "$STATE_DIR" 2>/dev/null || true
 
-# Global opt-out.
 if [ -f "$STATE_DIR/open-loops-surface-disabled" ]; then
     echo '{}'
     exit 0
 fi
 
-# The registry is the AIDE note loops/open (WU39), read from the local AIDE server (~/docs is a
-# working tree pulled by hand, so its mirror can be days old). OPEN_LOOPS_FILE overrides with a
-# file. Parsed by the shared grammar helper.
+# The registry is the AIDE note loops/open, read from the local AIDE server: ~/docs is pulled by
+# hand, so its mirror can be days old.
 LOOPS_HELPER="$HOME/.claude/scripts/open-loops.py"
 if [ -n "${OPEN_LOOPS_FILE:-}" ]; then
     LOOPS_FILE="$OPEN_LOOPS_FILE"
@@ -55,7 +46,6 @@ fi
 TODAY=$(date +%Y-%m-%d)
 MARKER="$STATE_DIR/open-loops-surfaced-$TODAY"
 
-# GC yesterday's markers (keep only today's).
 find "$STATE_DIR" -maxdepth 1 -type f -name 'open-loops-surfaced-*' \
     ! -name "open-loops-surfaced-$TODAY" -delete 2>/dev/null || true
 
@@ -155,5 +145,4 @@ if [ "$rc" -ne 0 ] || [ -z "$OUT" ]; then
     exit 0
 fi
 
-# Marker already claimed atomically above — just emit the result.
 printf '%s\n' "$OUT"

@@ -28,10 +28,8 @@ if [ ! -f "$INTENT_FILE" ]; then
     exit 2
 fi
 
-# Extract frontmatter (between first two --- lines)
 FRONTMATTER=$(awk '/^---$/{c++; if(c==2)exit; next} c==1' "$INTENT_FILE")
 
-# Count list entries under a top-level key (lines starting with "  - ")
 count_list_entries() {
     local key="$1"
     awk -v k="^${key}:$" '
@@ -42,13 +40,11 @@ count_list_entries() {
     ' <<< "$FRONTMATTER"
 }
 
-# Get scalar value for a top-level key (one-line value after "key: ")
 get_scalar() {
     local key="$1"
     awk -v k="^${key}: " '$0 ~ k { sub(k, ""); print; exit }' <<< "$FRONTMATTER"
 }
 
-# Get scalar inside the `verification:` block (`  e2e: ...`, `  reason: ...`)
 get_verification_field() {
     local field="$1"
     awk -v f="^  ${field}: " '
@@ -114,7 +110,6 @@ CONTENT_HASH="sha256:$(printf '%s' "$PAYLOAD" | sha256sum | awk '{print $1}')"
 CANONICAL_URL=$(get_scalar canonical_url)
 DEDUPE_KEY="sha256:$(printf '%s%s' "$CANONICAL_URL" "$CONTENT_HASH" | sha256sum | awk '{print $1}')"
 
-# Update content_hash / dedupe_key in place (only those two lines)
 TMPFILE=$(mktemp)
 trap 'rm -f "$TMPFILE"' EXIT
 awk -v ch="$CONTENT_HASH" -v dk="$DEDUPE_KEY" '
@@ -125,7 +120,6 @@ awk -v ch="$CONTENT_HASH" -v dk="$DEDUPE_KEY" '
 mv "$TMPFILE" "$INTENT_FILE"
 trap - EXIT
 
-# Ack marker
 ACK_DIR="$HOME/.claude/state/intent-acks"
 mkdir -p "$ACK_DIR"
 BASENAME=$(basename "$INTENT_FILE" .md)

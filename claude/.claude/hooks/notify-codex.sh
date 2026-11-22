@@ -15,7 +15,7 @@ payload=""
 if [[ $# -gt 0 ]]; then
     payload="${!#}"
 fi
-# Fallback to stdin (shouldn't happen with current codex behaviour, but cheap).
+# Codex passes the payload as argv; stdin is only a defensive fallback.
 if [[ -z "$payload" ]] && ! [ -t 0 ]; then
     payload=$(cat 2>/dev/null || true)
 fi
@@ -24,8 +24,7 @@ fi
 
 event_type=$(printf '%s' "$payload" | jq -r '.type // ""' 2>/dev/null)
 
-# Only react to agent-turn-complete for now; ignore other event types codex
-# may emit so we don't double-notify per turn.
+# Other codex event types would notify the same turn twice.
 [[ "$event_type" != "agent-turn-complete" ]] && exit 0
 
 cwd=$(printf '%s' "$payload" | jq -r '.cwd // ""' 2>/dev/null)
@@ -34,7 +33,6 @@ last_msg=$(printf '%s' "$payload" | jq -r '."last-assistant-message" // ""' 2>/d
 
 cwd_name=$(basename "${cwd:-${PWD:-}}")
 title="Codex · $cwd_name"
-# First line of last assistant message as the preview; fall back to generic.
 preview=$(printf '%s' "$last_msg" | head -n1 | cut -c1-160)
 body="${preview:-Turn finished}"
 

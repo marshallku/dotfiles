@@ -55,7 +55,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         -h|--help)
-            sed -n '2,20p' "$0"
+            awk 'NR > 1 && !/^#/ { exit } NR > 1' "$0"
             exit 0
             ;;
         --)
@@ -87,15 +87,11 @@ if [[ -n "${CODEX_PLAN_MODEL:-}" ]]; then
     MODEL_ARGS=(--model "$CODEX_PLAN_MODEL")
 fi
 
-# Plan threads are keyed per repo so /ask-codex or /cross-review between
-# rounds cannot steal the resume (the old --resume-last failure mode).
+# Keyed per repo so /ask-codex or /cross-review between rounds cannot steal the resume.
 REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")
 THREAD_KEY="${CODEX_PLAN_THREAD_KEY:-plan-$(repo_hash "$REPO_ROOT")}"
 
-# Frame codex as an adversarial planner — challenge, don't rubber-stamp.
 # Read-only sandbox is the runner's default (no --write flag).
-# AGENTS.md "Code Review Principles" + "What NOT to do" already cover the
-# attitude; we just point codex at the plan and the angles to check.
 build_fresh_prompt() {
     cat <<EOF
 Pressure-test this plan before implementation per AGENTS.md. Find what would break it: hidden assumptions, missed edge cases / failure modes, simpler alternatives skipped, scope gaps vs the ask, concrete risks (data loss, race, rollback, perf, security). If genuinely sound, say so briefly and stop. Read the codebase as needed; do not edit files or propose to implement.
@@ -142,9 +138,8 @@ if [[ "$MODE" == "continue" && $PLAN_STATUS -eq 3 ]]; then
     echo "[codex-plan] no resumable plan thread; starting a fresh round" >&2
     run_plan reset
 fi
-# A completed turn already pings the user: `codex exec` invokes the `notify`
-# program from ~/.codex/config.toml (the app-server path did not, which is why
-# this used to be manual). Only ping for outcomes codex never reports itself.
+# `codex exec` already pings completed turns via the config.toml `notify` program;
+# ping only for failures codex never reports itself.
 if [[ $PLAN_STATUS -ne 0 ]]; then
     notify_codex_done "codex-plan FAILED (exit $PLAN_STATUS)" "$REPO_ROOT"
 fi

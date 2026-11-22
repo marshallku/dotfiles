@@ -7,10 +7,8 @@
 #
 # macOS: ~/Library/LaunchAgents/<LABEL>.plist (launchd, daily 12:30, also catches up after sleep).
 # Linux: ~/.config/systemd/user/reap-disk.{service,timer} (OnCalendar=daily, Persistent=true).
-# The job runs with the user's own permissions: agents had 49 rm -r denials in a month, 33 of them
-# on scratch paths, so clean-up belongs to a scheduler, not to an agent turn. It only ever moves
-# things to the trash (see reap-disk.sh). The harness trip wire flags a LaunchAgent whose target
-# under ~/.claude disappeared.
+# Runs with the user's own permissions, because agent turns are denied recursive deletes; it only
+# ever moves things to the trash (see reap-disk.sh).
 
 set -euo pipefail
 

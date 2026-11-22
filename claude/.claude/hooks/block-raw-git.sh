@@ -1,20 +1,9 @@
 #!/usr/bin/env bash
 # @hook-event: PreToolUse
-# PreToolUse Bash hook — hard-block raw `git commit` issued directly through
-# the Bash tool. All commits MUST go through ~/save.sh, which wraps commit+push
-# atomically with the project's guards (and runs git internally, so its own
-# commit is never seen as a Bash tool call here). Every other git subcommand —
-# including `git push` (tags, branches, retrying a failed save.sh push) — is
-# allowed; only commit creation is the policy boundary.
-#
-# This is an UNCONDITIONAL deny — unlike pre-commit-gate.sh (which allows the
-# commit once a review marker + intent exist), this gate never lets a raw git
-# commit through. Rationale: user policy is "always commit via ~/save.sh"
-# (see ~/.claude memory: feedback_save_sh_for_commit).
-#
-# Matches: `git commit` and `-C <path>` / flag variants thereof,
-# even inside composed commands (`cd x && git commit ...`). Allows anything
-# that routes through save.sh.
+# PreToolUse Bash hook — unconditionally deny a raw `git commit` issued through the Bash tool,
+# including `-C <path>`/flag variants and composed commands. Commits go through ~/save.sh, which
+# runs git internally, so its own commit never reaches this hook. Every other git subcommand,
+# including `git push`, is allowed. Unlike pre-commit-gate.sh, no review marker lets it through.
 #
 # Opt-out (only if the user explicitly asks):
 #   one-time:  touch ~/.claude/state/raw-git-block-disabled  (commit, then rm)
@@ -36,14 +25,11 @@ log() {
     hook_log block-raw-git "$@"
 }
 
-# Global / one-time opt-out marker.
 [ -f "$DISABLED" ] && { echo '{}'; exit 0; }
 
-# Shared parser first (_commit_targets.py, also pre-commit-gate's): when it fully understands
-# the command it knows whether a raw `git commit` actually runs, so `grep "git commit" x`,
-# `rg 'git commit'` or a python patch whose text says it are not blocked (on the work Mac at
-# least 5 of 11 blocks in a month were such reads). Anything it cannot parse, or a helper that
-# fails, falls through to the regex below, which is the old behaviour.
+# Shared parser first (_commit_targets.py, also pre-commit-gate's): it knows whether a raw
+# `git commit` actually runs, so `grep "git commit" x` is not blocked. Anything it cannot parse,
+# or a failing helper, falls through to the regex below.
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
 # Skip python when the command cannot commit by the helper's own first test (no save.sh, no
 # git … commit): the regex below could not match either.
@@ -112,8 +98,7 @@ Do this instead:
 
 If you genuinely need a raw git commit (rare — ask the user first):
   touch ~/.claude/state/raw-git-block-disabled   # then run it, then rm the marker'
-    # Top-level {permissionDecision, message} is not a PreToolUse decision: Claude Code
-    # ignored it and ran the command (both gates were log-only until 2026-10-30).
+    # Claude Code ignores a top-level {permissionDecision}; only hookSpecificOutput decides.
     jq -n --arg msg "$REASON" '{hookSpecificOutput:{hookEventName:"PreToolUse", permissionDecision:"deny", permissionDecisionReason:$msg}}'
     exit 0
 fi

@@ -1,14 +1,8 @@
 #!/usr/bin/env bash
 # @hook-event: PreCompact
-# PreCompact hook: preserve re-injectable state across a context compaction.
-#
-# Why: an autonomous loop (/goal, /loop) has its work-unit contract injected by
-# contract-inject.sh only on the prompt that starts it. A mid-session
-# auto-compaction drops that (and the rest of the live context) and nothing
-# re-injects it. This hook snapshots the git state + a standing-gate reminder to
-# a session-scoped file that session-start.sh re-injects on the following
-# SessionStart(source=compact). It also refreshes handoffs/latest.md so a Stop
-# is not required to capture the current tree.
+# PreCompact hook: snapshot the git state and a standing-gate reminder to a session-scoped file
+# that session-start.sh re-injects on SessionStart(source=compact), because contract-inject.sh
+# injects the loop contract only on the starting prompt. Also refreshes handoffs/latest.md.
 #
 # Non-blocking: always emits {} and exits 0; every git call is guarded.
 
@@ -26,7 +20,6 @@ mkdir -p "$STATE_DIR" "$HANDOFF_DIR" 2>/dev/null || true
 
 TS=$(date +"%Y-%m-%d %H:%M")
 
-# Build a git snapshot block if cwd is a work tree (mirrors auto-handoff.sh).
 GIT_BLOCK="(no git repo detected in cwd)"
 if [ -n "$CWD" ] && git -C "$CWD" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     BRANCH=$(git -C "$CWD" branch --show-current 2>/dev/null || echo "detached")

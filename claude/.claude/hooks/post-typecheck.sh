@@ -1,36 +1,17 @@
 #!/usr/bin/env bash
 # @hook-event: PostToolUse
-# PostToolUse (Edit|Write) — the harness's computational sensor.
+# PostToolUse (Edit|Write) — the harness's computational sensor: runs the edited project's
+# type checker and feeds errors back to Claude as additionalContext, so a type error surfaces
+# at edit time rather than at commit review.
 #
-# Runs the edited project's type checker and feeds any errors back to Claude as
-# additionalContext, so a type error is caught at edit time instead of at commit
-# time by an expensive LLM reviewer.
-#
-# ---------------------------------------------------------------------------
-# HISTORY — this hook was silently dead from 2026-04-21 to 2026-08-31.
-#
-# The old version ran under `set -euo pipefail` and built its error detail with:
-#     DETAIL=$(cd "$ROOT" && npx tsc --noEmit --pretty false 2>&1 | grep "error TS" | head -5)
-# With pipefail that pipeline inherits tsc's non-zero exit, and unlike the line
-# above it there was no `|| true`, so `set -e` killed the script one line before
-# the printf. It aborted on exactly the path where errors exist and only ever
-# emitted `{}` on the clean path — i.e. it reported "no errors" and nothing else,
-# for four months. It also never wrote to hooks-debug.log, so nothing about the
-# failure was observable.
-#
-# Three rules follow from that and must not be undone:
-#   1. NO `set -e`. A sensor that aborts is worse than no sensor: it reports
-#      clean. Every fallible command is handled explicitly instead.
-#   2. Every exit path logs, except the unsupported-file-extension one, which
-#      records a daily heartbeat instead (see the comment at that branch). If this hook ever dies again, the gap in
-#      hook-events.jsonl is the evidence.
-#   3. The checker runs ONCE and its output is reused for both the count and the
-#      detail. The old version invoked tsc twice per edit.
-# ---------------------------------------------------------------------------
+# Rules that must not be undone:
+#   1. No `set -e`: a sensor that aborts reports clean. Handle every fallible command explicitly.
+#   2. Every exit path logs, except the unchecked-extension one, which records a daily
+#      heartbeat; a gap in hook-events.jsonl means the hook died.
+#   3. Run the checker once and reuse its output for both the count and the detail.
 #
 # Opt-out: touch ~/.claude/state/post-typecheck-disabled
-# Tuning:  POST_TYPECHECK_TIMEOUT_SECS (default 25; the hook's own budget in
-#          settings.json is 30s, so stay under it)
+# Tuning:  POST_TYPECHECK_TIMEOUT_SECS (default 25; stay under the hook's 30s budget in settings.json)
 
 set -uo pipefail
 
@@ -46,8 +27,6 @@ command -v hook_event >/dev/null 2>&1 || hook_event() { :; }
 clean() { echo '{}'; exit 0; }
 
 # PostToolUse surfaces hookSpecificOutput.additionalContext back to the model.
-# (The old version emitted a bare `{"hookSpecificOutput":{"message":...}}`, which
-# has no hookEventName and is not part of the schema.)
 report() {
     jq -nc --arg ctx "$1" '{
       hookSpecificOutput: {
@@ -70,13 +49,8 @@ if [ -z "$FILE_PATH" ]; then
     clean
 fi
 
-# The one deliberately unlogged exit. Every .md/.json/.sh/.txt edit lands here,
-# so logging it would make "file this hook does not check" the highest-volume
-# record in the ledger while saying nothing about the sensor's health. Every
-# other exit path — including disabled and malformed input above — is recorded.
-# It still records one `heartbeat` a day, so a machine that only edits .lua/.sh for a
-# week shows a live hook instead of tripping harness-report's "gone silent" wire
-# (309 false trips on Linux in November).
+# The one deliberately unlogged exit: every .md/.json/.sh edit lands here and would drown the
+# ledger. One `heartbeat` a day keeps harness-report from reading the hook as gone silent.
 EXT="${FILE_PATH##*.}"
 case "$EXT" in
     ts|tsx|rs|go) ;;
@@ -90,7 +64,6 @@ case "$EXT" in
         ;;
 esac
 
-# Nearest ancestor directory holding a project manifest.
 find_project_root() {
     local dir="$1"
     while [ "$dir" != "/" ] && [ -n "$dir" ]; do
@@ -117,7 +90,6 @@ find_local_bin() {
     return 1
 }
 
-# Nearest ancestor holding a Yarn Plug'n'Play manifest (.pnp.cjs).
 find_pnp_root() {
     local dir="$1"
     while [ "$dir" != "/" ] && [ -n "$dir" ]; do
@@ -135,15 +107,9 @@ PROJECT_ROOT=$(find_project_root "$(dirname "$FILE_PATH")") || {
     clean
 }
 
-# Run a checker once, setting OUTPUT and RUN_STATUS in the CURRENT shell
-# (124 = timed out, 127 = no timeout binary available).
-#
-# Deliberately not `OUTPUT=$(run_checker ...)`: a command substitution runs the
-# function in a subshell, so the RUN_STATUS assignment is discarded and the
-# parent keeps its initial 0 — which reads as "checker succeeded" for both the
-# timeout and the crashed-checker paths. That is the same shape of silent
-# false-clean this hook was rewritten to eliminate. Route the output through a
-# temp file and call run_checker as a plain command instead.
+# run_checker sets OUTPUT and RUN_STATUS (124 = timed out, 127 = could not run) in the current
+# shell. Never call it as `OUTPUT=$(run_checker ...)`: the subshell drops RUN_STATUS, which
+# then reads as a clean pass; output goes through a temp file instead.
 RUN_STATUS=0
 OUTPUT=""
 CHECK_OUT=$(mktemp 2>/dev/null || true)
@@ -180,11 +146,9 @@ case "$EXT" in
             run_checker "$TSC_BIN" --noEmit --pretty false
         elif PNP_ROOT=$(find_pnp_root "$PROJECT_ROOT") && command -v yarn >/dev/null 2>&1 \
             && (cd "$PROJECT_ROOT" && yarn bin tsc >/dev/null 2>&1); then
-            # Yarn PnP has no node_modules/.bin, so this branch used to skip as no_local_tsc:
-            # 1,799 of 2,664 TS edits on the work machine, the busiest repos included.
-            # `yarn bin tsc` proves the project's own typescript resolves (not an unrelated
-            # global). --incremental keeps re-checks near 5s; its build info goes to a cache,
-            # never into the repository.
+            # Yarn PnP has no node_modules/.bin; `yarn bin tsc` proves the project's own
+            # typescript resolves. --incremental keeps re-checks fast, with its build info in
+            # a cache, never in the repository.
             BUILDINFO_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/post-typecheck"
             mkdir -p "$BUILDINFO_DIR" 2>/dev/null
             BUILDINFO="$BUILDINFO_DIR/$(printf '%s' "$PROJECT_ROOT" | portable_md5 2>/dev/null | head -c 16).tsbuildinfo"
@@ -212,12 +176,8 @@ case "$EXT" in
             hook_event post-typecheck skip lang=rs reason=host_unbuildable_cached root="$PROJECT_ROOT"
             clean
         fi
-        # `cargo check --message-format short` emits two shapes:
-        #   src/main.rs:1:27: error[E0308]: mismatched types...   <- the diagnostic
-        #   error: could not compile `x` due to 1 previous error  <- cargo's summary
-        # The inherited '^error' matched ONLY the summary, so the sensor reported
-        # "1 Rust error" and showed the useless rollup line no matter how many
-        # real errors there were. Match the file-prefixed diagnostics instead.
+        # Count only file-prefixed diagnostics (`src/main.rs:1:27: error[E0308]: ...`), not
+        # cargo's `error: could not compile ...` summary line.
         ERROR_RE=':[0-9]+:[0-9]+: error'
         run_checker cargo check --message-format short
         ;;
@@ -225,10 +185,7 @@ case "$EXT" in
         [ -f "$PROJECT_ROOT/go.mod" ] || { hook_event post-typecheck skip lang=go reason=no_go_mod root="$PROJECT_ROOT"; clean; }
         command -v go >/dev/null 2>&1 || { hook_event post-typecheck skip lang=go reason=no_go root="$PROJECT_ROOT"; clean; }
         LANG_LABEL="Go"
-        # `go vet` prefixes type errors with "vet: " (vet: internal/x/y.go:45:15:
-        # undefined: Foo). Without the optional prefix those lines never matched,
-        # so real compile errors were logged as checker_error and never reached
-        # Claude — the same silent false-clean as the 2026 outage above.
+        # `go vet` may prefix type errors with "vet: " (`vet: internal/x/y.go:45:15: undefined: Foo`).
         ERROR_RE='^(vet: )?[^[:space:]]+\.go:[0-9]+'
         run_checker go vet ./...
         ;;

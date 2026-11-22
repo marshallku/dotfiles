@@ -4,15 +4,8 @@
 # has consulted the ~/docs SSoT at least once (a `dn search`/`tag`/`related`
 # Bash command in this session's transcript; Codex passes its command ledger).
 #
-# The gate reads the transcript only when a plan is presented. It used to rely on
-# ssot-check-mark.sh, a PostToolUse Bash hook that ran on every command (27,273 runs
-# in a month on the work Mac, p50 88 ms) for a gate that fired zero times.
-#
-# Rationale: free-form planning otherwise skips ~/docs entirely — only the
-# /codex-plan skill wired it in. Gating on ExitPlanMode catches every plan
-# the model presents, keyword-free, the same way pre-commit-gate.sh catches
-# every commit. The marker is per-session: once you've searched, the relevant
-# SSoT is in context for the rest of the session, so later plans pass freely.
+# Free-form planning otherwise skips ~/docs; gating on ExitPlanMode catches every plan
+# keyword-free. Once consulted, the SSoT stays in context, so later plans in the session pass.
 #
 # Allows when:
 #   - ~/.claude/state/ssot-gate-disabled exists (session-wide opt-out)
@@ -35,14 +28,11 @@ MARKER="$STATE_DIR/ssot-checked-${SESSION}"
 LOG_FILE="$HOME/.claude/hooks-debug.log"
 
 log() {
-    # Delegates to _lib.sh so every hook shares one date-stamped format.
     hook_log plan-ssot-gate "$@"
 }
 
-# Session-wide opt-out
 [ -f "$DISABLED" ] && { log "allow: globally disabled"; echo '{}'; exit 0; }
 
-# No SSoT on this machine → nothing to consult, don't block
 if [ ! -x "$HOME/docs/scripts/dn" ] || [ ! -d "$HOME/docs" ]; then
     log "allow: dn/~/docs not present"
     echo '{}'

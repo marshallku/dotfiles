@@ -3,12 +3,8 @@
 # Stop hook — after a work unit is committed (~/save.sh succeeded) in a session whose context has
 # grown past SESSION_SIZE_NUDGE_TOKENS (default 300k), tell the user once that the next unit is
 # cheaper in a fresh session. A note to the user (systemMessage), never a block.
-#
-# Why: interactive Opus turns re-read 274k tokens of context on average and 30% exceeded 300k;
-# the ten largest sessions used 57% of all tokens, and the session with the most corrections was
-# one of them (work Mac, 2026-10-20 → 11-19). Cache hits were already 98%, so the remaining lever
-# is not carrying a committed work unit's context into the next one. auto-handoff.sh already
-# writes the handoff, so picking up again is cheap. Opt-out: ~/.claude/state/session-size-disabled
+# auto-handoff.sh already writes the handoff, so picking up again is cheap.
+# Opt-out: ~/.claude/state/session-size-disabled
 
 set -uo pipefail
 
@@ -22,8 +18,8 @@ log() { hook_log session-size "$@"; }
 
 SESSION=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)
 TRANSCRIPT=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null)
-# Sessions already nudged, one id per line, never expired or trimmed: a long session must not
-# get the note twice, and the list grows ~37 bytes per nudged session (~135 KB a year).
+# Sessions already nudged, one id per line, never expired: a long session must not get the note
+# twice, and at ~37 bytes per nudged session the list stays small.
 NUDGED="$STATE_DIR/session-size-nudged.list"
 
 if [ -f "$STATE_DIR/session-size-disabled" ]; then log "allow: disabled"; echo '{}'; exit 0; fi

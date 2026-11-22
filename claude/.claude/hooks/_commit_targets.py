@@ -342,7 +342,7 @@ def main():
     try:
         targets = precise(cmd, cwd, home)
     except Fallback:
-        # The pre-helper trigger plus block-raw-git's `git [opts] commit`: never looser than before.
+        # Never looser than a plain-text match on save.sh, `git commit` or block-raw-git's `git [opts] commit`.
         old_trigger = "save.sh" in cmd or "git commit" in cmd or bool(GIT_INVOCATION_RE.search(cmd))
         targets = [("fallback", d) for d in fallback_targets(cmd, cwd, home)] if old_trigger else []
     if not targets:

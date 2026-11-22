@@ -3,8 +3,8 @@
 # PreToolUse hook: agent-deny-paths 안의 경로를 읽기·목록·검색하지 못하게 한다.
 #
 # 목록: ~/.claude/agent-deny-paths (git 밖, 선택). 한 줄에 `~/…` 또는 `/abs`, `*`·`?`·`**` glob.
-# 목록이 git 밖이라 settings.json `Read(...)` 규칙으로 옮길 수 없고, 이 훅이 유일한 층이다.
-# (그 규칙도 상위 디렉터리에서 도는 `grep -r TOKEN proj`는 막지 않아 내용이 새어 나왔다, 2026-11-16 재현.)
+# 목록이 git 밖이라 settings.json `Read(...)` 규칙으로 옮길 수 없고(그 규칙은 상위에서 도는
+# `grep -r`도 못 막는다), 이 훅이 유일한 층이다.
 # 판정은 _read_policy.py가 한다: 상대경로·cd·glob·`--opt=path`·`bash -c`까지 풀어서
 # 보호 경로에 닿으면 deny, 상위에서 재귀로 도는 명령은 보호 디렉터리를 제외하지 않으면 deny.
 # 도우미가 실패하면 deny — 판정 못 한 읽기를 통과시키지 않는다.

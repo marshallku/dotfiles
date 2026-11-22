@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # @hook-event: SessionStart
 # SessionStart hook: state GC, ledger/log rotation, and post-compaction re-injection.
-# The previous-session handoff is no longer injected: it repeated the gitStatus Claude
-# Code already provides (672 injections × ~1.4 KB in 30 days). auto-handoff.sh still
-# writes it for /catchup.
+# The previous-session handoff is not injected: it repeats Claude Code's own gitStatus
+# (auto-handoff.sh writes it for /catchup).
 
 set -euo pipefail
 
@@ -30,11 +29,8 @@ if [ -d "$STATE_DIR" ]; then
         find "$STATE_DIR/codex-live" -maxdepth 1 -type f -mtime +7 -delete 2>/dev/null || true
     fi
 
-    # intent-active-* 는 원래 live enforcement 상태라 나이 기준 삭제에서
-    # 빼 두었는데, intent-capture 훅이 2026-06-30 에 비활성화되면서 아무도
-    # 새로 만들지 않고 아무도 읽지 않는 잔해가 되었다 (2026-08-31 기준 49개,
-    # 최신 것이 6월). 하루가 아니라 7일 창을 쓰는 이유는 훅을 다시 켰을 때
-    # 장기 세션의 진짜 마커를 지우지 않기 위해서다.
+    # intent-active-* 는 intent-capture 훅이 꺼져 있어 잔해다. 하루가 아니라 7일 창인 것은
+    # 훅을 다시 켰을 때 장기 세션의 진짜 마커를 지우지 않기 위해서다.
     find "$STATE_DIR" -maxdepth 1 -type f -name "intent-active-*" \
         -mtime +7 -delete 2>/dev/null || true
 

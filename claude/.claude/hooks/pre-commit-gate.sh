@@ -44,7 +44,6 @@ INTENT_DISABLED="$STATE_DIR/intent-capture-disabled"
 INTENT_SOFT_GATE="${AUTO_INTENT_SOFT_GATE:-1}"
 
 log() {
-    # Delegates to _lib.sh so every hook shares one date-stamped format.
     hook_log pre-commit-gate "$@"
 }
 
@@ -104,23 +103,18 @@ check_intent_state() {
 e2e_evidence_in_transcript() {
     local transcript="$1"
     [ -z "$transcript" ] || [ ! -f "$transcript" ] && return 1
-    # Look at the last 64KB of transcript for tool invocations or terminal
-    # output that smells like a test/e2e run. Heuristic only — the schema
-    # already enforces declaration; this just adds a soft signal.
+    # Soft signal only; the intent schema already enforces the declaration.
     tail -c 65536 "$transcript" 2>/dev/null | grep -qiE \
         '(playwright|cypress|@playwright|test:e2e|npm run e2e|pnpm e2e|bun test|jest|vitest|cargo test|go test|pytest|rspec)' \
         && return 0
     return 1
 }
 
-# Global opt-out
 [ -f "$DISABLED" ] && { echo '{}'; exit 0; }
 
-# Which repositories does this command commit in? _commit_targets.py answers
-# for the shapes it fully understands (`grep … ~/save.sh` commits nothing;
-# `cd ~/docs && ~/save.sh …` commits in ~/docs, not the session cwd) and falls
-# back to cwd + every literal cd target otherwise. If the helper itself cannot
-# run, the substring match below is the old behaviour, unchanged.
+# _commit_targets.py resolves which repositories the command commits in (`grep … ~/save.sh`:
+# none; `cd ~/docs && ~/save.sh …`: ~/docs, not the session cwd). If it cannot run, a plain
+# substring match decides.
 if [ -n "${PRE_COMMIT_GATE_DIR:-}" ]; then
     CWD="$PRE_COMMIT_GATE_DIR"
 else
@@ -182,7 +176,6 @@ git add/rm/restore/reset/checkout/... earlier in the same command would produce.
     fi
 fi
 
-# Resolve the repository independently of Edit/Write tracking.
 if [ -z "$CWD" ]; then
     log "allow: no cwd provided"
     echo '{}'
@@ -198,11 +191,8 @@ fi
 REPO_HASH=$(repo_hash "$REPO_ROOT")
 DELEGATE_PENDING="$STATE_DIR/codex-delegate-pending-$REPO_HASH"
 
-# Approval bound to the exact staged content → check intent gate before allowing.
-# Whichever session reviewed it, the same HEAD/index pair is the same commit.
+# Approval is bound to the HEAD/index pair, so a review from any session counts.
 if review_approval_valid "$REPO_ROOT"; then
-    # Intent gate is a no-op in soft-gate or globally-disabled mode. The
-    # review marker alone is the gate, same as before this hook was extended.
     if [ "$INTENT_SOFT_GATE" = "1" ] || [ -f "$INTENT_DISABLED" ]; then
         log "allow: reviewed marker present (intent gate soft/disabled)"
         echo '{}'
@@ -215,7 +205,6 @@ if review_approval_valid "$REPO_ROOT"; then
 
     case "$INTENT_KIND" in
         ok)
-            # Final soft-signal e2e check when required
             E2E_DECL=$(awk '
                 /^---$/ { c++; if(c==2) exit; next }
                 c==1 && /^verification:$/ { flag=1; next }

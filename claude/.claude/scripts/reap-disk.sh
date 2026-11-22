@@ -7,8 +7,7 @@
 #
 # Built-in targets (all regenerable, all moved to the trash, never deleted):
 #   chrome-clone   macOS: $TMPDIR/../X/com.google.Chrome.code_sign_clone/* older than 1 h with no
-#                  file open (lsof). Chrome leaves a 2.2 GB copy per launch when killed; the work Mac
-#                  had 17 (37 GB), once 179.
+#                  file open (lsof). Chrome leaves a multi-GB copy per launch when killed.
 #   claude-scratch Claude Code session scratchpads (/tmp/claude-<uid>/<project>/<session>) with
 #                  nothing modified for 3 days.
 # Listed only (never moved — a human decides):
@@ -21,9 +20,8 @@
 #   nothing modified for <days> days are trash candidates.
 #
 # Writes ~/.claude/state/reap-disk.json {ts, mode, reclaimable_kb, reclaimed_kb, items[]} for the
-# statusline/AIDE. Scheduled daily by reap-disk-install.sh (launchd / systemd --user).
-# Why: three weeks of disk clean-ups by hand on the work Mac (62 → 115 GB free, 91 → 243 GB, …);
-# a tool a person has to remember to run does not run.
+# statusline/AIDE. Scheduled daily by reap-disk-install.sh (launchd / systemd --user), because a
+# clean-up a person has to remember to run does not run.
 
 set -uo pipefail
 
@@ -35,7 +33,7 @@ for arg in "$@"; do
     case "$arg" in
         --apply) APPLY=1 ;;
         --quiet) QUIET=1 ;;
-        -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
+        -h|--help) awk 'NR > 1 && !/^#/ { exit } NR > 1' "$0"; exit 0 ;;
         *) echo "[reap-disk] unknown argument: $arg" >&2; exit 2 ;;
     esac
 done
@@ -70,7 +68,6 @@ unique_dest() {
 move_new() { [ ! -e "$2" ] && mv -n "$1" "$2" && [ ! -e "$1" ]; }
 add() { printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$(size_kb "$2")" "$3" >> "$ITEMS"; }
 
-# --- trash ---------------------------------------------------------------------
 trash_path() {
     local path="$1"
     # Tests (and anyone who wants a staging area) can redirect the trash.
@@ -93,15 +90,13 @@ trash_path() {
     move_new "$path" "$trash/files/$name" || { rm -f "$trash/info/$name.trashinfo"; return 1; }
 }
 
-# --- targets ---------------------------------------------------------------------
 scan_chrome_clones() {
     [ "$(uname -s)" = Darwin ] || return 0
     local root="${REAP_DISK_CHROME_ROOT:-${TMPDIR:-/tmp}/../X/com.google.Chrome.code_sign_clone}" dir
     [ -d "$root" ] || return 0
-    # In use = some process has a file open inside the copy. Chrome runs from /Applications, so its
-    # command line never names the clone; only open files tell (reproduced on the mac-mini: 2 of
-    # 6 clones were open). Chrome runs as this user, so this user's processes are enough, and lsof
-    # exits 0 for them; no lsof, or any non-zero exit (partial output), skips the target.
+    # In use = this user's processes hold a file open inside the copy; Chrome runs from
+    # /Applications, so its command line never names the clone. No lsof, or a non-zero exit
+    # (partial output), skips the target.
     command -v lsof >/dev/null 2>&1 || return 0
     local open real
     open=$(lsof -n -Fn -u "$(id -u)" 2>/dev/null) || return 0
@@ -202,7 +197,6 @@ scan_config_targets
 scan_worktrees
 scan_docker
 
-# --- act and report -----------------------------------------------------------
 RECLAIMABLE=0
 RECLAIMED=0
 REPORT=$(mktemp "${TMPDIR:-/tmp}/reap-disk.XXXXXX") || exit 2

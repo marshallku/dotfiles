@@ -1,27 +1,20 @@
 #!/usr/bin/env bash
-# PreToolUse Edit|Write hook — captures user intent before non-trivial sessions
-# accumulate technical debt.
+# PreToolUse Edit|Write hook: once a session crosses the non-trivial threshold in a repo
+# without an acked intent file, blocks the edit and asks Claude to write one to
+# ~/docs/sources/sessions/<repo-slug>/<YYYY-MM-DD>-session-<short-id>.md and register it
+# with ~/.claude/scripts/intent-finalize.sh.
 #
-# When the session crosses the non-trivial threshold (cumulative files / lines)
-# and no acked intent file exists for this session+repo, this hook BLOCKS the
-# tool call and tells Claude to write a structured intent file to
-# ~/docs/sources/sessions/<repo-slug>/<YYYY-MM-DD>-session-<short-id>.md.
-#
-# After writing, Claude runs ~/.claude/scripts/intent-finalize.sh to validate
-# schema, compute content_hash/dedupe_key, and register the ack marker. The
-# hook then sees the marker on the next call and allows.
-#
-# Allow paths:
+# Allows when:
 #   - ~/.claude/state/intent-capture-disabled exists (global opt-out)
-#   - AUTO_INTENT_SOFT_GATE=1 (dogfood default — warn, do not block)
-#   - file being edited IS the intent file or lives in state dirs
-#   - session has not crossed the non-trivial threshold yet
-#   - active intent marker + ack file both present and consistent
+#   - AUTO_INTENT_SOFT_GATE=1 (the default; warn, do not block)
+#   - the edited file is the intent file or lives in state dirs
+#   - the session is below the threshold
+#   - the active intent is acked and unchanged since the ack
 #
 # Env overrides (default in parens):
 #   AUTO_INTENT_MIN_FILES    (2)   — distinct files in repo before gate fires
 #   AUTO_INTENT_MIN_LINES    (40)  — weighted diff lines before gate fires
-#   AUTO_INTENT_SOFT_GATE    (1)   — 1=warn-only (dogfood), 0=hard block
+#   AUTO_INTENT_SOFT_GATE    (1)   — 1=warn-only, 0=hard block
 
 set -euo pipefail
 
@@ -41,11 +34,9 @@ MIN_LINES="${AUTO_INTENT_MIN_LINES:-${AUTO_REVIEW_MIN_LINES:-40}}"
 SOFT_GATE="${AUTO_INTENT_SOFT_GATE:-1}"
 
 log() {
-    # Delegates to _lib.sh so every hook shares one date-stamped format.
     hook_log intent-capture "$@"
 }
 
-# Global opt-out
 [ -f "$DISABLED" ] && { echo '{}'; exit 0; }
 
 [ -z "$FILE_PATH" ] && { echo '{}'; exit 0; }
@@ -72,14 +63,12 @@ fi
 REPO_HASH=$(repo_hash "$REPO_ROOT")
 ACTIVE_MARKER="$STATE_DIR/intent-active-${SESSION}-${REPO_HASH}.path"
 
-# Active intent file exists AND has fresh ack → allow
 if [ -f "$ACTIVE_MARKER" ]; then
     INTENT_FILE=$(cat "$ACTIVE_MARKER" 2>/dev/null || echo "")
     if [ -n "$INTENT_FILE" ] && [ -f "$INTENT_FILE" ]; then
         BASENAME=$(basename "$INTENT_FILE" .md)
         ACK_FILE="$STATE_DIR/intent-acks/${BASENAME}.ack"
         if [ -f "$ACK_FILE" ]; then
-            # Stale-ack detection: intent file modified after ack → require re-ack
             ACK_MTIME=$(portable_mtime "$ACK_FILE")
             INTENT_MTIME=$(portable_mtime "$INTENT_FILE")
             if [ "$INTENT_MTIME" -le "$ACK_MTIME" ]; then
@@ -88,13 +77,11 @@ if [ -f "$ACTIVE_MARKER" ]; then
                 exit 0
             fi
             log "stale ack: intent modified after ack ($INTENT_FILE)"
-            # fall through to block with a stale-ack message
             STALE_ACK=1
         fi
     fi
 fi
 
-# Threshold check: only gate non-trivial sessions
 DIRTY_LOG="$STATE_DIR/dirty-${SESSION}.log"
 FILE_COUNT=0
 if [ -f "$DIRTY_LOG" ]; then
@@ -125,14 +112,11 @@ if [ "${STALE_ACK:-0}" != "1" ]; then
     fi
 fi
 
-# Soft gate during first dogfood week
 if [ "$SOFT_GATE" = "1" ]; then
     log "SOFT-GATE: would have blocked ($PROJECTED_FILE_COUNT files, $DIFF_LINES lines) — set AUTO_INTENT_SOFT_GATE=0 for hard block"
     echo '{}'
     exit 0
 fi
-
-# --- HARD BLOCK ---
 
 REPO_SLUG=$(basename "$REPO_ROOT")
 DATE_STR=$(date +%Y-%m-%d)
@@ -141,7 +125,6 @@ INTENT_FILE="$HOME/docs/sources/sessions/${REPO_SLUG}/${DATE_STR}-session-${SHOR
 INTENT_DIR=$(dirname "$INTENT_FILE")
 CAPTURED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-# Detect owner/repo from git remote for the `repo:` field
 REPO_REMOTE=$(git -C "$REPO_ROOT" config --get remote.origin.url 2>/dev/null || echo "")
 REPO_OWNER_NAME=""
 if [ -n "$REPO_REMOTE" ]; then
