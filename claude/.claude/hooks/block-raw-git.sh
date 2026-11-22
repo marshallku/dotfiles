@@ -39,6 +39,20 @@ log() {
 # Global / one-time opt-out marker.
 [ -f "$DISABLED" ] && { echo '{}'; exit 0; }
 
+# Shared parser first (_commit_targets.py, also pre-commit-gate's): when it fully understands
+# the command it knows whether a raw `git commit` actually runs, so `grep "git commit" x`,
+# `rg 'git commit'` or a python patch whose text says it are not blocked (on the work Mac at
+# least 5 of 11 blocks in a month were such reads). Anything it cannot parse, or a helper that
+# fails, falls through to the regex below, which is the old behaviour.
+CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
+KINDS=$(printf '%s' "$CMD" | python3 "$(dirname "$0")/_commit_targets.py" --kinds "${CWD:-$PWD}" 2>/dev/null) \
+    || KINDS="error"
+if [ "$KINDS" = "none" ] || { [ -n "$KINDS" ] && ! printf '%s\n' "$KINDS" | grep -qvE '^save '; }; then
+    log "allow: parser found no raw git commit"
+    echo '{}'
+    exit 0
+fi
+
 # This gate is a HABIT GUARD: it reliably stops the routine `git commit` that
 # should have gone through ~/save.sh, plus the common composed and
 # shell-runner forms. It is NOT an adversarial sandbox — a caller with shell
@@ -75,7 +89,9 @@ fi
 # `git log commit` and `git diff -- commit.txt` stay allowed.
 git_arg='("[^"]*"|'\''[^'\'']*'\''|[^-][^[:space:]]*)'
 git_re="\\bgit\\b([[:space:]]+-[^[:space:]]+([[:space:]]+${git_arg})?)*[[:space:]]+commit([[:space:]]|[;&|\"']|\$)"
-if printf '%s' "$SCAN" | grep -qE "$git_re"; then
+PARSED_GIT=0
+printf '%s\n' "$KINDS" | grep -q '^git ' && PARSED_GIT=1
+if [ "$PARSED_GIT" = 1 ] || printf '%s' "$SCAN" | grep -qE "$git_re"; then
     log "BLOCK: raw git commit -> $CMD"
     REASON='[block-raw-git] Raw `git commit` is blocked by user policy.
 

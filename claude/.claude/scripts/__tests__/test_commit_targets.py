@@ -73,6 +73,35 @@ CASES = [
     (f'~/{S} x; (cd ~/docs)', "FALLBACK"),
     # Round 4: the script is the last word when sed reads stdin.
     (f"cat README.md | sed -n '1e ~/{S}'", "FALLBACK"),
+    # 2026-11-22: commands that only mention the script misfired while a review was pending.
+    (f"ls -la ~/{S}; readlink -f ~/{S}", "none"),
+    (f"bash -n ~/.cache/x/{S}", "none"),
+    (f"bash -n -c '~/{S} x'", "FALLBACK"),
+    (f"ssh me@host 'ls -la ~/{S}; readlink ~/{S}'", "none"),
+    (f"ssh -o ConnectTimeout=5 me@host 'cd ~/dotfiles && git log -3'", "none"),
+    (f"ssh -o ConnectTimeout=5 me@host 'cd ~/dotfiles && ~/{S} \"m\"'", "FALLBACK"),
+    (f"ssh me@host 'bash -c \"~/{S} m\"'", "FALLBACK"),
+    # Python is never inert: allowed modules reach os (pathlib.os, sys.modules), so text that only
+    # mentions the script still falls back (cross-review rounds 1-2 of the 2026-11-22 change).
+    (f"python3 -I -c \"p='README.md'; t=open(p).read().replace('a', '~/{S}'); open(p,'w').write(t)\"", "FALLBACK"),
+    (f"python3 -I - <<'PYEOF'\nopen('t.py','w').write('~/{S} \"Add x\"')\nPYEOF", "FALLBACK"),
+    ("python3 -c \"import pathlib; pathlib.os.system('git " + "commit -m x')\"", "FALLBACK"),
+    ("printf \"import os; os.system('git " + "commit -m x')\" | python3 -", "FALLBACK"),
+    # ssh options run locally, and a pipe reaches the remote shell.
+    ("ssh -o 'ProxyCommand=git " + "commit -m x' host true", "FALLBACK"),
+    ("echo \"git " + "commit -m x\" | ssh host sh", "FALLBACK"),
+    # Pre-existing: a shell fed through a pipe saw no mention in its own (empty) arguments.
+    ('echo "git ' + 'commit -m x" | bash', "FALLBACK"),
+    (f"printf '%s' '~/{S} x' | sh", "FALLBACK"),
+    (f"git ls-files | grep -c '{S}$'", "none"),
+    (f"cat ~/{S} | python3 -c \"import sys; print(len(sys.stdin.read()))\"", "FALLBACK"),
+]
+
+KIND_CASES = [
+    ('git -C ~/docs ' + 'commit -m x', ["git /home/u/docs"]),
+    (f'cd ~/docs && ~/{S} "x"', ["save /home/u/docs"]),
+    (f"bash ~/{S} x", ["fallback " + CW]),
+    ('grep -n "git ' + 'commit" README.md', ["none"]),
 ]
 
 
@@ -91,6 +120,14 @@ class CommitTargetsTests(unittest.TestCase):
                     self.assertEqual(out[0], "none")
                 else:
                     self.assertEqual(sorted(dirs), sorted(want.split("|")))
+
+    def test_kinds(self):
+        env = {"HOME": "/home/u", "PATH": os.environ["PATH"]}
+        for cmd, want in KIND_CASES:
+            with self.subTest(cmd=cmd):
+                out = subprocess.run(["python3", str(HELPER), "--kinds", CW], input=cmd, text=True,
+                                     capture_output=True, env=env, check=True).stdout.split()
+                self.assertEqual(" ".join(out), " ".join(want))
 
 
 if __name__ == "__main__":

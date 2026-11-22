@@ -809,6 +809,12 @@ print(json.dumps({"type":"result", "subtype":"success", "session_id":session,
     def test_raw_git_commit_is_denied_in_the_hook_output_format(self):
         self.assertTrue(self.policy("block-raw-git.sh", "cd /tmp && git commit -m x"))
         self.assertFalse(self.policy("block-raw-git.sh", '~/save.sh "Fix git commit wording"'))
+        # The shared parser: reads that only mention a raw commit are not blocked.
+        self.assertFalse(self.policy("block-raw-git.sh", 'grep -rn "git commit" hooks/ | head'))
+        self.assertFalse(self.policy("block-raw-git.sh", "rg -n 'git commit -m' hooks/ | head -3"))
+        self.assertTrue(self.policy("block-raw-git.sh", "git -c user.name=x commit -m y"))
+        self.assertTrue(self.policy("block-raw-git.sh", 'bash -c "git commit -m x"'))
+        self.assertTrue(self.policy("block-raw-git.sh", "python3 -c \"import os; os.system('git commit -m x')\""))
 
 
 if __name__ == "__main__":

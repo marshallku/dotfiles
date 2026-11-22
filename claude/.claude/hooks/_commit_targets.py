@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Decide which repositories a Bash command would commit in, for pre-commit-gate.sh.
 
-Usage: _commit_targets.py <cwd>  (command on stdin)
+Usage: _commit_targets.py [--kinds] <cwd>  (command on stdin)
 Prints `none` when the command creates no commit, otherwise one `dir <path>` line
-per directory whose repository must pass the gate.
+per directory whose repository must pass the gate. With --kinds each line is
+`<kind> <path>` instead: `save` (save.sh), `git` (a raw git commit) or `fallback`
+(not fully understood) — block-raw-git.sh shares this parser through it.
 
 The precise path only accepts a flat list of simple commands joined by `&&`, `;`,
 `|` or newlines. Anything it does not fully understand (subshells, command or
@@ -38,6 +40,8 @@ HEREDOC = " __heredoc__ "
 # Besides readers, the only programs a heredoc-carrying command may run: they store or
 # route text, they never execute it.
 HEREDOC_SINKS = {"cd", "tee", "mkdir"}
+SHELLS = {"bash", "sh", "zsh", "dash", "ksh"}
+SSH_OPTS_WITH_ARG = set("BbcDEeFIiJLlmOoPpQRSWw")
 
 
 class Fallback(Exception):
@@ -211,11 +215,29 @@ def sed_prints_lines_only(args):
             and all(not a.startswith("-") for a in args[2:]))
 
 
+def shell_only_parses(name, args):
+    """`bash -n FILE…` reads and parses, it never executes."""
+    return name in SHELLS and bool(args) and args[0] == "-n" and "-c" not in args
+
+
+def ssh_parts(args):
+    """(option words, remote command or None) of `ssh [opts] host CMD…`."""
+    i = 0
+    while i < len(args) and args[i].startswith("-"):
+        flag = args[i]
+        i += 2 if len(flag) == 2 and flag[1] in SSH_OPTS_WITH_ARG else 1
+    options = args[:i]
+    if i + 1 >= len(args):
+        return options, None
+    return options, " ".join(args[i + 1:])
+
+
 def resolve(base, target):
     return os.path.normpath(target if os.path.isabs(target) else os.path.join(base, target))
 
 
 def precise(cmd, cwd, home):
+    """[(kind, dir)] for every commit the command makes; kind is `save` or `git`."""
     commands, heredoc = split_commands(cmd)
     if heredoc:
         # The body never reaches a shell unless some program here is one: allow pure readers only.
@@ -232,6 +254,9 @@ def precise(cmd, cwd, home):
     ctx = {cwd}
     chain_points = [set(ctx)]
     targets = []
+    # Text anywhere in the command line can reach a program through a pipe (`echo "git commit" |
+    # bash`), so a program that reads a pipe is judged by the whole line, not only its arguments.
+    line_mentions = mentions_commit([w for _, words in commands for w in words])
     for idx, (sep, words) in enumerate(commands):
         nxt_sep = commands[idx + 1][0] if idx + 1 < len(commands) else None
         if sep == ";":
@@ -255,7 +280,7 @@ def precise(cmd, cwd, home):
         if name in ("pushd", "popd"):
             raise Fallback
         if name == "save.sh":
-            targets.extend(ctx)
+            targets.extend(("save", d) for d in ctx)
             continue
         if name == "git":
             is_commit, cdirs = git_commit_dirs(args, home)
@@ -263,14 +288,28 @@ def precise(cmd, cwd, home):
                 for d in ctx:
                     for c in cdirs:
                         d = resolve(d, c)
-                    targets.append(d)
+                    targets.append(("git", d))
             continue
         if name in READERS and reader_is_inert(name, args):
             continue
         if name == "sed" and sed_prints_lines_only(args):
             continue
+        if shell_only_parses(name, args):
+            continue
+        if name == "ssh":
+            # Runs on another machine: inert here unless the remote command itself commits, which
+            # this gate cannot judge, so that still falls back. Options run locally
+            # (ProxyCommand, LocalCommand) and a pipe feeds the remote shell: both fall back.
+            options, remote = ssh_parts(args)
+            if mentions_commit(options) or (sep in ("|", "|&") and line_mentions):
+                raise Fallback
+            if remote is None or not mentions_commit([remote]):
+                continue
+            if precise(remote, "/nonexistent-remote-cwd", home):
+                raise Fallback
+            continue
         # Shell runners, wrappers (env, timeout, nohup, sudo …) and unknown programs: any mention may run.
-        if mentions_commit(args):
+        if mentions_commit(args) or (sep in ("|", "|&") and line_mentions):
             raise Fallback
     return targets
 
@@ -285,7 +324,11 @@ def fallback_targets(cmd, cwd, home):
 
 
 def main():
-    cwd = sys.argv[1] if len(sys.argv) > 1 else os.getcwd()
+    argv = sys.argv[1:]
+    kinds = bool(argv) and argv[0] == "--kinds"
+    if kinds:
+        argv = argv[1:]
+    cwd = argv[0] if argv else os.getcwd()
     cmd = sys.stdin.read()
     home = os.environ.get("HOME", "")
     if "save.sh" not in cmd and not GIT_COMMIT_RE.search(cmd):
@@ -296,15 +339,16 @@ def main():
     except Fallback:
         # The pre-helper trigger plus block-raw-git's `git [opts] commit`: never looser than before.
         old_trigger = "save.sh" in cmd or "git commit" in cmd or bool(GIT_INVOCATION_RE.search(cmd))
-        targets = fallback_targets(cmd, cwd, home) if old_trigger else []
+        targets = [("fallback", d) for d in fallback_targets(cmd, cwd, home)] if old_trigger else []
     if not targets:
         print("none")
         return
     seen = []
-    for t in targets:
-        if t not in seen:
-            seen.append(t)
-            print(f"dir {t}")
+    for kind, d in targets:
+        line = f"{kind} {d}" if kinds else f"dir {d}"
+        if line not in seen:
+            seen.append(line)
+            print(line)
 
 
 if __name__ == "__main__":
