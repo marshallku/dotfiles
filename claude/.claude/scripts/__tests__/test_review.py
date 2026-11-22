@@ -729,6 +729,14 @@ print(json.dumps({"type":"result", "subtype":"success", "session_id":session,
         result = self.run_cmd(["bash", str(ROOT / "scripts/codex-delegate.sh"), "--background", "Inspect task"])
         self.assertEqual(result.returncode, 0, result.stderr)
         meta_path = next((self.home / ".claude/state").glob("codex-jobs/*/*.meta"))
+        # The job outlives this call (fake codex sleeps 1 s). Let it finish before the temp dir is
+        # removed: under load it was still writing and rmtree failed with "Directory not empty".
+        # Cleanups run last-in-first-out, so this runs before setUp's temp-dir cleanup.
+        def wait_for_job():
+            deadline = time.monotonic() + 30
+            while "exit_status=" not in meta_path.read_text() and time.monotonic() < deadline:
+                time.sleep(0.1)
+        self.addCleanup(wait_for_job)
         fields = dict(line.split("=", 1) for line in meta_path.read_text().splitlines() if "=" in line)
         self.assertEqual(fields["pgid"], fields["pid"])
         self.assertNotEqual(fields["pgid"], str(os.getpgid(0)))
