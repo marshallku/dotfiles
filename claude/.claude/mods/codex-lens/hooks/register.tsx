@@ -28,6 +28,7 @@ type Status = {
   started_at?: string
   ended_at?: string | null
   cwd?: string
+  repo?: string
   events?: string
   exit?: number | null
   verdict?: string | null
@@ -35,7 +36,7 @@ type Status = {
 
 type Run = { name: string; status: Status }
 
-const STRING_FIELDS = ['state', 'thread_key', 'started_at', 'ended_at', 'cwd', 'events', 'verdict'] as const
+const STRING_FIELDS = ['state', 'thread_key', 'started_at', 'ended_at', 'cwd', 'repo', 'events', 'verdict'] as const
 const NUMBER_FIELDS = ['round', 'exit'] as const
 
 // A status file as JSON gives `unknown`: keep it only when it is an object whose fields have the
@@ -58,11 +59,67 @@ export function kindOf(key: string | undefined): string {
   return 'consult'
 }
 
-// The run belongs to this session when one folder holds the other (a review runs at the
-// repository root while the session may sit in a subfolder, or the reverse).
-export function sameWork(runCwd: string | undefined, cwd: string): boolean {
+// One folder holds the other: a review runs at the repository root while the session may sit
+// in a subfolder, or the reverse.
+export function sameFolder(runCwd: string | undefined, cwd: string): boolean {
   if (!runCwd) return false
   return runCwd === cwd || cwd.startsWith(`${runCwd}/`) || runCwd.startsWith(`${cwd}/`)
+}
+
+export type Place = { cwd: string; repo: string | null }
+
+// The run belongs to this session when it ran in the session's folder or in any worktree of the
+// same repository (worktrees share the git common directory codex-exec.sh records as `repo`).
+export function sameWork(status: Status, here: Place): boolean {
+  return sameFolder(status.cwd, here.cwd) || (here.repo !== null && status.repo === here.repo)
+}
+
+// The worktree a run came from, named only when it is not the session's own folder.
+export function whereOf(status: Status, here: Place): string {
+  if (!status.cwd || sameFolder(status.cwd, here.cwd)) return ''
+  return status.cwd.split('/').filter(Boolean).pop() ?? ''
+}
+
+export function normalize(path: string): string {
+  const out: string[] = []
+  for (const part of path.split('/')) {
+    if (part === '' || part === '.') continue
+    if (part === '..') out.pop()
+    else out.push(part)
+  }
+  return `/${out.join('/')}`
+}
+
+function absolute(path: string, base: string): string {
+  return normalize(path.startsWith('/') ? path : `${base}/${path}`)
+}
+
+async function realPath($: EngineInterface, path: string): Promise<string> {
+  const stat = await $.fs.stat(path, { resolve: true }).catch(() => undefined)
+  return stat?.realPath ?? normalize(path)
+}
+
+async function readText($: EngineInterface, path: string): Promise<string | undefined> {
+  const text = await $.fs.read(path).catch(() => undefined)
+  return typeof text === 'string' ? text : undefined
+}
+
+// The git common directory for a folder, read from disk as git does: `.git` is the directory
+// itself, or in a worktree a file `gitdir: <dir>` whose `commondir` names the shared one.
+export async function gitCommonDir($: EngineInterface, cwd: string): Promise<string | null> {
+  for (let dir = normalize(cwd); ; dir = normalize(`${dir}/..`)) {
+    const dotGit = `${dir}/.git`
+    const stat = await $.fs.stat(dotGit).catch(() => undefined)
+    if (stat?.kind === 'dir') return realPath($, dotGit)
+    if (stat?.kind === 'file') {
+      const pointer = (await readText($, dotGit))?.match(/^gitdir:\s*(.+?)\s*$/m)?.[1]
+      if (!pointer) return null
+      const gitdir = absolute(pointer, dir)
+      const common = (await readText($, `${gitdir}/commondir`))?.trim()
+      return realPath($, common ? absolute(common, gitdir) : gitdir)
+    }
+    if (dir === '/') return null
+  }
 }
 
 export function stripShell(command: string): string {
@@ -140,10 +197,10 @@ async function runs($: EngineInterface, dir: string, now: number): Promise<Listi
 // one that ends after. `watching` lives in $.state, so a run that ends while the mod reloads is
 // still toasted by the next load. Only a run that starts and ends between two polls (one
 // second; codex runs take minutes) goes unseen.
-async function poll($: EngineInterface, dir: string, cwd: string) {
+async function poll($: EngineInterface, dir: string, here: Place) {
   const now = await $.clock.now()
   const listing = await runs($, dir, now)
-  const mine = listing.runs.filter(run => sameWork(run.status.cwd, cwd))
+  const mine = listing.runs.filter(run => sameWork(run.status, here))
 
   let current: LiveRun | null = null
   const running = mine
@@ -158,6 +215,7 @@ async function poll($: EngineInterface, dir: string, cwd: string) {
       run: run.name,
       kind: kindOf(run.status.thread_key),
       round: run.status.round ?? null,
+      where: whereOf(run.status, here),
       startedAtMs,
       lastCommand: lastCommandIn(await tailOf($, events).catch(() => '')),
       elapsed: Math.floor((now - startedAtMs) / 1000),
@@ -177,7 +235,9 @@ async function poll($: EngineInterface, dir: string, cwd: string) {
       const { status } = run
       const took = (Date.parse(status.ended_at ?? '') - Date.parse(status.started_at ?? '')) / 1000
       const outcome = status.verdict ?? (status.exit === 0 ? 'done' : `exit ${status.exit ?? '?'}`)
-      $.ui.toast(`${label(kindOf(status.thread_key), status.round)}: ${outcome}${took > 0 ? ` (${mmss(took)})` : ''}`)
+      const where = whereOf(status, here)
+      $.ui.toast(`${label(kindOf(status.thread_key), status.round)}${where ? ` (${where})` : ''}: ${outcome}`
+        + `${took > 0 ? ` (${mmss(took)})` : ''}`)
       continue
     }
     // Gone from a listing that worked: forget it. Unreadable this time, or no listing: keep it.
@@ -196,8 +256,9 @@ export const register: Register = on => {
     const cwd = await $.session.cwd()
     if (home) {
       const dir = `${home}/.claude/state/codex-live`
-      await poll($, dir, cwd).catch(() => undefined)
-      $.clock.every(POLL_MS, () => poll($, dir, cwd).catch(() => undefined))
+      const here: Place = { cwd, repo: await gitCommonDir($, cwd).catch(() => null) }
+      await poll($, dir, here).catch(() => undefined)
+      $.clock.every(POLL_MS, () => poll($, dir, here).catch(() => undefined))
     }
     return next(e)
   })
@@ -210,7 +271,8 @@ export const register: Register = on => {
     return (
       <Box>
         <Text dimColor>
-          ⟳ {label(run.kind, run.round)} · {mmss(run.elapsed)}
+          ⟳ {label(run.kind, run.round)}
+          {run.where ? ` · ${run.where}` : ''} · {mmss(run.elapsed)}
           {command}
         </Text>
       </Box>

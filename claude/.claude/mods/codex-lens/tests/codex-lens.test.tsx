@@ -8,8 +8,8 @@ const START = Date.parse('2026-11-22T10:00:00Z')
 
 type File = { text: string; mtimeMs: number }
 
-// An in-memory ~/.claude/state/codex-live answering $.fs beneath the mod.
-function disk(on: On, files: Map<string, File>) {
+// An in-memory disk answering $.fs beneath the mod; `dirs` are the folders stat finds besides files.
+function disk(on: On, files: Map<string, File>, dirs: Set<string> = new Set()) {
   on('fs.list', (_, e) => ({
     value: [...files.entries()]
       .filter(([path]) => path.startsWith(`${e.path}/`))
@@ -19,11 +19,15 @@ function disk(on: On, files: Map<string, File>) {
       })),
   }))
   on('fs.stat', (_, e) => {
+    if (dirs.has(e.path)) return { value: { kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false } }
     const file = files.get(e.path)
-    return { value: { kind: 'file' as const, size: file?.text.length ?? 0, mtimeMs: file?.mtimeMs ?? 0, isLink: false } }
+    if (!file) throw new Error(`ENOENT: ${e.path}`)
+    return { value: { kind: 'file' as const, size: file.text.length, mtimeMs: file.mtimeMs, isLink: false } }
   })
   on('fs.read', (_, e) => {
-    const text = files.get(e.path)?.text ?? ''
+    const file = files.get(e.path)
+    if (!file) throw new Error(`ENOENT: ${e.path}`)
+    const text = file.text
     const offset = e.offset ?? 0
     return { value: text.slice(offset, e.length === undefined ? undefined : offset + e.length) }
   })
@@ -57,20 +61,21 @@ const BAND = (surface: 'terminal' | 'desktop') => ({
            scroll: { offset: 0, bodyRows: 10 }, view: {} },
 }) as const
 
-async function start($: Engine, on: On, files: Map<string, File>) {
+async function start($: Engine, on: On, files: Map<string, File>,
+                     { cwd = '/w/repo/sub', dirs = new Set<string>() }: { cwd?: string; dirs?: Set<string> } = {}) {
   const clock = mock.clock(on, { now: START + 72_000 })
   mock.env(on, { HOME })
-  disk(on, files)
+  disk(on, files, dirs)
   const toasts: string[] = []
   on('ui.toast', (_, e) => { toasts.push(e.text); return { value: undefined } })
-  on('session.cwd', () => ({ value: '/w/repo/sub' }))
+  on('session.cwd', () => ({ value: cwd }))
   // The engine's own band, beneath the mod: older kits (2.1.311 on the mac-mini) answer nothing.
   on('ui.render', ($, e) => {
     const { Text } = $.ui.resolve(e)
     return <Text>engine</Text>
   })
   on('session.start', (_, e) => ({ cwd: e.cwd }))
-  await $.session.start({ cwd: '/w/repo/sub', surface: 'terminal', isInteractive: true })
+  await $.session.start({ cwd, surface: 'terminal', isInteractive: true })
   return { clock, toasts }
 }
 
@@ -204,5 +209,51 @@ test('a run whose event stream went quiet is not shown', async ($, on) => {
   await start($, on, files)
   const ui = await $.ui.mount(BAND('terminal'))
   expect(await ui.find({ type: 'Text', text: /codex/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a session in a worktree sees runs from every worktree of its repository, named by folder', async ($, on) => {
+  const now = START + 72_000
+  const run = (name: string, cwd: string, repo: string, startedAt: string) => [
+    status(name, { state: 'running', thread_key: name.split('-2026')[0], round: 1, started_at: startedAt, cwd, repo }, now),
+    [`${DIR}/${name}.jsonl`, { text: '', mtimeMs: now }] as [string, File],
+  ]
+  const files = new Map<string, File>([
+    ['/w/wt/feat/.git', { text: 'gitdir: /w/repo/.git/worktrees/feat\n', mtimeMs: 0 }],
+    ['/w/repo/.git/worktrees/feat/commondir', { text: '../..\n', mtimeMs: 0 }],
+    ...run('review-main-20261122T100000Z-1', '/w/repo', '/w/repo/.git', '2026-11-22T10:00:00Z'),
+    ...run('review-x-20261122T100100Z-2', '/x', '/x/.git', '2026-11-22T10:01:00Z'),
+  ])
+  const { clock, toasts } = await start($, on, files, { cwd: '/w/wt/feat/src', dirs: new Set(['/w/repo/.git']) })
+  const ui = await $.ui.mount(BAND('terminal'))
+  expect((await ui.find({ type: 'Text', text: /codex review/ }))?.text).toBe('⟳ codex review r1 · repo · 1:12')
+  await ui.unmount()
+
+  files.set(...status('review-main-20261122T100000Z-1', {
+    state: 'done', thread_key: 'review-main', round: 1, started_at: '2026-11-22T10:00:00Z',
+    ended_at: '2026-11-22T10:02:00Z', cwd: '/w/repo', repo: '/w/repo/.git', exit: 0, verdict: 'APPROVED',
+  }, now + 1000))
+  files.set(...status('review-x-20261122T100100Z-2', {
+    state: 'done', thread_key: 'review-x', round: 1, started_at: '2026-11-22T10:01:00Z',
+    ended_at: '2026-11-22T10:02:00Z', cwd: '/x', repo: '/x/.git', exit: 0, verdict: 'APPROVED',
+  }, now + 1000))
+  await clock.advance(1000)
+  expect(toasts).toEqual(['codex review r1 (repo): APPROVED (2:00)'])
+})
+
+test('a run in the session\'s own worktree carries no folder name', async ($, on) => {
+  const now = START + 72_000
+  const files = new Map<string, File>([
+    ['/w/wt/feat/.git', { text: 'gitdir: /w/repo/.git/worktrees/feat\n', mtimeMs: 0 }],
+    ['/w/repo/.git/worktrees/feat/commondir', { text: '../..\n', mtimeMs: 0 }],
+    status('review-feat-20261122T100000Z-1', {
+      state: 'running', thread_key: 'review-feat', round: 3, started_at: '2026-11-22T10:00:00Z',
+      cwd: '/w/wt/feat', repo: '/w/repo/.git',
+    }, now),
+    [`${DIR}/review-feat-20261122T100000Z-1.jsonl`, { text: '', mtimeMs: now }],
+  ])
+  await start($, on, files, { cwd: '/w/wt/feat', dirs: new Set(['/w/repo/.git']) })
+  const ui = await $.ui.mount(BAND('terminal'))
+  expect((await ui.find({ type: 'Text', text: /codex review/ }))?.text).toBe('⟳ codex review r3 · 1:12')
   await ui.unmount()
 })

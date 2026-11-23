@@ -251,6 +251,9 @@ print(json.dumps({"type":"result", "subtype":"success", "session_id":session,
         status = json.loads(statuses[0].read_text())
         self.assertEqual((status["state"], status["exit"], status["verdict"], status["round"]), ("done", 0, "APPROVED", 1))
         self.assertIn("thread.started", Path(status["events"]).read_text())
+        common = subprocess.run(["git", "rev-parse", "--git-common-dir"], cwd=self.repo, text=True,
+                                capture_output=True, check=True).stdout.strip()
+        self.assertEqual(status["repo"], os.path.realpath(self.repo / common))
         rows = [json.loads(line) for line in (self.home / ".claude/state/codex-usage.jsonl").read_text().splitlines()]
         self.assertEqual((rows[-1]["effective_model"], rows[-1]["effective_effort"]), ("gpt-test", "high"))
         tail = self.run_cmd(["bash", str(ROOT / "scripts/codex-tail.sh"), "review"], timeout=20)

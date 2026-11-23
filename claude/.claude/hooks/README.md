@@ -218,7 +218,11 @@ A Claude Code mod (hooks module, not a shell hook) that shows the codex run work
 session's folder as one dim line above the prompt — `⟳ codex review r2 · 1:12 · ▶ rg -n …` — and
 toasts its verdict when it ends (`codex plan: REVISE (3:41)`). It polls
 `~/.claude/state/codex-live/` once a second through `$.fs` (no process of its own); a run counts
-when its `cwd` and the session's are the same folder or one holds the other, and a "running"
+when its `cwd` and the session's are the same folder or one holds the other, or when it ran in
+any worktree of the session's repository (`repo` in the status is the git common directory,
+which every worktree shares; the mod finds the session's by reading `.git` / `commondir` from
+disk). A run from another folder is named in the band and toast (`⟳ codex review r2 · feat ·
+1:12`, `codex review r2 (feat): APPROVED`). A "running"
 status whose event stream has been quiet for 15 minutes is ignored (a wrapper that died). A run
 is toasted when the session saw it running and then sees it done — no timestamp comparison, so
 nothing that ended before the session is toasted and no boundary drops one that ends after; the

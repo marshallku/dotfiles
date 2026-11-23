@@ -124,6 +124,8 @@ if ! (umask 077 && mkdir -p "$LIVE_DIR" && chmod 700 "$LIVE_DIR" && : > "$EVENTS
     EVENTS_FILE=$(mktemp "${TMPDIR:-/tmp}/codex-exec-events.XXXXXX")
 fi
 STARTED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+# Worktrees of one repository share this directory, so a viewer in any of them finds the run.
+REPO_COMMON=$(common=$(git rev-parse --git-common-dir 2>/dev/null) && cd "$common" 2>/dev/null && pwd -P) || REPO_COMMON=""
 
 # write_status <state> [exit] — best-effort, atomic; never fails the run.
 write_status() {
@@ -132,11 +134,11 @@ write_status() {
     [[ -f "$MSG_FILE" ]] && verdict=$(sed -nE 's/^VERDICT: (APPROVED|REVISE)$/\1/p' "$MSG_FILE" 2>/dev/null | tail -n 1)
     tmp="$STATUS_FILE.$$"
     (umask 077; jq -n --arg state "$1" --arg exit "${2:-}" --arg key "${THREAD_KEY:-}" --arg review "${CODEX_REVIEW_ID:-}" \
-        --arg round "${CODEX_REVIEW_ROUND:-}" --arg started "$STARTED_AT" --arg cwd "$PWD" --arg sandbox "$SANDBOX" \
+        --arg round "${CODEX_REVIEW_ROUND:-}" --arg started "$STARTED_AT" --arg cwd "$PWD" --arg repo "$REPO_COMMON" --arg sandbox "$SANDBOX" \
         --arg events "$EVENTS_FILE" --arg verdict "$verdict" --argjson pid "$$" \
         --arg ended "$([[ "$1" == running ]] || date -u '+%Y-%m-%dT%H:%M:%SZ')" \
         '{state:$state, thread_key:$key, review_id:$review, round:($round | tonumber? // null), pid:$pid,
-          started_at:$started, ended_at:(if $ended == "" then null else $ended end), cwd:$cwd, sandbox:$sandbox,
+          started_at:$started, ended_at:(if $ended == "" then null else $ended end), cwd:$cwd, repo:(if $repo == "" then null else $repo end), sandbox:$sandbox,
           events:$events, exit:($exit | tonumber? // null), verdict:(if $verdict == "" then null else $verdict end)}' \
         > "$tmp") 2>/dev/null && mv -f "$tmp" "$STATUS_FILE" 2>/dev/null
     rm -f "$tmp" 2>/dev/null

@@ -4,6 +4,8 @@ export type LiveRun = {
   /** review, plan or consult, from the thread key */
   kind: string
   round: number | null
+  /** the worktree folder it runs in when that is not the session's own folder, else '' */
+  where: string
   startedAtMs: number
   /** the newest command codex started, its shell wrapper stripped */
   lastCommand: string
