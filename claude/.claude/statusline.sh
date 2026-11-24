@@ -42,7 +42,7 @@ is_int() { [[ $1 =~ ^[0-9]+$ ]]; }
 for v in PCT DURATION_MS LINES_ADD LINES_DEL; do is_int "${!v}" || printf -v "$v" 0; done
 [[ $COST =~ ^[0-9.eE+-]+$ ]] || COST=0
 for v in FIVE_H SEVEN_D; do
-    printf -v "$v" '%.0f' "${!v}" 2>/dev/null && is_int "${!v}" || printf -v "$v" ''
+    [ -n "${!v}" ] && printf -v "$v" '%.0f' "${!v}" 2>/dev/null && is_int "${!v}" || printf -v "$v" ''
 done
 
 # threshold_color <var> <value> <red-at> <yellow-at>: sets <var> to the color for <value>.
@@ -88,7 +88,11 @@ load_recap() {
     fi
     is_int "$checked" || checked=0
     is_int "$offset" || offset=0
-    printf -v now '%(%s)T' -1
+    if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] >= 402 )); then
+        printf -v now '%(%s)T' -1
+    else
+        now=$(date +%s)
+    fi
     (( now - checked < RECAP_INTERVAL )) && return 0
 
     size=$(wc -c < "$transcript") || return 0

@@ -22,7 +22,24 @@ def record(kind, **fields):
     return json.dumps({"type": kind, **fields}, separators=(",", ":")) + "\n"
 
 
+def bash_version(path):
+    try:
+        out = subprocess.run([path, "-c", 'echo "${BASH_VERSINFO[0]} ${BASH_VERSINFO[1]}"'],
+                             capture_output=True, text=True, timeout=5).stdout.split()
+    except OSError:
+        return (0, 0)
+    return tuple(int(x) for x in out) if len(out) == 2 and all(x.isdigit() for x in out) else (0, 0)
+
+
+def clock_execs(path):
+    """bash before 4.2 has no builtin clock, so the script runs date once per refresh."""
+    return [] if bash_version(path) >= (4, 2) else ["date"]
+
+
 class StatuslineTest(unittest.TestCase):
+    BASH = "bash"
+    CLOCK = clock_execs("bash")
+
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
@@ -57,7 +74,7 @@ class StatuslineTest(unittest.TestCase):
     def render(self, stdin):
         self.exec_log.write_text("")
         env = {**os.environ, "TMPDIR": str(self.state), "PATH": f"{self.shim}:{os.environ['PATH']}"}
-        proc = subprocess.run(["bash", str(SCRIPT)], input=stdin, capture_output=True, text=True,
+        proc = subprocess.run([self.BASH, str(SCRIPT)], input=stdin, capture_output=True, text=True,
                               env=env, timeout=10)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(proc.stderr, "")
@@ -91,7 +108,7 @@ class StatuslineTest(unittest.TestCase):
         self.assertEqual(lines[0], "Opus sub main | +5-2")
         self.assertEqual(lines[1], "━━━━━━╌╌╌╌╌╌╌╌╌ 42% | $1.23 | 1h2m | 5h56% 7d12%")
         self.assertEqual(len(lines), 2)
-        self.assertEqual(execs, ["jq"])
+        self.assertEqual(execs, ["jq", *self.CLOCK])
 
     def test_linked_worktree_and_detached_head(self):
         repo = self.make_repo()
@@ -129,13 +146,13 @@ class StatuslineTest(unittest.TestCase):
         )
         lines, execs = self.render(self.payload(self.tmp))
         self.assertEqual(lines[2], "◆ First — Did a thing")
-        self.assertEqual(sorted(execs), ["grep", "jq", "jq", "mkdir", "tail", "wc"])
+        self.assertEqual(sorted(execs), sorted(["grep", "jq", "jq", "mkdir", "tail", "wc", *self.CLOCK]))
 
         with self.transcript.open("a") as f:
             f.write(record("ai-title", aiTitle="Second"))
         lines, execs = self.render(self.payload(self.tmp))
         self.assertEqual(lines[2], "◆ First — Did a thing")
-        self.assertEqual(execs, ["jq"])
+        self.assertEqual(execs, ["jq", *self.CLOCK])
 
         self.expire_cache()
         lines, _ = self.render(self.payload(self.tmp))
@@ -195,6 +212,13 @@ class StatuslineTest(unittest.TestCase):
     def test_invalid_input_falls_back_to_defaults(self):
         lines, _ = self.render("not json")
         self.assertEqual(lines[1], "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ 0% | $0.00 | 0s")
+
+
+@unittest.skipUnless(bash_version("/bin/bash")[0] == 3, "needs bash 3.2 at /bin/bash (macOS)")
+class StatuslineBash32Test(StatuslineTest):
+    """macOS /bin/bash 3.2 runs the script when Homebrew bash is not on Claude Code's PATH."""
+    BASH = "/bin/bash"
+    CLOCK = clock_execs("/bin/bash")
 
 
 if __name__ == "__main__":
