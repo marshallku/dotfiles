@@ -94,6 +94,11 @@ When asked to review code, classify every finding into exactly one of:
 
 ### CRITICAL (must fix)
 
+Every CRITICAL names a concrete trigger a real user, caller or operator reaches (the input, call
+sequence or action) and cites the code (`file:line`) that breaks on it. A finding without one is
+INFORMATIONAL. Regressions this diff introduces in security, auth/permissions or data loss stay
+CRITICAL even when the trigger is unusual.
+
 - Security: SQL injection, command injection, XSS, path traversal, template injection, CSRF, IDOR, missing auth checks, hardcoded secrets
 - Correctness: race conditions, null/undefined propagation, off-by-one, broken invariants, missing input validation at trust boundaries
 - Type safety: unsafe casts, `any` abuse where `unknown` would do
@@ -106,6 +111,13 @@ When asked to review code, classify every finding into exactly one of:
 - Performance issues (N+1, unnecessary re-renders, missing memoization, blocking I/O in hot paths)
 - Async/sync mixing, missing `await`, unhandled promises
 - Magic numbers that should be named constants
+- Rare paths, extreme values, extra syntax variants or compatibility the intent does not require,
+  and guards against input the system does not receive in practice
+
+### OWNER DECISION (not blocking)
+
+- A trade-off the author marks OWNER-DECISION, or a behavior the intent records as chosen. State
+  your concern once; do not repeat it as CRITICAL in later rounds.
 
 ### SUPPRESS (do NOT report)
 
@@ -147,6 +159,9 @@ Format the body like this:
 ## INFORMATIONAL
 - [I1] path/to/file.ts:99 — brief description
 
+## OWNER DECISION
+- [O1] brief description of the open trade-off (omit the section when empty)
+
 ## Summary
 One or two sentences, no more.
 
@@ -173,7 +188,9 @@ When the review prompt contains a `--- TASK INTENT ---` section with structured 
 Every CRITICAL finding MUST be prefixed with exactly one of these labels:
 
 - **[INTENT-MISMATCH]** — diff does not match the captured intent
-  - An `acceptance_criteria` item is not satisfied by any change in the diff
+  - An `acceptance_criteria` item is not satisfied by any change in the diff, or fails on a path a
+    real user, caller or operator takes. A counterexample outside the scope the intent states is
+    INFORMATIONAL, even when the criterion is worded absolutely.
   - An `out_of_scope` item is touched by the diff
   - An author `assumption` is invalidated by the diff (e.g. assumption said "X stays untouched" but X changed)
 - **[CODE-DEFECT]** — diff has a genuine code defect unrelated to intent

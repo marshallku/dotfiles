@@ -236,10 +236,42 @@ print(json.dumps({"type":"result", "subtype":"success", "session_id":session,
     def test_repeated_finding_warns_without_blocking(self):
         self.write("code.py", "feature = True\n")
         self.env["FAKE_VERDICT"] = "REVISE"
-        self.env["FAKE_FINDING"] = "code.py:7 — same issue"
+        self.env["FAKE_FINDING"] = "code.py:7 — directory sync failure still applies the sidebar order"
         self.review("--session", "s1", status=1)
+        self.env["FAKE_FINDING"] = "code.py:12 — the sidebar order still applies after a directory sync failure"
         result = self.review("--session", "s1", "--resume", status=1)
-        self.assertIn("finding repeated at code.py:7", result.stderr)
+        self.assertIn("finding repeated: C1 matches round 1 C1 (code.py)", result.stderr)
+
+    def test_repeat_after_response_is_disputed(self):
+        self.revise_rounds(1)
+        response = self.root / "response"
+        response.write_text("C1 refuted: code.py:1 handles it.")
+        result = self.review("--session", "s1", "--resume", "--response-file", str(response), status=1)
+        self.assertIn("DISPUTED: C1 repeats round 1 C1 (code.py)", result.stderr)
+
+    def test_new_finding_in_same_file_is_not_a_repeat(self):
+        self.write("code.py", "feature = True\n")
+        self.env["FAKE_VERDICT"] = "REVISE"
+        self.env["FAKE_FINDING"] = "code.py:7 — directory sync failure still applies the sidebar order"
+        self.review("--session", "s1", status=1)
+        self.env["FAKE_FINDING"] = "code.py:7 — keyboard observer cancels launch in another window"
+        result = self.review("--session", "s1", "--resume", status=1)
+        self.assertNotIn("repeat", result.stderr)
+
+    def test_later_rounds_restrict_critical_to_open_findings_and_fix_regressions(self):
+        self.revise_rounds(2)
+        prompt = (self.root / "prompt").read_text()
+        self.assertIn("From round 2 on, a CRITICAL is allowed only for", prompt)
+        self.assertIn("class remains:", prompt)
+        self.assertIn("OWNER-DECISION", prompt)
+
+    def test_intent_check_bounds_absolute_criteria_by_stated_scope(self):
+        self.write("code.py", "feature = True\n")
+        context = self.root / "brief"
+        context.write_text("Request: add the feature.")
+        self.review("--session", "s1", "--context-file", str(context))
+        prompt = (self.root / "prompt").read_text()
+        self.assertIn("outside the stated scope is INFORMATIONAL", prompt)
 
     def test_live_status_and_events_survive_the_run(self):
         (self.home / ".codex/config.toml").write_text('model = "gpt-test"\nmodel_reasoning_effort = "high"\n[x]\nmodel = "no"\n')
@@ -529,6 +561,19 @@ print(json.dumps({"type":"result", "subtype":"success", "session_id":session,
         self.env["FAKE_VERDICT"] = "APPROVED"
         self.review("--session", "s1", "--resume")
         self.assertIn("+feature = True", (self.root / "prompt").read_text())
+
+    def test_resume_missing_thread_keeps_earlier_findings_and_later_round_rules(self):
+        self.revise_rounds(1)
+        for path in (self.home / ".claude/state/codex-threads").iterdir():
+            path.unlink()
+        response = self.root / "response"
+        response.write_text("C1 refuted: code.py:1 handles it.")
+        self.env["FAKE_VERDICT"] = "APPROVED"
+        self.review("--session", "s1", "--resume", "--response-file", str(response))
+        prompt = (self.root / "prompt").read_text()
+        self.assertIn("issue from round 1", prompt)
+        self.assertIn("C1 refuted", prompt)
+        self.assertIn("From round 2 on, a CRITICAL is allowed only for", prompt)
 
     def test_legacy_marker_does_not_approve(self):
         self.write("code.py", "feature = True\n")

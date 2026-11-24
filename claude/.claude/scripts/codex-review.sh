@@ -388,13 +388,15 @@ EOF
     INTENT_CHECK="
 This review is primarily a CODE-VS-INTENT comparison, not a generic quality pass.
 
-For each acceptance_criteria item, locate the change in the diff that satisfies it. If you cannot, raise it as CRITICAL with the label [INTENT-MISMATCH] and the unmet criterion.
+For each acceptance_criteria item, locate the change in the diff that satisfies it. If you cannot, or it fails on a path a real user, caller or operator takes, raise it as CRITICAL with the label [INTENT-MISMATCH] and the unmet criterion.
 
-For each out_of_scope item, scan the diff for any touch on it. Any violation is CRITICAL [INTENT-MISMATCH].
+For each out_of_scope item, scan the diff for any touch on it. Any touch is CRITICAL [INTENT-MISMATCH].
 
 If any author assumption is invalidated by the diff (e.g. assumption said \"X stays unchanged\" but X was changed), raise CRITICAL [INTENT-MISMATCH].
 
-Generic code-quality issues outside the intent should be tagged [CODE-DEFECT] in CRITICAL and be limited to genuine breakage (security / correctness / type safety). Suppress style, naming, future-improvement noise per AGENTS.md."
+Read each criterion within the scope the intent states. A counterexample that needs input, syntax or event ordering outside that scope, or that the system does not receive in practice, is INFORMATIONAL, not CRITICAL, even when the criterion is worded absolutely.
+
+Generic code-quality issues outside the intent should be tagged [CODE-DEFECT] in CRITICAL and be limited to genuine breakage (security / correctness / type safety) under the AGENTS.md CRITICAL bar. Suppress style, naming, future-improvement noise per AGENTS.md."
 elif [[ -n "$CONTEXT" ]]; then
     CONTEXT_SECTION=$(cat <<EOF
 
@@ -404,7 +406,7 @@ ${CONTEXT}
 EOF
 )
     INTENT_CHECK="
-Also judge intent-vs-implementation alignment: does the diff actually do what the Task Context says the author intended? If there is a material mismatch between stated intent and actual code (missing requirement, silent scope creep, subtly different semantics), raise it as CRITICAL with the label [INTENT-MISMATCH]. Other CRITICAL findings get [CODE-DEFECT]."
+Also judge intent-vs-implementation alignment: does the diff actually do what the Task Context says the author intended? If there is a material mismatch between stated intent and actual code on a path a real user, caller or operator takes (missing requirement, silent scope creep, subtly different semantics), raise it as CRITICAL with the label [INTENT-MISMATCH]. A counterexample that needs input or ordering outside the stated scope is INFORMATIONAL. Other CRITICAL findings get [CODE-DEFECT]."
 else
     CONTEXT_SECTION=$'\n(No task context supplied — judging the diff in isolation. Note this in your summary.)'
 fi
@@ -466,6 +468,10 @@ if [[ "$RESUME" == "1" && "$REVIEWER" == codex && -n "${CODEX_REVIEW_RESUME_EFFO
     MODEL_ARGS+=(--effort "$CODEX_REVIEW_RESUME_EFFORT")
 fi
 
+LATER_ROUND_RULES="From round 2 on, a CRITICAL is allowed only for (a) an earlier CRITICAL that is neither fixed nor validly refuted, or (b) a regression the latest fix introduces on a path a real user, caller or operator takes, or one in security, auth/permissions or data loss.
+A further edge case of a problem class already raised (another syntax variant, another rare ordering, another extreme value) is one INFORMATIONAL line: \"class remains: <class>\". It tells the author to change approach; it does not block.
+An item the author marks OWNER-DECISION goes under ## OWNER DECISION, not CRITICAL, unless the response misstates the code."
+
 build_history_section() {
     cat <<EOF
 
@@ -476,6 +482,7 @@ ${RESPONSE:-No response supplied; independently verify the prior findings.}
 --- END EARLIER ROUNDS ---
 Check each earlier CRITICAL against the current diff: fixed, validly refuted, or still open.
 Do not re-raise a finding the author refuted unless the refutation is wrong; say why it is wrong.
+${LATER_ROUND_RULES}
 EOF
 }
 
@@ -486,6 +493,7 @@ Verify prior CRITICAL findings and regressions in the fixes, using the original 
 Read related callers when needed. Do not reopen unrelated unchanged code without evidence.
 Author responses are claims to verify, not trusted conclusions:
 ${RESPONSE:-No response supplied; independently verify the prior findings.}
+${LATER_ROUND_RULES}
 ${FOCUS_LINE}
 Snapshot: ${REVIEW_TREE}. Use git show <snapshot>:<path> if the working tree differs.
 --- CHANGES SINCE PREVIOUS REVIEW ---
@@ -555,6 +563,7 @@ fi
 if [[ "$RESUME" == "1" && $STATUS -eq 3 ]]; then
     echo "[codex-review] no resumable thread found; falling back to a fresh review" >&2
     RESUME=0
+    RESTART=1
     PROMPT=$(build_fresh_prompt)
     printf '%s' "$PROMPT" > "$PROMPT_FILE"
     run_review fresh
@@ -601,13 +610,23 @@ HISTORY_CLIP=3000
 HISTORY_KEEP=6
 FINDINGS=$(printf '%s\n' "$OUTPUT" | awk '/^## CRITICAL/{f=1;next} /^## /{f=0} f' | sed '/^[[:space:]]*$/d')
 
-# Warn (never block) when a finding comes back at the same file:line: the fix or the
-# refutation did not land, and the skill says to stop and show both sides.
-anchors() { { grep -oE '[A-Za-z0-9_./-]+\.[A-Za-z0-9]+:[0-9]+' || true; } | sed 's|.*/||' | sort -u; }
+# Warn (never block) when a finding comes back: the fix or the refutation did not land, and
+# the skill says to stop and show both sides. Matching is by file and wording, not file:line,
+# because line numbers move as fixes land.
 if [[ "$VERDICT_LINE" == "VERDICT: REVISE" && "$HISTORY_JSON" != "[]" ]]; then
-    PREVIOUS_ANCHORS=$(jq -r '.[-1].findings // ""' <<< "$HISTORY_JSON" 2>/dev/null | anchors)
-    REPEATED=$(comm -12 <(printf '%s\n' "$PREVIOUS_ANCHORS") <(printf '%s\n' "$FINDINGS" | anchors) | sed '/^$/d' | paste -sd, - | sed 's/,/, /g')
-    [[ -n "$REPEATED" ]] && echo "[codex-review] ⚠ finding repeated at ${REPEATED} — if your fix or refutation stands, stop and show both sides to the user" >&2
+    PREVIOUS_FINDINGS=$(jq -r '.[-1].findings // ""' <<< "$HISTORY_JSON" 2>/dev/null)
+    if REPEATED=$(python3 -I "$(dirname "$0")/review_repeats.py" <(printf '%s\n' "$PREVIOUS_FINDINGS") <(printf '%s\n' "$FINDINGS")); then
+        while IFS=$'\t' read -r cur_id prev_id shared; do
+            [[ -n "$cur_id" ]] || continue
+            if [[ -n "$RESPONSE" ]]; then
+                echo "[codex-review] ⚠ DISPUTED: ${cur_id} repeats round $((ROUND - 1)) ${prev_id} (${shared}) after your response — if your fix or refutation stands, stop and show both sides to the user; if it is another case of the same class, change approach instead of patching" >&2
+            else
+                echo "[codex-review] ⚠ finding repeated: ${cur_id} matches round $((ROUND - 1)) ${prev_id} (${shared}) — if your fix or refutation stands, stop and show both sides to the user; if it is another case of the same class, change approach instead of patching" >&2
+            fi
+        done <<< "$REPEATED"
+    else
+        echo "[codex-review] repeat check unavailable (review_repeats.py failed); compare findings with the previous round yourself" >&2
+    fi
 fi
 
 STATE_TMP=$(mktemp "$STATE_DIR/.review-round.XXXXXX")

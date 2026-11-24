@@ -59,9 +59,12 @@ REPO_HASH=$(repo_hash "$REPO_ROOT")
 INTENT_MARKER="$HOME/.claude/state/intent-active-${SESSION_ID}-${REPO_HASH}.path"
 ```
 
-활성 intent가 있으면 `--intent-file`로 전달한다. 없으면 원래 사용자 요청,
-실제 구현, 의도적 제외·트레이드오프를 150단어 이하의 brief 파일에 작성한다.
-미구현 사항을 숨기지 않는다. 임시 파일은 저장소 밖에 둔다.
+활성 intent가 있으면 `--intent-file`로 전달한다. 없으면 150단어 이하의 brief 파일에
+요구사항만 쓴다: 원래 사용자 요청, 수용 기준, 범위 밖, 의도적으로 정한 트레이드오프, 미구현 사항.
+"모든·항상·절대" 같은 절대적 요구에는 지원 범위(입력 형식, 문법, 값 범위)를 함께 적는다.
+리뷰어는 그 범위 밖 반례를 CRITICAL로 올리지 않는다.
+작성자의 자기 평가("안전하다", "검증했다", 구현이 옳은 이유)는 쓰지 않는다. 리뷰어를 그 프레임에 묶는다.
+테스트는 주장 대신 실행한 명령과 exit code로만 적는다. 임시 파일은 저장소 밖에 둔다.
 
 ```bash
 bash ~/.claude/scripts/codex-review.sh --reviewer "$REVIEWER" --session "$SESSION_ID" --intent-file "$INTENT_FILE"
@@ -85,6 +88,13 @@ Bash 호출은 foreground, `timeout: 600000`을 사용한다. Round 1에는 `--r
 스타일·네이밍·추후 개선·커버리지 요구는 기존 AGENTS.md 억제 규칙을 따른다.
 
 저장소 밖 response 파일에 지적 ID, 처리 판단, 코드 근거, 수정 경로, 실행한 테스트 결과를 기록한다.
+반박은 `file:line` 인용으로 근거를 댄다. 사용자 판단이 필요한 지적은 `OWNER-DECISION`으로 표시한다.
+리뷰어는 이를 승인을 막지 않는 `## OWNER DECISION`으로 옮기고, 사용자에게는 최종 보고에서 묻는다.
+
+같은 종류의 엣지 케이스가 두 번째 나오면(또 다른 문법 변형, 또 다른 극단값) 또 패치하지 않는다.
+접근을 바꾸거나(실제 파서·도구 출력 사용, 코드를 지우거나 범위를 좁히기) 지원 범위를 response에 명시한다.
+brief는 고치지 않는다. brief가 바뀌면 context hash가 달라져 라운드 1부터 다시 시작하고 이전 지적 기록을 잃는다.
+리뷰어가 `class remains:`로 알려준 종류도 같다.
 원래 intent/brief는 유지하고, 같은 명령에 다음 인자를 추가한다:
 
 ```bash
@@ -97,7 +107,8 @@ bash ~/.claude/scripts/codex-review.sh --reviewer "$REVIEWER" --session "$SESSIO
 같은 미완료 작업을 다시 호출하면 자동으로 resume한다. 라운드 수 자체로 멈추지 않는다 — 매 라운드 지적이
 검증된 유효·범위 내 지적이면 수정하고 계속 재리뷰한다. 다음 경우에만 자동 루프를 멈추고 양쪽 근거를 사용자에게 제시한다:
 
-- 같은 CRITICAL이 수정·반박 후에도 반복된다.
+- 같은 CRITICAL이 수정·반박 후에도 반복된다. 스크립트가 파일과 문구로 비교해
+  `⚠ DISPUTED`(response 이후 반복) 또는 `⚠ finding repeated`를 출력한다. 줄 번호가 바뀌어도 잡힌다.
 - 남은 지적이 전부 무효이거나 범위 밖이다(직전 수정과 무관한, 이번 변경이 건드리지 않은 코드의 새 지적).
 
 `CODEX_REVIEW_MAX_ROUNDS`(기본 10, `0`=무제한)는 반복 감지를 놓쳤을 때의 폭주 방지 장치일 뿐이다.

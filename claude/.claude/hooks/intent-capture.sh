@@ -171,7 +171,7 @@ tags: [<stack-axis>, <domain-axis>, <activity-axis>]
 
 goal: <1-2 lines describing what and why>
 acceptance_criteria:
-  - <observable success signal — fight theater by being specific>
+  - <observable success signal — fight theater by being specific; an absolute one ("every", "never") names the supported inputs or paths>
 out_of_scope:
   - <explicit non-goal — what you will NOT touch>
 assumptions:
