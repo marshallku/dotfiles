@@ -227,6 +227,18 @@ status whose event stream has been quiet for 15 minutes is ignored (a wrapper th
 is toasted when the session saw it running and then sees it done — no timestamp comparison, so
 nothing that ended before the session is toasted and no boundary drops one that ends after; the
 watched list is in `$.state`, so a run that ends during a mod reload is still toasted.
+
+The **Codex pane** follows the newest live run step by step: what codex wrote (`›`, its
+preambles and answer), reasoning summaries (`∴`, when codex emits them — 0.163.0 emits none,
+even with `model_reasoning_summary="detailed"`), each command with `✓`/`✗`, exit code, time and
+a failed command's last two output lines, and the running command `▶` with its elapsed time.
+It is cut to the newest steps that fit (8 rows when seated inline above the prompt). It reads
+only the documented `codex exec --json` events, from the last byte offset each poll (whole
+lines only, so a half-written line waits), and ignores event and item types it does not know.
+It opens when a run starts, unasked, so the engine seats it from 144 columns (docked beside the
+transcript in fullscreen, else inline); it closes when the run ends unless `/codex-lens` pinned
+it open, and a pane the person closed stays closed for that run. Command times are measured
+from when the poll saw each event, so steps read back after a load carry none.
 Loaded in every session by `env.CLAUDE_CODE_PLUGIN_DIRS` in settings.json
 (`~/dotfiles/claude/.claude/mods/codex-lens`; `claude plugin list` shows `codex-lens@inline`).
 Check: `claude plugin validate` and `claude plugin test` in `mods/` (tests stand in for the

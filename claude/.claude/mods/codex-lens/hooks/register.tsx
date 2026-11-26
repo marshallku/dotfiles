@@ -1,25 +1,38 @@
-// Codex Lens: the codex run working for this folder, one line above the prompt, and its verdict
-// as a toast when it ends.
+// Codex Lens: the codex run working for this folder, one line above the prompt, a pane that
+// follows what it says and runs, and its verdict as a toast when it ends.
 //
 // Data comes from ~/.claude/state/codex-live/, which ~/.claude/scripts/codex-exec.sh writes for
 // every run: <key>-<run>.status.json ({state, thread_key, round, started_at, ended_at, cwd,
 // events, exit, verdict}) and the raw `codex exec --json` stream in <key>-<run>.jsonl. Reading is
-// a timer over those files; nothing else is started. Before this, 1,054 reviews (29.8 h) on the
-// work Mac showed as one "waiting" line each.
+// a timer over those files; nothing else is started.
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { LiveRun } from '../types'
+import type { LiveRun, PaneChoice, Trail } from '../types'
+import { clip, label, mmss } from './format'
+import { drawPane } from './pane'
+import { applyLines, lastCommandOf, wholeLines } from './trail'
 
 const live = atom({ plugin: 'codex-lens', key: 'live' } as const, null as LiveRun | null)
 const watching = atom({ plugin: 'codex-lens', key: 'watching' } as const, [] as string[])
+const trail = atom({ plugin: 'codex-lens', key: 'trail' } as const, null as Trail | null, { shape: 'trail-1' })
+const paneChoice = atom({ plugin: 'codex-lens', key: 'pane' } as const,
+  { isPinned: false, dismissed: null } as PaneChoice, { shape: 'pane-1' })
 
+const PANE = 'codex-lens'
+const PANE_TITLE = 'Codex'
+const COMMAND = 'codex-lens'
 const POLL_MS = 1000
 const DAY_MS = 24 * 60 * 60 * 1000
 // A run still "running" whose event stream has not moved for this long died without saying so.
 const STALE_MS = 15 * 60 * 1000
-const TAIL_BYTES = 65536
+// $.fs.read's own cap on one ranged read.
+const READ_BYTES = 4 * 1024 * 1024
+// A run first seen this soon after it started is followed from its start, so its lines are timed.
+const FRESH_MS = 3 * POLL_MS
 const COMMAND_CHARS = 80
+// Seated above the prompt (a narrow or non-fullscreen terminal), the pane keeps the transcript in view.
+const INLINE_ROWS = 8
 
 type Status = {
   state?: string
@@ -122,47 +135,55 @@ export async function gitCommonDir($: EngineInterface, cwd: string): Promise<str
   }
 }
 
-export function stripShell(command: string): string {
-  return command.replace(/^"?\/\S*\/(ba|z)?sh -l?c /, '').replace(/^['"]|['"]$/g, '')
-}
+/** How far this load has read one run's event stream. */
+export type Cursor = { run: string; offset: number }
 
-export function clip(text: string, max: number): string {
-  const flat = text.replace(/\s+/g, ' ').trim()
-  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}…`
-}
-
-export function mmss(seconds: number): string {
-  const s = Math.max(0, Math.floor(seconds))
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
-}
-
-export function label(kind: string, round: number | null | undefined): string {
-  return round ? `codex ${kind} r${round}` : `codex ${kind}`
-}
-
-// The newest command codex started, from the tail of its event stream.
-export function lastCommandIn(tail: string): string {
-  const lines = tail.split('\n')
-  for (let i = lines.length - 1; i >= 0; i -= 1) {
-    const line = lines[i] ?? ''
-    if (!line.includes('"item.started"')) continue
-    try {
-      const event = JSON.parse(line)
-      if (event?.type === 'item.started' && event.item?.type === 'command_execution') {
-        return stripShell(String(event.item.command ?? ''))
-      }
-    } catch {
-      // The tail's first line may be cut mid-record.
-    }
-  }
-  return ''
-}
-
-async function tailOf($: EngineInterface, path: string): Promise<string> {
+/**
+ * Reads the event stream's new whole lines into the trail. A trail this load has not read yet
+ * (a new run, or any run after a reload) is read again from the start; its lines are timed only
+ * when the run began moments ago, else their times are unknown.
+ * Every read begins at a line start and keeps whole lines only, so each decoded chunk is exact
+ * UTF-8 and the offset moves by its own bytes; a line still being written waits for the next poll.
+ */
+export async function follow($: EngineInterface, path: string, base: Trail, cursor: Cursor | null,
+                             now: number): Promise<{ trail: Trail; cursor: Cursor }> {
   const { size } = await $.fs.stat(path)
-  const offset = Math.max(0, size - TAIL_BYTES)
-  const text = await $.fs.read(path, { offset, length: size - offset })
-  return typeof text === 'string' ? text : ''
+  const isCatchUp = cursor === null || cursor.run !== base.run || size < cursor.offset
+  let offset = isCatchUp ? 0 : cursor.offset
+  let steps = isCatchUp ? [] : base.steps
+  const isLive = !isCatchUp || (base.steps.length === 0 && now - base.startedAtMs <= FRESH_MS)
+  while (offset < size) {
+    const length = Math.min(READ_BYTES, size - offset)
+    const chunk = await $.fs.read(path, { offset, length })
+    if (typeof chunk !== 'string') break
+    const { lines, bytes } = wholeLines(chunk)
+    if (bytes === 0) {
+      // One line longer than a whole read: skip past it rather than stall on it forever.
+      if (length === READ_BYTES) offset += READ_BYTES
+      else break
+      continue
+    }
+    steps = applyLines(steps, lines, isLive ? now : null)
+    offset += bytes
+  }
+  return { trail: { ...base, steps }, cursor: { run: base.run, offset } }
+}
+
+function outcomeOf(status: Status): string {
+  return status.verdict ?? (status.exit === 0 ? 'done' : `exit ${status.exit ?? '?'}`)
+}
+
+function trailOf(run: Run, here: Place, now: number): Trail {
+  return {
+    run: run.name,
+    kind: kindOf(run.status.thread_key),
+    round: run.status.round ?? null,
+    where: whereOf(run.status, here),
+    startedAtMs: Date.parse(run.status.started_at ?? '') || now,
+    endedAtMs: null,
+    outcome: null,
+    steps: [],
+  }
 }
 
 type Listing = {
@@ -192,51 +213,96 @@ async function runs($: EngineInterface, dir: string, now: number): Promise<Listi
   return { ok: true, names, runs: found }
 }
 
+type Memo = { cursor: Cursor | null }
+
+// The newest running run whose event stream still moves.
+async function liveRun($: EngineInterface, dir: string, mine: Run[], now: number): Promise<Run | undefined> {
+  const running = mine
+    .filter(run => run.status.state === 'running')
+    .sort((a, b) => String(b.status.started_at).localeCompare(String(a.status.started_at)))
+  for (const run of running) {
+    const stat = await $.fs.stat(run.status.events ?? `${dir}/${run.name}.jsonl`).catch(() => undefined)
+    if (stat && now - stat.mtimeMs <= STALE_MS) return run
+  }
+  return undefined
+}
+
+// The pane follows the newest live run; once that run ends it keeps its steps and outcome
+// until another starts, so a pinned pane still shows what the last run did.
+async function followTrail($: EngineInterface, dir: string, here: Place, memo: Memo, now: number,
+                           running: Run | undefined, byName: Map<string, Run>): Promise<Trail | null> {
+  const before = await read($, trail)
+  let next = running && before?.run !== running.name ? trailOf(running, here, now) : before
+  if (!next || next.endedAtMs !== null) return next
+  const run = byName.get(next.run)
+  const followed = await follow($, run?.status.events ?? `${dir}/${next.run}.jsonl`, next, memo.cursor, now)
+    .catch(() => undefined)
+  if (followed) {
+    next = followed.trail
+    memo.cursor = followed.cursor
+  }
+  if (run?.status.state === 'done') {
+    next = { ...next, endedAtMs: Date.parse(run.status.ended_at ?? '') || now, outcome: outcomeOf(run.status) }
+  }
+  return next
+}
+
+// Opens the pane when a run starts (unless the person closed it for that run) and closes it
+// when the run ends, unless the person pinned it open with /codex-lens.
+async function steerPane($: EngineInterface, before: Trail | null, after: Trail | null) {
+  if (!after) return
+  const choice = await read($, paneChoice)
+  const isNew = after.endedAtMs === null && after.run !== before?.run
+  if (isNew && choice.dismissed !== after.run) {
+    await $.ui.open({ id: PANE, title: PANE_TITLE })
+    return
+  }
+  const hasEnded = before?.run === after.run && before.endedAtMs === null && after.endedAtMs !== null
+  if (hasEnded && !choice.isPinned) await $.ui.close({ id: PANE })
+}
+
 // A run is toasted when this session saw it running and then sees it done: no timestamps, so
 // nothing that ended before the load (never seen running) is toasted and no boundary can drop
 // one that ends after. `watching` lives in $.state, so a run that ends while the mod reloads is
 // still toasted by the next load. Only a run that starts and ends between two polls (one
 // second; codex runs take minutes) goes unseen.
-async function poll($: EngineInterface, dir: string, here: Place) {
+async function poll($: EngineInterface, dir: string, here: Place, memo: Memo) {
   const now = await $.clock.now()
   const listing = await runs($, dir, now)
   const mine = listing.runs.filter(run => sameWork(run.status, here))
+  const byName = new Map(mine.map(run => [run.name, run]))
+
+  const running = await liveRun($, dir, mine, now)
+  const trailBefore = await read($, trail)
+  const trailAfter = await followTrail($, dir, here, memo, now, running, byName)
+  if (JSON.stringify(trailBefore) !== JSON.stringify(trailAfter)) await update($, trail, () => trailAfter)
+  await steerPane($, trailBefore, trailAfter).catch(() => undefined)
 
   let current: LiveRun | null = null
-  const running = mine
-    .filter(run => run.status.state === 'running')
-    .sort((a, b) => String(b.status.started_at).localeCompare(String(a.status.started_at)))
-  for (const run of running) {
-    const events = run.status.events ?? `${dir}/${run.name}.jsonl`
-    const stat = await $.fs.stat(events).catch(() => undefined)
-    if (!stat || now - stat.mtimeMs > STALE_MS) continue
-    const startedAtMs = Date.parse(run.status.started_at ?? '') || now
+  if (running) {
+    const startedAtMs = Date.parse(running.status.started_at ?? '') || now
     current = {
-      run: run.name,
-      kind: kindOf(run.status.thread_key),
-      round: run.status.round ?? null,
-      where: whereOf(run.status, here),
+      run: running.name,
+      kind: kindOf(running.status.thread_key),
+      round: running.status.round ?? null,
+      where: whereOf(running.status, here),
       startedAtMs,
-      lastCommand: lastCommandIn(await tailOf($, events).catch(() => '')),
+      lastCommand: trailAfter?.run === running.name ? lastCommandOf(trailAfter.steps) : '',
       elapsed: Math.floor((now - startedAtMs) / 1000),
     }
-    break
   }
   const before = await read($, live)
-  const changed = JSON.stringify(before) !== JSON.stringify(current)
-  if (changed) await update($, live, () => current)
+  if (JSON.stringify(before) !== JSON.stringify(current)) await update($, live, () => current)
 
   const watched = await read($, watching)
-  const byName = new Map(mine.map(run => [run.name, run]))
   const next: string[] = []
   for (const name of watched) {
     const run = byName.get(name)
     if (run?.status.state === 'done') {
       const { status } = run
       const took = (Date.parse(status.ended_at ?? '') - Date.parse(status.started_at ?? '')) / 1000
-      const outcome = status.verdict ?? (status.exit === 0 ? 'done' : `exit ${status.exit ?? '?'}`)
       const where = whereOf(status, here)
-      $.ui.toast(`${label(kindOf(status.thread_key), status.round)}${where ? ` (${where})` : ''}: ${outcome}`
+      $.ui.toast(`${label(kindOf(status.thread_key), status.round)}${where ? ` (${where})` : ''}: ${outcomeOf(status)}`
         + `${took > 0 ? ` (${mmss(took)})` : ''}`)
       continue
     }
@@ -252,15 +318,52 @@ async function poll($: EngineInterface, dir: string, here: Place) {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
+    // Without the command the pane still follows runs, so a refusal must not stop the polling.
+    await $.command.register({
+      name: COMMAND,
+      description: 'Show or hide the pane following codex runs (shown, it stays open between runs)',
+    }).catch(error => $.ui.log(`codex-lens: /${COMMAND} not registered: ${String(error)}`))
     const home = await $.env.get('HOME')
     const cwd = await $.session.cwd()
     if (home) {
       const dir = `${home}/.claude/state/codex-live`
       const here: Place = { cwd, repo: await gitCommonDir($, cwd).catch(() => null) }
-      await poll($, dir, here).catch(() => undefined)
-      $.clock.every(POLL_MS, () => poll($, dir, here).catch(() => undefined))
+      const memo: Memo = { cursor: null }
+      await poll($, dir, here, memo).catch(() => undefined)
+      $.clock.every(POLL_MS, () => poll($, dir, here, memo).catch(() => undefined))
     }
     return next(e)
+  })
+
+  on('command.run', { command: COMMAND }, async $ => {
+    const isOpen = (await $.ui.panes()).some(pane => pane.id === PANE)
+    if (isOpen) {
+      await update($, paneChoice, choice => ({ ...choice, isPinned: false }))
+      await $.ui.close({ id: PANE })
+      return { text: 'Codex pane closed; it opens again when the next run starts.' }
+    }
+    await update($, paneChoice, () => ({ isPinned: true, dismissed: null }))
+    await $.ui.open({ id: PANE, title: PANE_TITLE })
+    return { text: 'Codex pane opened; it stays open between runs until /codex-lens again.' }
+  }).catch(() => ({ text: 'Codex pane could not be toggled; see claude --debug.' }))
+
+  on('ui.close', async ($, e, next) => {
+    if (e.id === PANE && e.origin.kind === 'person') {
+      const followed = await read($, trail)
+      const dismissed = followed && followed.endedAtMs === null ? followed.run : null
+      await update($, paneChoice, () => ({ isPinned: false, dismissed }))
+    }
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    const rows = e.props.placement === 'inline' ? Math.min(INLINE_ROWS, e.props.scroll.bodyRows) : e.props.scroll.bodyRows
+    return drawPane($.ui.resolve(e), {
+      trail: await read($, trail),
+      live: await read($, live),
+      columns: e.props.bodyColumns,
+      rows,
+    })
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {

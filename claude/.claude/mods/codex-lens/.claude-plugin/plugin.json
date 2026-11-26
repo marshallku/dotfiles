@@ -1,6 +1,6 @@
 {
   "name": "codex-lens",
   "version": "0.1.0",
-  "description": "Show this folder's running codex review, plan or consult above the prompt, and toast its verdict",
+  "description": "Follow this folder's codex review, plan or consult: a line above the prompt, a pane of what it says and runs, and a toast of its verdict",
   "types": "./types/index.d.ts"
 }
